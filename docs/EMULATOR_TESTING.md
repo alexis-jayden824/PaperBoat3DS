@@ -35,3 +35,19 @@ until the project owner tests the matching `.3dsx` build on a real console.
 
 Every emulator report should record the build SHA, Folium version, selected
 core, iOS device, artifact format, DSP-firmware presence, steps, and outcome.
+
+## Validation log
+
+### 2026-09-19 - M0 package / M1 bootstrap
+
+- Build commit: `6d0838eea40741b388c2bd3f5177fb8c22b032e2`
+- Workflow run: `35456310434`
+- Artifact: `PaperBoat3DS.3ds`
+- Environment: Folium Nintendo 3DS core on iOS
+- DSP firmware: present in the previously validated Folium environment
+- Result: booted successfully and rendered the expected bootstrap text on both displays
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: START exit behavior, physical controls, suspend/resume, or real-hardware compatibility
+
+The exact Folium version and iOS device model were not reported, so they remain
+unknown rather than inferred from the screenshot.
