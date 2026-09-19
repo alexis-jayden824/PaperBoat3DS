@@ -2,7 +2,7 @@
 
 ## Current scope
 
-This branch contains the native application shell and the first M5 compilation
+This branch contains the native application shell and the completed M5 compilation
 gate; it is not yet a playable PaperBoat port. A successful package build proves
 that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
@@ -28,7 +28,7 @@ make fetch-upstream
 The fetch is safe to repeat. It verifies that each checkout resolves to the
 locked commit and fails rather than silently building a moving branch.
 
-Cross-compile the current M5 upstream source slice without linking it into the
+Cross-compile the M5 representative upstream source matrix without linking it into the
 application shell:
 
 ```sh
