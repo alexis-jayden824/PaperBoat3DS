@@ -28,6 +28,24 @@ STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 UPSTREAM_ROOT   ?= $(CURDIR)/.cache/upstream
 PAPERBOAT_ROOT  := $(UPSTREAM_ROOT)/PaperBoat
 M5_BUILD        := $(CURDIR)/build/m5-core
+M5_GAME_SOURCES := \
+	src/main_pre.c \
+	src/43F0.c \
+	src/evt/evt.c \
+	src/state_title_screen.c \
+	src/battle/camera.c \
+	src/entity/Switch.c \
+	src/world/area_mac/mac_00/settings.c \
+	src/world/area_mac/mac_00/main.c
+M5_GAME_CFLAGS  := $(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
+	-O2 -std=gnu11 -Wall -Wextra \
+	-Wno-implicit-function-declaration -Wno-int-conversion \
+	-Wno-initializer-overrides -Wno-return-mismatch -D__3DS__ \
+	-D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
+	-DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
+	-I"$(CURDIR)/include" -I"$(PAPERBOAT_ROOT)/include" \
+	-I"$(PAPERBOAT_ROOT)/src" \
+	-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
@@ -104,31 +122,15 @@ m5-core-check: fetch-upstream
 		-o "$(M5_BUILD)/libc_compat.o" \
 		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
 		-O2 -std=gnu11 -Wall -Wextra -Werror -D__3DS__
-	@$(CC) -c "$(PAPERBOAT_ROOT)/src/main_pre.c" \
-		-o "$(M5_BUILD)/main_pre.o" \
-		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
-		-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-error -D__3DS__ \
-		-D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
-		-DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
-		-I"$(CURDIR)/include" \
-		-I"$(PAPERBOAT_ROOT)/include" \
-		-I"$(PAPERBOAT_ROOT)/src" \
-		-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
-	@$(CC) -c "$(PAPERBOAT_ROOT)/src/43F0.c" \
-		-o "$(M5_BUILD)/43F0.o" \
-		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
-		-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-error \
-		-Wno-implicit-function-declaration -D__3DS__ \
-		-D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
-		-DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
-		-I"$(CURDIR)/include" \
-		-I"$(PAPERBOAT_ROOT)/include" \
-		-I"$(PAPERBOAT_ROOT)/src" \
-		-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
+	@set -e; for source in $(M5_GAME_SOURCES); do \
+		object=$$(printf '%s' "$$source" | tr '/.' '__'); \
+		echo "  ARM11 $$source"; \
+		$(CC) -c "$(PAPERBOAT_ROOT)/$$source" \
+			-o "$(M5_BUILD)/$$object.o" $(M5_GAME_CFLAGS); \
+		test -s "$(M5_BUILD)/$$object.o"; \
+	done
 	@test -s "$(M5_BUILD)/decode_yay0.o"
 	@test -s "$(M5_BUILD)/libc_compat.o"
-	@test -s "$(M5_BUILD)/main_pre.o"
-	@test -s "$(M5_BUILD)/43F0.o"
 
 $(BUILD):
 	@mkdir -p $@
