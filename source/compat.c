@@ -96,7 +96,10 @@ size_t pb_archive_read(PBArchive *archive, size_t offset, void *buffer,
     }
 
     const size_t available = archive->size - offset;
-    const size_t requested = size < available ? size : available;
+    size_t requested = size < available ? size : available;
+    if (requested > PB_ARCHIVE_MAX_READ) {
+        requested = PB_ARCHIVE_MAX_READ;
+    }
     if (fseek(archive->file, (long)offset, SEEK_SET) != 0) {
         return 0;
     }
