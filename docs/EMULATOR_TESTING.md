@@ -51,3 +51,20 @@ core, iOS device, artifact format, DSP-firmware presence, steps, and outcome.
 
 The exact Folium version and iOS device model were not reported, so they remain
 unknown rather than inferred from the screenshot.
+
+### 2026-09-19 - M4 compatibility core
+
+- Build commit: `e2ba067e4147276f29a15771043501a0ebe80b17`
+- Workflow run: `35457581873`
+- Artifact: `PaperBoat3DS.3ds`
+- Environment: Folium Nintendo 3DS core on iOS
+- Result: booted successfully; GFX, APT, and HID initialization reported OK
+- Runtime observations: New 3DS detected, lifecycle active, SD logging active,
+  configuration defaults loaded, and the optional archive correctly reported absent
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: START exit behavior, lifecycle transitions,
+  real-SD archive access, or real-hardware compatibility
+
+Folium reported application heap free space as `0 KiB` while linear memory was
+available. The port treats this isolated emulator value as unavailable telemetry,
+not proof of heap exhaustion; real-hardware logging remains authoritative.
