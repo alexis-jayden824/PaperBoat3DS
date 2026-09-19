@@ -16,6 +16,11 @@ static bool add_would_overflow(size_t left, size_t right) {
     return right > SIZE_MAX - left;
 }
 
+static bool memory_class_is_valid(PBMemoryClass memory_class) {
+    return memory_class >= PB_MEMORY_ARCHIVE &&
+           memory_class < PB_MEMORY_CLASS_COUNT;
+}
+
 size_t pb_memory_class_limit(PBMemoryClass memory_class) {
     switch (memory_class) {
         case PB_MEMORY_ARCHIVE:
@@ -84,11 +89,12 @@ void pb_memory_monitor_sample(PBMemoryMonitor *monitor, uintptr_t stack_pointer)
         snapshot->peak_stack_used = snapshot->stack_used;
     }
 
-    snapshot->pressure =
+    const bool under_pressure =
         (snapshot->application_measurement_available &&
          snapshot->application_free < PB_MEMORY_APPLICATION_RESERVE) ||
         snapshot->linear_free < PB_MEMORY_LINEAR_RESERVE ||
         snapshot->peak_stack_used > PB_MEMORY_STACK_LIMIT;
+    snapshot->pressure = snapshot->pressure || under_pressure;
 }
 
 const PBMemorySnapshot *pb_memory_monitor_snapshot(const PBMemoryMonitor *monitor) {
@@ -97,7 +103,7 @@ const PBMemorySnapshot *pb_memory_monitor_snapshot(const PBMemoryMonitor *monito
 
 bool pb_memory_can_allocate(const PBMemoryMonitor *monitor,
                             PBMemoryClass memory_class, size_t size) {
-    if (memory_class >= PB_MEMORY_CLASS_COUNT || size == 0) {
+    if (!memory_class_is_valid(memory_class) || size == 0) {
         return false;
     }
 
@@ -126,6 +132,7 @@ void *pb_memory_alloc(PBMemoryMonitor *monitor, PBMemoryClass memory_class,
     pb_memory_monitor_sample(monitor, stack_marker);
     if (!pb_memory_can_allocate(monitor, memory_class, size)) {
         monitor->snapshot.allocation_failures++;
+        monitor->snapshot.pressure = true;
         return NULL;
     }
 
@@ -133,6 +140,7 @@ void *pb_memory_alloc(PBMemoryMonitor *monitor, PBMemoryClass memory_class,
                                                     : malloc(size);
     if (memory == NULL) {
         monitor->snapshot.allocation_failures++;
+        monitor->snapshot.pressure = true;
         return NULL;
     }
 
@@ -148,7 +156,7 @@ void *pb_memory_alloc(PBMemoryMonitor *monitor, PBMemoryClass memory_class,
 
 void pb_memory_free(PBMemoryMonitor *monitor, PBMemoryClass memory_class,
                     void *memory, size_t size) {
-    if (memory == NULL || memory_class >= PB_MEMORY_CLASS_COUNT) {
+    if (memory == NULL || !memory_class_is_valid(memory_class)) {
         return;
     }
 
