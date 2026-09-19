@@ -25,6 +25,12 @@ jobs:
           "$DEVKITARM/bin/arm-none-eabi-gcc" --version
           make --version
 
+      - name: Fetch pinned upstream sources
+        run: sh tools/fetch_upstream.sh
+
+      - name: Cross-compile M5 upstream core slice
+        run: make m5-core-check
+
       - name: Build 3DSX
         run: |
           make -j2 \
