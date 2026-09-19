@@ -17,6 +17,26 @@ conflicting typedef.
 for 3DS builds and uses `u32`, matching libultraship's `exception.h` and the
 intended 32-bit N64 ABI. No structure size or calling convention changes.
 
+### EEPROM declarations
+
+The aggregate libultraship headers also redeclare the EEPROM entry points with
+`int32_t`, while `os.h` uses the N64 aliases (`s32`/`u8`) and `int`. Those are
+the same width on supported desktop hosts but not the same C type under
+devkitARM/newlib. `include/libultraship/libultra/eeprom.h` preserves the
+existing `os.h` signatures; `osWritebackDCache` deliberately retains its
+upstream `int32_t` parameter because that declaration is already consistent.
+
+The scoped `libultraship.h` and `libultra.h` facades route aggregate includes
+through these two overlays. The pinned checkout is never patched.
+
+### Upstream macro warnings
+
+The full `common.h` graph redefines `aPoleFilter`, `ALIGN8`, and `ALIGNED8`
+with equivalent port-side forms. The `main_pre.c` gate keeps all warnings
+enabled but does not promote warnings to errors for this upstream-only unit;
+the repository's native 3DS sources and foundation port slices remain under
+`-Werror`.
+
 ## Validation history
 
 - Run `35458786218`: pinned fetch succeeded; compilation stopped at the missing
@@ -25,3 +45,13 @@ intended 32-bit N64 ABI. No structure size or calling convention changes.
   `OSIntMask` newlib typedef conflict documented above.
 - Run `35459089023`: the scoped header shim passed the M5 ARM11 object gate and
   the complete `.3dsx`, `.3ds`, and `.cia` packaging workflow.
+- Run `35473434192` (#57): `src/main_pre.c` passed through the complete
+  `common.h` dependency graph, followed by successful `.3dsx`, `.3ds`, and
+  `.cia` packaging.
+
+## Compile slices
+
+- Foundation: `src/port/decode_yay0.c` and `src/port/libc_compat.c`.
+- Game core: `src/main_pre.c`, the first unit through PaperBoat's full
+  `common.h` graph. This expands the gate from isolated port helpers to actual
+  game-state code without linking desktop backends into the 3DS shell.
