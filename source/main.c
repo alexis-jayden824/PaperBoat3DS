@@ -1,10 +1,12 @@
 #include <3ds.h>
 #include <stdio.h>
 
+
 #include "pb3ds/compat.h"
 #include "pb3ds/diagnostics.h"
 #include "pb3ds/log.h"
 #include "pb3ds/version.h"
+
 
 typedef enum {
     LIFECYCLE_ACTIVE,
@@ -13,6 +15,7 @@ typedef enum {
     LIFECYCLE_EXITING,
 } LifecycleState;
 
+
 typedef struct {
     bool model_query_ok;
     bool is_new_3ds;
@@ -20,6 +23,7 @@ typedef struct {
     volatile LifecycleState lifecycle;
     volatile bool redraw_bottom;
 } BootstrapState;
+
 
 static const char *lifecycle_name(LifecycleState state) {
     switch (state) {
@@ -35,8 +39,10 @@ static const char *lifecycle_name(LifecycleState state) {
     }
 }
 
+
 static void apt_hook(APT_HookType hook, void *param) {
     BootstrapState *state = (BootstrapState *)param;
+
 
     switch (hook) {
         case APTHOOK_ONSUSPEND:
@@ -56,8 +62,10 @@ static void apt_hook(APT_HookType hook, void *param) {
             return;
     }
 
+
     state->redraw_bottom = true;
 }
+
 
 static void print_top_screen(PrintConsole *console) {
     consoleSelect(console);
@@ -71,12 +79,13 @@ static void print_top_screen(PrintConsole *console) {
     printf("\x1b[14;2HPress START to exit.\n");
 }
 
+
 static void print_bottom_screen(PrintConsole *console, const BootstrapState *state,
                                 const PBLog *log, const PBConfig *config,
                                 bool archive_available, PBMemorySnapshot memory) {
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[2;2HM5 ARM11 Core Gate\n");
+    printf("\x1b[2;2HM5 ARM11 Core Complete\n");
     printf("\x1b[4;2HGFX displays      OK\n");
     printf("\x1b[5;2HAPT lifecycle    OK\n");
     printf("\x1b[6;2HHID input        OK\n");
@@ -98,9 +107,11 @@ static void print_bottom_screen(PrintConsole *console, const BootstrapState *sta
     printf("\x1b[19;2HArchive: %s\n", archive_available ? "FOUND" : "not installed");
 }
 
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
+
 
     BootstrapState state = {
         .model_query_ok = false,
@@ -116,12 +127,15 @@ int main(int argc, char **argv) {
     PBConfig config;
     PBArchive archive;
 
+
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
+
 
     gfxInitDefault();
     consoleInit(GFX_TOP, &top_console);
     consoleInit(GFX_BOTTOM, &bottom_console);
     aptHook(&apt_cookie, apt_hook, &state);
+
 
     (void)pb_log_init(&log);
     pb_config_init(&config);
@@ -153,6 +167,7 @@ int main(int argc, char **argv) {
     print_bottom_screen(&bottom_console, &state, &log, &config,
                         archive_available, memory);
 
+
     while (aptMainLoop()) {
         hidScanInput();
         if ((hidKeysDown() & KEY_START) != 0) {
@@ -170,6 +185,7 @@ int main(int argc, char **argv) {
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
+
 
     memory = pb_memory_snapshot();
     pb_log_write(&log, PB_LOG_INFO, "shutdown",
