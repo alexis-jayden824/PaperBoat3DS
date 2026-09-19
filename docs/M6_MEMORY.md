@@ -20,8 +20,10 @@ engineering guardrails, not claims about final gameplay usage.
 `PBMemoryMonitor` records initial and current application/linear free space,
 peak deltas, stack distance from the startup anchor, live and peak usage for
 each allocation class, rejected/failed allocations, and a memory-pressure
-flag. Folium's known zero application-free result is treated as unavailable;
-linear, stack, class, and CI telemetry remain active.
+flag. Pressure is sticky for the process lifetime so a recovered reserve breach
+or failed allocation remains visible in the shutdown log. Folium's known zero
+application-free result is treated as unavailable; linear, stack, class, and
+CI telemetry remain active.
 
 All future scene, archive-cache, transient, and linear allocations must use
 `pb_memory_alloc`/`pb_memory_free` or reserve the same class through an
@@ -40,6 +42,12 @@ when either threshold is exceeded:
 The report is uploaded as `build/memory-budget.txt` beside every build. These
 ceilings can be tightened as more game code is linked; they prevent accidental
 large static caches or embedded assets now.
+
+`make m6-policy-test` also compiles the allocator against a host-side libctru
+mock and executes deterministic checks for class limits, integer-overflow and
+invalid-class rejection, reserve boundaries, allocation accounting, sticky
+pressure, stack warnings, and Folium's unavailable application-memory reading.
+The Nintendo 3DS CI build cannot package artifacts unless this suite passes.
 
 ## Hardware evidence still required
 
