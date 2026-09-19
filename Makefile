@@ -19,13 +19,18 @@ APP_TITLE       := PaperBoat3DS
 APP_DESCRIPTION := PaperBoat native-port bootstrap
 APP_AUTHOR      := PaperBoat3DS contributors
 
+PB3DS_BUILD_SHA ?= unknown
+PB3DS_BUILD_UTC ?= unknown
+
 PACKAGING_RSF   := packaging/PaperBoat3DS.rsf
 MAKEROM         ?= makerom
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
-            -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__
+            -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
+            -DPB3DS_BUILD_SHA=\"$(PB3DS_BUILD_SHA)\" \
+            -DPB3DS_BUILD_UTC=\"$(PB3DS_BUILD_UTC)\"
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
