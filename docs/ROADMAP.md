@@ -34,6 +34,12 @@ Create the smallest 3DS-aware libultraship layer: configuration, archives, resou
 ### M5 - ARM11 game-core compilation
 Cross-compile PaperBoat's game core and generated code for ARM11. Eliminate unsupported compiler, ABI, threading, filesystem, and endian assumptions.
 
+Current implementation step: CI fetches PaperBoat, libultraship, and Torch at
+the commits in `upstream/PAPERBOAT.lock`, then cross-compiles a small upstream C
+slice as an ARM11 object-only gate. M5 remains in progress until representative
+game-core and generated units pass and their required compatibility shims are
+documented.
+
 ### M6 - Memory strategy
 Measure static, linear, heap, stack, archive, and scene costs on Old 3DS. Introduce budgets, bounded caches, streaming, and allocation-failure behavior.
 
