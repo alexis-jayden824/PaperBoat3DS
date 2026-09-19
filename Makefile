@@ -2,13 +2,19 @@
 .SUFFIXES:
 
 
+
+
 ifeq ($(strip $(DEVKITARM)),)
 $(error "DEVKITARM is not set. Install devkitPro's 3ds-dev toolchain and export DEVKITARM")
 endif
 
 
+
+
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
+
+
 
 
 TARGET          := PaperBoat3DS
@@ -19,13 +25,19 @@ INCLUDES        := include
 ROMFS           := romfs
 
 
+
+
 APP_TITLE       := PaperBoat3DS
 APP_DESCRIPTION := PaperBoat native-port bootstrap
 APP_AUTHOR      := PaperBoat3DS contributors
 
 
+
+
 PB3DS_BUILD_SHA ?= unknown
 PB3DS_BUILD_UTC ?= unknown
+
+
 
 
 PACKAGING_RSF   := packaging/PaperBoat3DS.rsf
@@ -54,6 +66,8 @@ M5_GAME_CFLAGS  := $(ARCH) -mword-relocations -ffunction-sections -fdata-section
 	-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 
 
+
+
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
@@ -66,7 +80,11 @@ LIBS     := -lcitro2d -lcitro3d -lctru -lm
 LIBDIRS  := $(CTRULIB)
 
 
+
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
+
+
 
 
 export OUTPUT  := $(CURDIR)/$(TARGET)
@@ -76,10 +94,14 @@ export VPATH   := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
 
+
+
 CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+
+
 
 
 ifeq ($(strip $(CPPFILES)),)
@@ -87,6 +109,8 @@ export LD := $(CC)
 else
 export LD := $(CXX)
 endif
+
+
 
 
 export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
@@ -101,11 +125,22 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 
-.PHONY: all packages fetch-upstream m5-core-check clean
+
+
+.PHONY: all packages fetch-upstream m5-core-check m6-budget-check clean
+
+
 
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+m6-budget-check: all
+	@SIZE="$(DEVKITARM)/bin/arm-none-eabi-size" \
+		sh tools/check_memory_budget.sh "$(TARGET).elf" \
+		"$(BUILD)/memory-budget.txt"
+
+
 
 
 packages: all
@@ -120,8 +155,12 @@ packages: all
 		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
 
 
+
+
 fetch-upstream:
 	@sh tools/fetch_upstream.sh "$(UPSTREAM_ROOT)"
+
+
 
 
 m5-core-check: fetch-upstream
@@ -150,8 +189,12 @@ m5-core-check: fetch-upstream
 	@test -s "$(M5_BUILD)/libc_compat.o"
 
 
+
+
 $(BUILD):
 	@mkdir -p $@
+
+
 
 
 clean:
@@ -160,7 +203,11 @@ clean:
 		$(TARGET)-stripped.elf $(TARGET).smdh $(TARGET).elf $(TARGET).map
 
 
+
+
 else
+
+
 
 
 $(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS)
@@ -168,12 +215,18 @@ $(OFILES_SOURCES): $(HFILES)
 $(OUTPUT).elf: $(OFILES)
 
 
+
+
 %.bin.o %_bin.h: %.bin
 	@echo $(notdir $<)
 	@$(bin2o)
 
 
+
+
 -include $(DEPSDIR)/*.d
+
+
 
 
 endif
