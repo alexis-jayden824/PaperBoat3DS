@@ -46,3 +46,9 @@ Record the following when reporting a result:
 
 M1 is complete only after this test passes on real hardware. Emulator results
 may supplement the report but do not replace hardware authority.
+
+Pending hardware profile supplied by the project owner:
+
+- Model: New Nintendo 3DS LL, region-converted/modded and functionally treated
+  as a New Nintendo 3DS XL
+- Status: console not currently available; M1 hardware validation remains pending
