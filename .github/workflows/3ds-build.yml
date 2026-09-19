@@ -26,7 +26,10 @@ jobs:
           make --version
 
       - name: Build 3DSX
-        run: make -j2
+        run: |
+          make -j2 \
+            PB3DS_BUILD_SHA="$GITHUB_SHA" \
+            PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Build pinned makerom
         env:
