@@ -23,3 +23,5 @@ intended 32-bit N64 ABI. No structure size or calling convention changes.
   libultraship include root.
 - Run `35458920570`: include discovery succeeded; compilation exposed the
   `OSIntMask` newlib typedef conflict documented above.
+- Run `35459089023`: the scoped header shim passed the M5 ARM11 object gate and
+  the complete `.3dsx`, `.3ds`, and `.cia` packaging workflow.
