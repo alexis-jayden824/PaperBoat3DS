@@ -1,5 +1,6 @@
 # devkitPro / Nintendo 3DS outputs
 build/
+.cache/
 *.3dsx
 *.elf
 *.smdh
@@ -19,4 +20,3 @@ sdmc/
 Thumbs.db
 .vscode/
 .idea/
-
