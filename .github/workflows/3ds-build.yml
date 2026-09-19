@@ -28,10 +28,15 @@ jobs:
       - name: Build 3DSX
         run: make -j2
 
+      - name: Build emulator and installable packages
+        run: make packages
+
       - name: Verify expected outputs
         run: |
           test -s PaperBoat3DS.elf
           test -s PaperBoat3DS.3dsx
+          test -s PaperBoat3DS.3ds
+          test -s PaperBoat3DS.cia
 
       - name: Upload build outputs
         uses: actions/upload-artifact@v6
@@ -41,4 +46,6 @@ jobs:
           path: |
             PaperBoat3DS.elf
             PaperBoat3DS.3dsx
+            PaperBoat3DS.3ds
+            PaperBoat3DS.cia
           retention-days: 14
