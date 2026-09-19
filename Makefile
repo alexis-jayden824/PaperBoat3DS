@@ -97,7 +97,8 @@ m5-core-check: fetch-upstream
 		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
 		-O2 -std=gnu11 -Wall -Wextra -Werror -D__3DS__ \
 		-D_LANGUAGE_C -DPORT -DMODERN_COMPILER \
-		-I"$(PAPERBOAT_ROOT)/include"
+		-I"$(PAPERBOAT_ROOT)/include" \
+		-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 	@$(CC) -c "$(PAPERBOAT_ROOT)/src/port/libc_compat.c" \
 		-o "$(M5_BUILD)/libc_compat.o" \
 		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
