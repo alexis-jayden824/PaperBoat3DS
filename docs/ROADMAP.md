@@ -2,7 +2,10 @@
 
 ## Binding technical direction
 
-- Output `.3dsx` first; packaging beyond homebrew is deferred.
+- Output `.3dsx` first as the canonical hardware/homebrew target. Also produce a
+  `.3ds` package from the same ELF as a secondary Folium/emulator QA target once
+  its makerom configuration is reproducible in CI. The formats must not fork the
+  runtime codebase or change gameplay behavior.
 - Old Nintendo 3DS is the baseline. New Nintendo 3DS optimizations stay isolated.
 - Gameplay renders at 400x240 on the top screen without stereoscopic 3D initially.
 - The 320x240 bottom screen becomes a touch-friendly PaperBoat configuration menu sharing the desktop configuration API.
@@ -18,7 +21,7 @@
 Pin the platform contract, repository policy, devkitARM Makefile, required libraries, output format, and reproducible build instructions. Acceptance: the bootstrap compiles to `.3dsx` in a real devkitARM environment.
 
 ### M1 - Native application bootstrap
-Boot a minimal ARM11 application, initialize services/screens, show diagnostics on both displays, and exit cleanly. Acceptance: verified on emulator as a convenience and on real hardware as authority.
+Boot a minimal ARM11 application, initialize services/screens, show diagnostics on both displays, and exit cleanly. Add reproducible `.3ds` packaging for emulator QA without replacing the `.3dsx`. Acceptance: `.3ds` verification in Folium is supporting evidence; a `.3dsx` test on real hardware remains the authority.
 
 ### M2 - Diagnostics foundation
 Add structured logging, fatal-error presentation, toolchain/build metadata, memory counters, and an SDMC log sink with graceful failure.
@@ -57,7 +60,7 @@ Reach title/file-select, validate transitions and input, and document remaining 
 Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.
 
 ### M14 - ndsp audio backend
-Implement initialization, mixing, streaming, buffering, sample conversion, latency control, suspend/resume, and clean shutdown.
+Implement initialization, mixing, streaming, buffering, sample conversion, latency control, suspend/resume, and clean shutdown. Validate Folium with its required DSP firmware as a secondary check, while treating real-hardware ndsp results as authoritative.
 
 ### M15 - Saves and configuration persistence
 Use an explicit SDMC layout, atomic writes, validation, recovery, versioning, and migration. Never overwrite desktop data implicitly.
@@ -88,4 +91,3 @@ Run clean builds, asset-pipeline tests, playthrough coverage, suspend/resume, sa
 
 ### M24 - Reproducible release
 Tag a source-only release with build instructions, checksums, licenses/notices, compatibility notes, and no copyrighted game data.
-
