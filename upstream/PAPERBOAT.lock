@@ -1,0 +1,15 @@
+# Immutable upstream inputs for the Nintendo 3DS port.
+# Update only through an explicit roadmap decision and repeat the M3 audit.
+
+PAPERBOAT_REPOSITORY=https://github.com/HarbourMasters/PaperBoat.git
+PAPERBOAT_RELEASE=1.0.1
+PAPERBOAT_COMMIT=424c220f0863c29b9fe55cc674baceff88e9e14f
+PAPERBOAT_LICENSE=CC0-1.0
+
+LIBULTRASHIP_REPOSITORY=https://github.com/JeodC/libultraship.git
+LIBULTRASHIP_COMMIT=7aa03b6c830b059e3ddd6ad20d3f289c5f406161
+LIBULTRASHIP_LICENSE=MIT
+
+TORCH_REPOSITORY=https://github.com/JeodC/Torch-LH.git
+TORCH_COMMIT=106f4e3056f07fe3a8758bb14a060f8423b6877f
+TORCH_LICENSE=MIT
