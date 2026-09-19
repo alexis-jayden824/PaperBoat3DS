@@ -76,7 +76,7 @@ static void print_bottom_screen(PrintConsole *console, const BootstrapState *sta
                                 bool archive_available, PBMemorySnapshot memory) {
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[2;2HM4 Compatibility Core\n");
+    printf("\x1b[2;2HM5 ARM11 Core Gate\n");
     printf("\x1b[4;2HGFX displays      OK\n");
     printf("\x1b[5;2HAPT lifecycle    OK\n");
     printf("\x1b[6;2HHID input        OK\n");
@@ -84,8 +84,12 @@ static void print_bottom_screen(PrintConsole *console, const BootstrapState *sta
            state->model_query_ok ? (state->is_new_3ds ? "New 3DS" : "Old 3DS") : "unknown");
     printf("\x1b[9;2HKernel: %08lX\n", (unsigned long)state->kernel_version);
     printf("\x1b[11;2HLifecycle: %-10s\n", lifecycle_name(state->lifecycle));
-    printf("\x1b[13;2HApp free:    %6lu KiB\n",
-           (unsigned long)(memory.application_free / 1024));
+    if (memory.application_free == 0) {
+        printf("\x1b[13;2HApp free: unavailable\n");
+    } else {
+        printf("\x1b[13;2HApp free:    %6lu KiB\n",
+               (unsigned long)(memory.application_free / 1024));
+    }
     printf("\x1b[14;2HLinear free: %6lu KiB\n",
            (unsigned long)(memory.linear_free / 1024));
     printf("\x1b[16;2HSD log: %s\n",
