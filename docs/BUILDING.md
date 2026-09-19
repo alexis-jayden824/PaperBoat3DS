@@ -2,7 +2,9 @@
 
 ## Current scope
 
-This branch contains an M0 bootstrap target, not a playable PaperBoat port. A successful package build proves that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+This branch contains the native application shell and the first M5 compilation
+gate; it is not yet a playable PaperBoat port. A successful package build proves
+that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -12,6 +14,28 @@ This branch contains an M0 bootstrap target, not a playable PaperBoat port. A su
 - GNU Make
 
 The Makefile is derived from the maintained `devkitPro/3ds-examples` structure rather than a desktop CMake target.
+
+## Pinned upstream sources
+
+PaperBoat, libultraship, and Torch are fetched at the immutable commits recorded
+in `upstream/PAPERBOAT.lock`. They are stored under `.cache/upstream` and are not
+vendored into this repository.
+
+```sh
+make fetch-upstream
+```
+
+The fetch is safe to repeat. It verifies that each checkout resolves to the
+locked commit and fails rather than silently building a moving branch.
+
+Cross-compile the current M5 upstream source slice without linking it into the
+application shell:
+
+```sh
+make m5-core-check
+```
+
+CI runs both operations on every branch build.
 
 ## Build
 
