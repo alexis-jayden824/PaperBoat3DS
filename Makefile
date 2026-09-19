@@ -117,7 +117,8 @@ m5-core-check: fetch-upstream
 	@$(CC) -c "$(PAPERBOAT_ROOT)/src/43F0.c" \
 		-o "$(M5_BUILD)/43F0.o" \
 		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
-		-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-error -D__3DS__ \
+		-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-error \
+		-Wno-implicit-function-declaration -D__3DS__ \
 		-D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
 		-DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
 		-I"$(CURDIR)/include" \
