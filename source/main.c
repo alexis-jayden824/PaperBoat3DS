@@ -36,17 +36,17 @@ static void apt_hook(APT_HookType hook, void *param) {
     BootstrapState *state = (BootstrapState *)param;
 
     switch (hook) {
-        case APHOOK_ONSUSPEND:
+        case APTHOOK_ONSUSPEND:
             state->lifecycle = LIFECYCLE_SUSPENDED;
             break;
-        case APHOOK_ONSLEEP:
+        case APTHOOK_ONSLEEP:
             state->lifecycle = LIFECYCLE_SLEEPING;
             break;
-        case APHOOK_ONRESTORE:
-        case APHOOK_ONWAKEUP:
+        case APTHOOK_ONRESTORE:
+        case APTHOOK_ONWAKEUP:
             state->lifecycle = LIFECYCLE_ACTIVE;
             break;
-        case APHOOK_ONEXIT:
+        case APTHOOK_ONEXIT:
             state->lifecycle = LIFECYCLE_EXITING;
             break;
         default:
