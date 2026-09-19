@@ -2,10 +2,9 @@
 
 ## Binding technical direction
 
-- Output `.3dsx` first as the canonical hardware/homebrew target. Also produce a
-  `.3ds` package from the same ELF as a secondary Folium/emulator QA target once
-  its makerom configuration is reproducible in CI. The formats must not fork the
-  runtime codebase or change gameplay behavior.
+- Output `.3dsx` as the canonical Homebrew Launcher target. Produce `.3ds` for
+  Folium/emulator QA and `.cia` as an optional CFW-installable target from the
+  same ELF. Packaging must not fork the runtime or change gameplay behavior.
 - Old Nintendo 3DS is the baseline. New Nintendo 3DS optimizations stay isolated.
 - Gameplay renders at 400x240 on the top screen without stereoscopic 3D initially.
 - The 320x240 bottom screen becomes a touch-friendly PaperBoat configuration menu sharing the desktop configuration API.
@@ -18,10 +17,10 @@
 ## Milestones
 
 ### M0 - Toolchain contract
-Pin the platform contract, repository policy, devkitARM Makefile, required libraries, output format, and reproducible build instructions. Acceptance: the bootstrap compiles to `.3dsx` in a real devkitARM environment.
+Pin the platform contract, repository policy, devkitARM Makefile, required libraries, output formats, and reproducible build instructions. Acceptance: the same bootstrap ELF packages successfully as `.3dsx`, `.3ds`, and `.cia` in a real devkitARM environment.
 
 ### M1 - Native application bootstrap
-Boot a minimal ARM11 application, initialize services/screens, show diagnostics on both displays, and exit cleanly. Add reproducible `.3ds` packaging for emulator QA without replacing the `.3dsx`. Acceptance: `.3ds` verification in Folium is supporting evidence; a `.3dsx` test on real hardware remains the authority.
+Boot a minimal ARM11 application, initialize services/screens, show diagnostics on both displays, and exit cleanly. Acceptance: test `.3ds` in Folium and optionally test `.cia` under CFW; a `.3dsx` test on real hardware remains the authority.
 
 ### M2 - Diagnostics foundation
 Add structured logging, fatal-error presentation, toolchain/build metadata, memory counters, and an SDMC log sink with graceful failure.
