@@ -17,8 +17,7 @@ static bool add_would_overflow(size_t left, size_t right) {
 }
 
 static bool memory_class_is_valid(PBMemoryClass memory_class) {
-    return memory_class >= PB_MEMORY_ARCHIVE &&
-           memory_class < PB_MEMORY_CLASS_COUNT;
+    return (unsigned int)memory_class < (unsigned int)PB_MEMORY_CLASS_COUNT;
 }
 
 size_t pb_memory_class_limit(PBMemoryClass memory_class) {
