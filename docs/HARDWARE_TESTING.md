@@ -52,3 +52,22 @@ Pending hardware profile supplied by the project owner:
 - Model: New Nintendo 3DS LL, region-converted/modded and functionally treated
   as a New Nintendo 3DS XL
 - Status: console not currently available; M1 hardware validation remains pending
+
+## M6 memory checkpoint
+
+Use the newest passing `port/3ds` artifact marked `0.6.0-m6`. The `.3dsx`
+build is authoritative; `.cia` may be checked additionally under CFW.
+
+1. Cold-boot the application without a `paperboat.o2r` archive installed.
+2. Leave the application idle for 30 seconds.
+3. Close the lid for at least five seconds, reopen it, and confirm the lifecycle
+   returns to `active`.
+4. Photograph the bottom screen, then press START to exit normally.
+5. Preserve `/3ds/PaperBoat3DS/PaperBoat3DS.log` before another run appends to
+   it.
+
+Report the build SHA, console model, system version, launch method, photo, and
+complete log. The shutdown record must include application/linear free space,
+peak application/linear/stack usage, zero allocation failures, and
+`pressure=no`. A New 3DS XL/LL result is useful secondary evidence; an Old 3DS
+result remains required to calibrate and formally close the milestone.
