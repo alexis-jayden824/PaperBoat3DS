@@ -37,6 +37,9 @@ jobs:
             PB3DS_BUILD_SHA="$GITHUB_SHA" \
             PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+      - name: Enforce M6 static memory budgets
+        run: make m6-budget-check
+
       - name: Build pinned makerom
         env:
           MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
@@ -68,4 +71,5 @@ jobs:
             PaperBoat3DS.3dsx
             PaperBoat3DS.3ds
             PaperBoat3DS.cia
+            build/memory-budget.txt
           retention-days: 14
