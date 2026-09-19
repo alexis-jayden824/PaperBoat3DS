@@ -1,6 +1,8 @@
 #include <3ds.h>
 #include <stdio.h>
 
+#include "pb3ds/diagnostics.h"
+#include "pb3ds/log.h"
 #include "pb3ds/version.h"
 
 typedef enum {
@@ -62,15 +64,17 @@ static void print_top_screen(PrintConsole *console) {
     printf("\x1b[2;2H%s\n", PB3DS_PROJECT_NAME);
     printf("\x1b[4;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[5;2HStage:   %s\n", PB3DS_ROADMAP_STAGE);
-    printf("\x1b[8;2HNative ARM11 application shell\n");
-    printf("\x1b[10;2HNo game assets are bundled.\n");
-    printf("\x1b[13;2HPress START to exit.\n");
+    printf("\x1b[7;2HBuild:   %.12s\n", PB3DS_BUILD_SHA);
+    printf("\x1b[9;2HNative ARM11 application shell\n");
+    printf("\x1b[11;2HNo game assets are bundled.\n");
+    printf("\x1b[14;2HPress START to exit.\n");
 }
 
-static void print_bottom_screen(PrintConsole *console, const BootstrapState *state) {
+static void print_bottom_screen(PrintConsole *console, const BootstrapState *state,
+                                const PBLog *log, PBMemorySnapshot memory) {
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[2;2HM1 Service Diagnostics\n");
+    printf("\x1b[2;2HM2 Diagnostics\n");
     printf("\x1b[4;2HGFX displays      OK\n");
     printf("\x1b[5;2HAPT lifecycle    OK\n");
     printf("\x1b[6;2HHID input        OK\n");
@@ -78,7 +82,12 @@ static void print_bottom_screen(PrintConsole *console, const BootstrapState *sta
            state->model_query_ok ? (state->is_new_3ds ? "New 3DS" : "Old 3DS") : "unknown");
     printf("\x1b[9;2HKernel: %08lX\n", (unsigned long)state->kernel_version);
     printf("\x1b[11;2HLifecycle: %-10s\n", lifecycle_name(state->lifecycle));
-    printf("\x1b[14;2HConfiguration UI remains M16.\n");
+    printf("\x1b[13;2HApp free:    %6lu KiB\n",
+           (unsigned long)(memory.application_free / 1024));
+    printf("\x1b[14;2HLinear free: %6lu KiB\n",
+           (unsigned long)(memory.linear_free / 1024));
+    printf("\x1b[16;2HSD log: %s\n",
+           pb_log_is_persistent(log) ? "ACTIVE" : "unavailable (continuing)");
 }
 
 int main(int argc, char **argv) {
@@ -95,6 +104,7 @@ int main(int argc, char **argv) {
     aptHookCookie apt_cookie;
     PrintConsole top_console;
     PrintConsole bottom_console;
+    PBLog log;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
 
@@ -103,8 +113,22 @@ int main(int argc, char **argv) {
     consoleInit(GFX_BOTTOM, &bottom_console);
     aptHook(&apt_cookie, apt_hook, &state);
 
+    (void)pb_log_init(&log);
+    PBMemorySnapshot memory = pb_memory_snapshot();
+    pb_log_write(&log, PB_LOG_INFO, "bootstrap",
+                 "version=%s stage=\"%s\" build_sha=%s build_utc=%s",
+                 PB3DS_VERSION, PB3DS_ROADMAP_STAGE, PB3DS_BUILD_SHA,
+                 PB3DS_BUILD_UTC);
+    pb_log_write(&log, PB_LOG_INFO, "platform",
+                 "model=%s kernel=%08lX",
+                 state.model_query_ok ? (state.is_new_3ds ? "new3ds" : "old3ds") : "unknown",
+                 (unsigned long)state.kernel_version);
+    pb_log_write(&log, PB_LOG_INFO, "memory",
+                 "application_free=%lu linear_free=%lu",
+                 (unsigned long)memory.application_free,
+                 (unsigned long)memory.linear_free);
     print_top_screen(&top_console);
-    print_bottom_screen(&bottom_console, &state);
+    print_bottom_screen(&bottom_console, &state, &log, memory);
 
     while (aptMainLoop()) {
         hidScanInput();
@@ -113,13 +137,22 @@ int main(int argc, char **argv) {
         }
         if (state.redraw_bottom) {
             state.redraw_bottom = false;
-            print_bottom_screen(&bottom_console, &state);
+            pb_log_write(&log, PB_LOG_INFO, "lifecycle", "state=%s",
+                         lifecycle_name(state.lifecycle));
+            memory = pb_memory_snapshot();
+            print_bottom_screen(&bottom_console, &state, &log, memory);
         }
         gfxFlushBuffers();
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
 
+    memory = pb_memory_snapshot();
+    pb_log_write(&log, PB_LOG_INFO, "shutdown",
+                 "application_free=%lu linear_free=%lu",
+                 (unsigned long)memory.application_free,
+                 (unsigned long)memory.linear_free);
+    pb_log_close(&log);
     aptUnhook(&apt_cookie);
     gfxExit();
     return 0;
