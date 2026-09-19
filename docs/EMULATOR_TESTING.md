@@ -4,11 +4,14 @@
 
 - `PaperBoat3DS.3dsx` is the canonical Homebrew Launcher and hardware artifact.
 - `PaperBoat3DS.3ds` is a secondary emulator QA artifact built from the same ELF.
-- `.cia` is not a current project target.
+- `PaperBoat3DS.cia` is an optional CFW-installable QA artifact built from the same ELF.
 
 The `.3ds` variant exists because the Folium iOS frontend does not directly
 import `.3dsx` files. It must remain a packaging difference only: source,
 features, configuration, save formats, and platform behavior stay shared.
+
+The `.cia` target is for controlled CFW testing. Installing a CIA modifies the
+console's title database, so it is never required when `.3dsx` is sufficient.
 
 ## Confirmed Folium observations
 
