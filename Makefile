@@ -25,6 +25,9 @@ PB3DS_BUILD_UTC ?= unknown
 PACKAGING_RSF   := packaging/PaperBoat3DS.rsf
 MAKEROM         ?= makerom
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
+UPSTREAM_ROOT   ?= $(CURDIR)/.cache/upstream
+PAPERBOAT_ROOT  := $(UPSTREAM_ROOT)/PaperBoat
+M5_BUILD        := $(CURDIR)/build/m5-core
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
@@ -67,7 +70,7 @@ export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
-.PHONY: all packages clean
+.PHONY: all packages fetch-upstream m5-core-check clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -82,6 +85,25 @@ packages: all
 	@echo building $(TARGET).cia
 	@$(MAKEROM) -f cia -o $(TARGET).cia -rsf $(PACKAGING_RSF) -target t \
 		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
+
+fetch-upstream:
+	@sh tools/fetch_upstream.sh "$(UPSTREAM_ROOT)"
+
+m5-core-check: fetch-upstream
+	@mkdir -p "$(M5_BUILD)"
+	@echo cross-compiling pinned PaperBoat M5 core slice
+	@$(CC) -c "$(PAPERBOAT_ROOT)/src/port/decode_yay0.c" \
+		-o "$(M5_BUILD)/decode_yay0.o" \
+		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
+		-O2 -std=gnu11 -Wall -Wextra -Werror -D__3DS__ \
+		-D_LANGUAGE_C -DPORT -DMODERN_COMPILER \
+		-I"$(PAPERBOAT_ROOT)/include"
+	@$(CC) -c "$(PAPERBOAT_ROOT)/src/port/libc_compat.c" \
+		-o "$(M5_BUILD)/libc_compat.o" \
+		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
+		-O2 -std=gnu11 -Wall -Wextra -Werror -D__3DS__
+	@test -s "$(M5_BUILD)/decode_yay0.o"
+	@test -s "$(M5_BUILD)/libc_compat.o"
 
 $(BUILD):
 	@mkdir -p $@
