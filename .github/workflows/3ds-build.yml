@@ -28,8 +28,19 @@ jobs:
       - name: Build 3DSX
         run: make -j2
 
+      - name: Build pinned makerom
+        env:
+          MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
+        run: |
+          git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
+          git -C "$RUNNER_TEMP/Project_CTR" checkout "$MAKEROM_COMMIT"
+          make -C "$RUNNER_TEMP/Project_CTR/makerom" deps
+          make -C "$RUNNER_TEMP/Project_CTR/makerom" -j2
+          mkdir -p "$GITHUB_WORKSPACE/.tools"
+          install -m 0755 "$RUNNER_TEMP/Project_CTR/makerom/bin/makerom" "$GITHUB_WORKSPACE/.tools/makerom"
+
       - name: Build emulator and installable packages
-        run: make packages
+        run: make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" packages
 
       - name: Verify expected outputs
         run: |
