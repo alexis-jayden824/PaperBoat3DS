@@ -19,6 +19,10 @@ APP_TITLE       := PaperBoat3DS
 APP_DESCRIPTION := PaperBoat native-port bootstrap
 APP_AUTHOR      := PaperBoat3DS contributors
 
+PACKAGING_RSF   := packaging/PaperBoat3DS.rsf
+MAKEROM         ?= makerom
+STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
+
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__
@@ -58,17 +62,29 @@ export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
-.PHONY: all clean
+.PHONY: all packages clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+packages: all
+	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
+	@echo stripping $(TARGET).elf
+	@$(STRIP) -o $(TARGET)-stripped.elf $(TARGET).elf
+	@echo building $(TARGET).3ds
+	@$(MAKEROM) -f cci -o $(TARGET).3ds -rsf $(PACKAGING_RSF) -target t \
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
+	@echo building $(TARGET).cia
+	@$(MAKEROM) -f cia -o $(TARGET).cia -rsf $(PACKAGING_RSF) -target t \
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
 
 $(BUILD):
 	@mkdir -p $@
 
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).smdh $(TARGET).elf $(TARGET).map
+	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).3ds $(TARGET).cia \
+		$(TARGET)-stripped.elf $(TARGET).smdh $(TARGET).elf $(TARGET).map
 
 else
 
@@ -83,4 +99,3 @@ $(OUTPUT).elf: $(OFILES)
 -include $(DEPSDIR)/*.d
 
 endif
-
