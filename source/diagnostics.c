@@ -3,10 +3,10 @@
 #include <stdio.h>
 
 PBMemorySnapshot pb_memory_snapshot(void) {
-    PBMemorySnapshot snapshot = {
-        .application_free = osGetMemRegionFree(MEMREGION_APPLICATION),
-        .linear_free = linearSpaceFree(),
-    };
+    PBMemorySnapshot snapshot = {0};
+    snapshot.application_free = osGetMemRegionFree(MEMREGION_APPLICATION);
+    snapshot.linear_free = linearSpaceFree();
+    snapshot.application_measurement_available = snapshot.application_free != 0;
     return snapshot;
 }
 
