@@ -8,13 +8,13 @@ load Paper Mario or PaperBoat assets, and no game files are required.
 Reference build:
 
 - Branch: `port/3ds`
-- Commit: `25cd3cd2dba14192c049cbeb6d42dd2839f227e2`
-- Workflow: Nintendo 3DS build run 4
+- Commit: `662488b4ac72381c27ea8ff312cba42b9acb20cc`
+- Workflow: Nintendo 3DS build run `35456778305`
 - Toolchain: devkitARM 16.1.0
 
 ## Install
 
-1. Download the `PaperBoat3DS-25cd3cd...` artifact from workflow run 4.
+1. Download the `PaperBoat3DS-662488b...` artifact from workflow run `35456778305`.
 2. Extract `PaperBoat3DS.3dsx` from the artifact.
 3. Create `/3ds/PaperBoat3DS/` on the 3DS SD card.
 4. Copy the file to `/3ds/PaperBoat3DS/PaperBoat3DS.3dsx`.
@@ -22,10 +22,13 @@ Reference build:
 
 ## Expected result
 
-- The top display shows `PaperBoat3DS`, version `0.0.1-m0`, the M0 toolchain
+- The top display shows `PaperBoat3DS`, version `0.1.0-m1`, the M1 native-app
   stage, and the legal-assets notice.
-- The bottom display shows the reserved PaperBoat configuration area and notes
-  that the touch menu and physical menu keybind are deferred.
+- The bottom display shows `M1 Service Diagnostics`, reports GFX, APT, and HID
+  as `OK`, identifies the console family, prints the kernel version, and shows
+  the lifecycle as `active`.
+- Closing and reopening the lid returns the lifecycle display to `active`
+  without a crash or frozen display.
 - Pressing START returns cleanly to the Homebrew Launcher.
 - The application does not crash, hang, display an exception screen, or require
   copyrighted assets.
