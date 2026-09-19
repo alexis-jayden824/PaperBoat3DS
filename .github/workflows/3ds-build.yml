@@ -25,6 +25,9 @@ jobs:
           "$DEVKITARM/bin/arm-none-eabi-gcc" --version
           make --version
 
+      - name: Test M6 memory policy
+        run: make m6-policy-test
+
       - name: Fetch pinned upstream sources
         run: sh tools/fetch_upstream.sh
 
