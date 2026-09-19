@@ -5,9 +5,12 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "pb3ds/memory.h"
+
 #define PB_CONFIG_MAX_ENTRIES 24
 #define PB_CONFIG_KEY_CAPACITY 40
 #define PB_CONFIG_VALUE_CAPACITY 96
+#define PB_ARCHIVE_MAX_READ PB_ARCHIVE_STREAM_CHUNK
 
 typedef struct {
     char key[PB_CONFIG_KEY_CAPACITY];
