@@ -46,9 +46,9 @@ validation continue in M6 and M7 rather than being hidden inside this gate.
 Measure static, linear, heap, stack, archive, and scene costs on Old 3DS. Introduce budgets, bounded caches, streaming, and allocation-failure behavior.
 
 Status: **in progress**. Runtime peak/failure telemetry, allocation-class
-budgets, bounded 64 KiB archive reads, and CI ELF-size enforcement are in
-place. Final calibration requires real-hardware logs; see
-`docs/M6_MEMORY.md`.
+budgets, bounded 64 KiB archive reads, deterministic policy tests, and CI
+ELF-size enforcement are in place. Final calibration requires real-hardware
+logs; see `docs/M6_MEMORY.md`.
 
 ### M7 - Legal PC-side asset pipeline
 Provide a separate PC workflow using Torch to produce required `.o2r` archives from a legally obtained copy. Validate hashes/formats without distributing copyrighted content.
