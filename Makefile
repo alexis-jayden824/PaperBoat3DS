@@ -114,9 +114,20 @@ m5-core-check: fetch-upstream
 		-I"$(PAPERBOAT_ROOT)/include" \
 		-I"$(PAPERBOAT_ROOT)/src" \
 		-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
+	@$(CC) -c "$(PAPERBOAT_ROOT)/src/43F0.c" \
+		-o "$(M5_BUILD)/43F0.o" \
+		$(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
+		-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-error -D__3DS__ \
+		-D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
+		-DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
+		-I"$(CURDIR)/include" \
+		-I"$(PAPERBOAT_ROOT)/include" \
+		-I"$(PAPERBOAT_ROOT)/src" \
+		-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 	@test -s "$(M5_BUILD)/decode_yay0.o"
 	@test -s "$(M5_BUILD)/libc_compat.o"
 	@test -s "$(M5_BUILD)/main_pre.o"
+	@test -s "$(M5_BUILD)/43F0.o"
 
 $(BUILD):
 	@mkdir -p $@
