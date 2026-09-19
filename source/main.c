@@ -1,6 +1,7 @@
 #include <3ds.h>
 #include <stdio.h>
 
+#include "pb3ds/compat.h"
 #include "pb3ds/diagnostics.h"
 #include "pb3ds/log.h"
 #include "pb3ds/version.h"
@@ -71,10 +72,11 @@ static void print_top_screen(PrintConsole *console) {
 }
 
 static void print_bottom_screen(PrintConsole *console, const BootstrapState *state,
-                                const PBLog *log, PBMemorySnapshot memory) {
+                                const PBLog *log, const PBConfig *config,
+                                bool archive_available, PBMemorySnapshot memory) {
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[2;2HM2 Diagnostics\n");
+    printf("\x1b[2;2HM4 Compatibility Core\n");
     printf("\x1b[4;2HGFX displays      OK\n");
     printf("\x1b[5;2HAPT lifecycle    OK\n");
     printf("\x1b[6;2HHID input        OK\n");
@@ -88,6 +90,8 @@ static void print_bottom_screen(PrintConsole *console, const BootstrapState *sta
            (unsigned long)(memory.linear_free / 1024));
     printf("\x1b[16;2HSD log: %s\n",
            pb_log_is_persistent(log) ? "ACTIVE" : "unavailable (continuing)");
+    printf("\x1b[18;2HConfig: %lu entries\n", (unsigned long)config->count);
+    printf("\x1b[19;2HArchive: %s\n", archive_available ? "FOUND" : "not installed");
 }
 
 int main(int argc, char **argv) {
@@ -105,6 +109,8 @@ int main(int argc, char **argv) {
     PrintConsole top_console;
     PrintConsole bottom_console;
     PBLog log;
+    PBConfig config;
+    PBArchive archive;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
 
@@ -114,6 +120,11 @@ int main(int argc, char **argv) {
     aptHook(&apt_cookie, apt_hook, &state);
 
     (void)pb_log_init(&log);
+    pb_config_init(&config);
+    const bool config_loaded =
+        pb_config_load(&config, "sdmc:/3ds/PaperBoat3DS/config.ini");
+    const bool archive_available =
+        pb_archive_open(&archive, "sdmc:/3ds/PaperBoat3DS/paperboat.o2r");
     PBMemorySnapshot memory = pb_memory_snapshot();
     pb_log_write(&log, PB_LOG_INFO, "bootstrap",
                  "version=%s stage=\"%s\" build_sha=%s build_utc=%s",
@@ -127,8 +138,16 @@ int main(int argc, char **argv) {
                  "application_free=%lu linear_free=%lu",
                  (unsigned long)memory.application_free,
                  (unsigned long)memory.linear_free);
+    pb_log_write(&log, PB_LOG_INFO, "compat",
+                 "config=%s entries=%lu archive=%s archive_size=%lu time_ms=%llu",
+                 config_loaded ? "loaded" : "defaults",
+                 (unsigned long)config.count,
+                 archive_available ? "found" : "missing",
+                 (unsigned long)archive.size,
+                 (unsigned long long)pb_platform_time_ms());
     print_top_screen(&top_console);
-    print_bottom_screen(&bottom_console, &state, &log, memory);
+    print_bottom_screen(&bottom_console, &state, &log, &config,
+                        archive_available, memory);
 
     while (aptMainLoop()) {
         hidScanInput();
@@ -140,7 +159,8 @@ int main(int argc, char **argv) {
             pb_log_write(&log, PB_LOG_INFO, "lifecycle", "state=%s",
                          lifecycle_name(state.lifecycle));
             memory = pb_memory_snapshot();
-            print_bottom_screen(&bottom_console, &state, &log, memory);
+            print_bottom_screen(&bottom_console, &state, &log, &config,
+                                archive_available, memory);
         }
         gfxFlushBuffers();
         gfxSwapBuffers();
@@ -152,6 +172,7 @@ int main(int argc, char **argv) {
                  "application_free=%lu linear_free=%lu",
                  (unsigned long)memory.application_free,
                  (unsigned long)memory.linear_free);
+    pb_archive_close(&archive);
     pb_log_close(&log);
     aptUnhook(&apt_cookie);
     gfxExit();
