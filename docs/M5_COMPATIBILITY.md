@@ -37,6 +37,11 @@ enabled but does not promote warnings to errors for this upstream-only unit;
 the repository's native 3DS sources and foundation port slices remain under
 `-Werror`.
 
+`src/43F0.c` also uses the legacy `sins`/`coss` implicit-declaration path.
+The pinned upstream CMake explicitly disables that diagnostic, so this one
+object mirrors `-Wno-implicit-function-declaration`. The exception is not
+applied to native 3DS sources.
+
 ## Validation history
 
 - Run `35458786218`: pinned fetch succeeded; compilation stopped at the missing
@@ -48,10 +53,13 @@ the repository's native 3DS sources and foundation port slices remain under
 - Run `35473434192` (#57): `src/main_pre.c` passed through the complete
   `common.h` dependency graph, followed by successful `.3dsx`, `.3ds`, and
   `.cia` packaging.
+- Run `35473665849` (#60): `src/43F0.c` passed as ARM11 code and all three
+  package formats were produced successfully.
 
 ## Compile slices
 
 - Foundation: `src/port/decode_yay0.c` and `src/port/libc_compat.c`.
-- Game core: `src/main_pre.c`, the first unit through PaperBoat's full
-  `common.h` graph. This expands the gate from isolated port helpers to actual
-  game-state code without linking desktop backends into the 3DS shell.
+- Game core: `src/main_pre.c` traverses PaperBoat's full `common.h` graph;
+  `src/43F0.c` adds heap allocation, math/trigonometry helpers, string/number
+  conversion, and static display-list construction. These compile without
+  linking desktop backends into the 3DS shell.
