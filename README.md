@@ -7,9 +7,10 @@ An experimental native Nintendo 3DS port of PaperBoat.
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
 on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
 real-ROM acceptance run, and M8-M10 have package plus Folium evidence. The
-current checkpoint is M11: a bounded, CRC-checked legal O2R path that decodes
-and displays the first deterministic Paper Mario frame through the exact
-pinned-libultraship graphics adapter. M6/M8-M11 hardware validation remains
+current checkpoint is M12: the bounded M11 O2R path now supplies the title
+background, logo, prompt, and copyright textures to an interactive title/file-
+select state machine. M12 also corrects the vertical texture-coordinate defect
+exposed by the first M11 Folium capture. M6/M8-M12 hardware validation remains
 pending; the project owner is the real-hardware tester.
 
 No milestone is considered complete until its acceptance criteria are backed
@@ -35,6 +36,8 @@ The implemented libultraship graphics boundary, supported TEV subset, and
 explicit fallbacks are in [docs/M10_GRAPHICS.md](docs/M10_GRAPHICS.md).
 The bounded archive reader, title-frame decoder, fallback states, and M11
 validation contract are in [docs/M11_FIRST_FRAME.md](docs/M11_FIRST_FRAME.md).
+The M12 resource contract, input transitions, orientation fix, and explicit
+graphical boundary are in [docs/M12_TITLE_FLOW.md](docs/M12_TITLE_FLOW.md).
 
 ## Legal asset policy
 
