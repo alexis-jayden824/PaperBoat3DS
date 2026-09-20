@@ -1,6 +1,5 @@
 #pragma once
 
-#include <3ds.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -27,8 +26,8 @@ typedef enum {
 } PBMemoryClass;
 
 typedef struct {
-    u32 application_free;
-    u32 linear_free;
+    uint32_t application_free;
+    uint32_t linear_free;
     size_t application_used;
     size_t linear_used;
     size_t stack_used;
@@ -37,15 +36,15 @@ typedef struct {
     size_t peak_stack_used;
     size_t class_used[PB_MEMORY_CLASS_COUNT];
     size_t class_peak[PB_MEMORY_CLASS_COUNT];
-    u32 allocation_failures;
+    uint32_t allocation_failures;
     bool application_measurement_available;
     bool pressure;
 } PBMemorySnapshot;
 
 typedef struct {
     PBMemorySnapshot snapshot;
-    u32 baseline_application_free;
-    u32 baseline_linear_free;
+    uint32_t baseline_application_free;
+    uint32_t baseline_linear_free;
     uintptr_t stack_anchor;
 } PBMemoryMonitor;
 

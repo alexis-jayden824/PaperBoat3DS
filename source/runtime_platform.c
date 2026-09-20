@@ -254,20 +254,20 @@ void FrameInterpolation_RecordMatrixMtxFToMtx(MtxF *source, Mtx *destination) {
     (void)source; (void)destination;
 }
 
-s32 osContInit(OSMesgQueue *queue, u8 *bits, OSContStatus *status) {
+int32_t osContInit(OSMesgQueue *queue, uint8_t *bits, OSContStatus *status) {
     (void)queue;
     if (bits != NULL) *bits = 1;
     if (status != NULL) memset(status, 0, sizeof(*status));
     return 0;
 }
-void osCreateMesgQueue(OSMesgQueue *queue, OSMesg *messages, s32 count) {
+void osCreateMesgQueue(OSMesgQueue *queue, OSMesg *messages, int32_t count) {
     if (queue != NULL) {
         memset(queue, 0, sizeof(*queue));
         queue->msg = messages;
         queue->msgCount = count;
     }
 }
-s32 osRecvMesg(OSMesgQueue *queue, OSMesg *message, s32 flag) {
+int32_t osRecvMesg(OSMesgQueue *queue, OSMesg *message, int32_t flag) {
     (void)queue; (void)flag;
     if (message != NULL) *message = (OSMesg){0};
     return 0;
@@ -275,7 +275,7 @@ s32 osRecvMesg(OSMesgQueue *queue, OSMesg *message, s32 flag) {
 void osSetEventMesg(OSEvent event, OSMesgQueue *queue, OSMesg message) {
     (void)event; (void)queue; (void)message;
 }
-u32 osGetCount(void) { return (u32)(runtime_time++); }
+uint32_t osGetCount(void) { return (uint32_t)(runtime_time++); }
 uint64_t osGetTime(void) { return runtime_time++; }
 void osSetTime(OSTime time) { runtime_time = time; }
 

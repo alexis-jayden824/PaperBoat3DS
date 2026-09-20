@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static u32 fake_application_free;
-static u32 fake_linear_free;
+static uint32_t fake_application_free;
+static uint32_t fake_linear_free;
 static unsigned int checks_run;
 
 #define CHECK(expression)                                                   \
@@ -18,12 +18,12 @@ static unsigned int checks_run;
         }                                                                   \
     } while (0)
 
-u32 osGetMemRegionFree(int region) {
+uint32_t osGetMemRegionFree(int region) {
     (void)region;
     return fake_application_free;
 }
 
-u32 linearSpaceFree(void) {
+uint32_t linearSpaceFree(void) {
     return fake_linear_free;
 }
 
@@ -40,8 +40,8 @@ uint64_t osGetTime(void) {
 }
 
 static void reset_monitor(PBMemoryMonitor *monitor) {
-    fake_application_free = (u32)PB_MIB(32);
-    fake_linear_free = (u32)PB_MIB(16);
+    fake_application_free = (uint32_t)PB_MIB(32);
+    fake_linear_free = (uint32_t)PB_MIB(16);
     pb_memory_monitor_init(monitor, (uintptr_t)PB_MIB(16));
 }
 

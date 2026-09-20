@@ -1,5 +1,6 @@
 #include "pb3ds/world_scene.h"
 
+#include <3ds.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>

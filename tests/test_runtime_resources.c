@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-u32 osGetMemRegionFree(int region) { (void)region; return PB_MIB(32); }
-u32 linearSpaceFree(void) { return PB_MIB(16); }
+uint32_t osGetMemRegionFree(int region) { (void)region; return PB_MIB(32); }
+uint32_t linearSpaceFree(void) { return PB_MIB(16); }
 void *linearAlloc(size_t size) { return malloc(size); }
 void linearFree(void *p) { free(p); }
 uint64_t osGetTime(void) { return 0; }

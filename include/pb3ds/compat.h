@@ -1,8 +1,8 @@
 #pragma once
 
-#include <3ds.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "pb3ds/memory.h"
@@ -41,7 +41,7 @@ size_t pb_archive_read(PBArchive *archive, size_t offset, void *buffer,
                        size_t size);
 void pb_archive_close(PBArchive *archive);
 
-u64 pb_platform_time_ms(void);
+uint64_t pb_platform_time_ms(void);
 
 #ifdef __cplusplus
 }
