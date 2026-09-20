@@ -99,8 +99,15 @@ sh tools/test_world_scene.sh build/m13-scene-private /path/to/pm64.o2r
 The scene suite covers both maps, both directions of entry protection, archive
 formats, textures, collision, sign interaction, Star Piece collection, fades,
 transitions, pixel release, and complete scene release. The private run passes
-832 checks; the focused graphics adapter passes 103 checks. Proprietary input
+839 checks; the focused graphics adapter passes 103 checks. Proprietary input
 never enters CI or source control.
+
+The first completed Folium candidate exposed an ARM11-only stack fault at file
+confirmation: the target reserves a 32 KiB main-thread stack, while the original
+scene loader placed 138,704 bytes of temporary index/shape state in one frame.
+Those workspaces now use the tracked transient heap and return to zero after
+every load. Host stack-usage output measures the corrected loader frame at
+2,416 bytes. This is a functional correction, not a larger stack reservation.
 
 ## Folium acceptance
 

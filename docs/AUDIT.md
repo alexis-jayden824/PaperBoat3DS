@@ -151,6 +151,14 @@ Owner-only tests cover real resource counts, both maps, both return guards,
 pixel release, and complete scene release; the scene peak remains below
 1.4 MiB. No proprietary bytes enter source control or CI.
 
+Folium then found a target-specific loader failure that host execution could
+not reproduce. The first candidate's scene loader required a 138,704-byte stack
+frame, but the linked 3DS executable's weak `__stacksize__` value was 32 KiB.
+Confirming a slot therefore overflowed before the world could redraw. Large
+display-list, texture-index, shape-leaf, and visited-node workspaces now live
+in the bounded transient memory class, are released on success and failure,
+and reduce the measured loader frame to 2,416 bytes.
+
 This is deliberately representative coverage, not a second implementation of
 the full game. NPC, complete EVT, effect, encounter, item, chapter, and audio
 execution remain attached to later roadmap milestones and must continue to use

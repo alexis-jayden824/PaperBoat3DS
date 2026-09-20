@@ -66,6 +66,7 @@ static bool load_ready(PBWorldScene *scene, PBArchive *archive,
                                 1024U));
     }
     CHECK(result == PB_WORLD_SCENE_READY);
+    CHECK(monitor->snapshot.class_used[PB_MEMORY_TRANSIENT] == 0U);
     return true;
 }
 

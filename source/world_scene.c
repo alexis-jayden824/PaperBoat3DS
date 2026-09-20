@@ -15,6 +15,7 @@
 #define PB_TEXTURE_MAX_BYTES (512U * 1024U)
 #define PB_WORLD_MAX_LEAVES 512U
 #define PB_WORLD_MAX_SHAPE_NODES 1024U
+#define PB_WORLD_TEXTURE_INDEX_CAPACITY 256U
 #define PB_WORLD_MAX_RECURSION 32U
 #define PB_WORLD_FADE_FRAMES 30U
 #define PB_WORLD_EXIT_COOLDOWN 90U
@@ -64,9 +65,21 @@ typedef struct {
     size_t shape_size;
     PBShapeLeaf *leaves;
     size_t leaf_count;
-    uint32_t visited[PB_WORLD_MAX_SHAPE_NODES];
+    uint32_t *visited;
+    size_t visited_capacity;
     size_t visited_count;
 } PBShapeWalk;
+
+typedef struct {
+    PBO2REntry display_list_entries[PB_WORLD_MAX_DISPLAY_LISTS];
+    PBDisplayListResource display_lists[PB_WORLD_MAX_DISPLAY_LISTS];
+    PBShapeLeaf leaves[PB_WORLD_MAX_LEAVES];
+    PBO2REntry texture_entries[PB_WORLD_TEXTURE_INDEX_CAPACITY];
+    uint32_t visited[PB_WORLD_MAX_SHAPE_NODES];
+} PBWorldLoadScratch;
+
+_Static_assert(sizeof(PBWorldLoadScratch) <= PB_MEMORY_TRANSIENT_LIMIT,
+               "world loader scratch exceeds transient budget");
 
 typedef struct {
     const char *map_id;
@@ -345,7 +358,8 @@ static bool walk_shape_node(PBShapeWalk *walk, uint32_t node_offset,
                             uint32_t depth,
                             const float parent_transform[4][4]) {
     if (walk == NULL || depth > PB_WORLD_MAX_RECURSION ||
-        walk->visited_count >= PB_WORLD_MAX_SHAPE_NODES ||
+        walk->visited == NULL ||
+        walk->visited_count >= walk->visited_capacity ||
         shape_offset_seen(walk, node_offset) ||
         !span_is_valid(walk->shape_size, node_offset, 20U)) {
         return false;
@@ -440,10 +454,13 @@ static bool walk_shape_node(PBShapeWalk *walk, uint32_t node_offset,
 }
 
 static bool collect_shape_leaves(const PBBlobView *shape_blob,
-                                 PBShapeLeaf *leaves, size_t *leaf_count,
+                                 PBShapeLeaf *leaves, uint32_t *visited,
+                                 size_t visited_capacity, size_t *leaf_count,
                                  uint32_t *node_count) {
-    if (shape_blob == NULL || leaves == NULL || leaf_count == NULL ||
-        node_count == NULL || shape_blob->size < 32U) {
+    if (shape_blob == NULL || leaves == NULL || visited == NULL ||
+        visited_capacity < PB_WORLD_MAX_SHAPE_NODES ||
+        leaf_count == NULL || node_count == NULL ||
+        shape_blob->size < 32U) {
         return false;
     }
     const uint32_t root = read_u32(&shape_blob->data[0], false);
@@ -453,6 +470,8 @@ static bool collect_shape_leaves(const PBBlobView *shape_blob,
         .shape = shape_blob->data,
         .shape_size = shape_blob->size,
         .leaves = leaves,
+        .visited = visited,
+        .visited_capacity = visited_capacity,
     };
     if (root == 0U || !walk_shape_node(&walk, root, 0U, identity) ||
         walk.leaf_count == 0U) {
@@ -820,6 +839,7 @@ finish:
 static bool load_map_textures(PBWorldScene *scene, PBArchive *archive,
                               const PBMapContract *contract,
                               PBShapeLeaf *leaves, size_t leaf_count,
+                              PBO2REntry *entries, size_t entry_capacity,
                               PBMemoryMonitor *memory) {
     char prefix[PB_O2R_NAME_CAPACITY];
     const int prefix_length = snprintf(prefix, sizeof(prefix), "textures/%s/",
@@ -827,10 +847,15 @@ static bool load_map_textures(PBWorldScene *scene, PBArchive *archive,
     if (prefix_length <= 0 || (size_t)prefix_length >= sizeof(prefix)) {
         return false;
     }
-    PBO2REntry entries[256];
+    if (entries == NULL ||
+        entry_capacity < PB_WORLD_TEXTURE_INDEX_CAPACITY) {
+        scene->archive_result = PB_O2R_INVALID_ARGUMENT;
+        return false;
+    }
     size_t entry_count = 0U;
     scene->archive_result = pb_o2r_find_entries_with_prefix(
-        archive, prefix, entries, 256U, &entry_count, &scene->archive_stats);
+        archive, prefix, entries, entry_capacity, &entry_count,
+        &scene->archive_stats);
     if (scene->archive_result != PB_O2R_OK) {
         return false;
     }
@@ -1330,11 +1355,18 @@ PBWorldSceneResult pb_world_scene_load(PBWorldScene *scene,
     size_t collision_size = 0U;
     uint8_t *vertex_data = NULL;
     size_t vertex_size = 0U;
-    PBO2REntry display_list_entries[PB_WORLD_MAX_DISPLAY_LISTS];
-    PBDisplayListResource display_lists[PB_WORLD_MAX_DISPLAY_LISTS];
-    memset(display_lists, 0, sizeof(display_lists));
     size_t display_list_count = 0U;
     PBWorldSceneResult failure = PB_WORLD_SCENE_ARCHIVE_ERROR;
+    PBWorldLoadScratch *scratch =
+        pb_memory_alloc(memory, PB_MEMORY_TRANSIENT, sizeof(*scratch));
+    if (scratch == NULL) {
+        scene->result = PB_WORLD_SCENE_OUT_OF_MEMORY;
+        return scene->result;
+    }
+    memset(scratch, 0, sizeof(*scratch));
+    PBO2REntry *display_list_entries = scratch->display_list_entries;
+    PBDisplayListResource *display_lists = scratch->display_lists;
+    PBShapeLeaf *leaves = scratch->leaves;
 
     PBO2RRequest core_requests[3] = {
         { .name = shape_name },
@@ -1359,10 +1391,9 @@ PBWorldSceneResult pb_world_scene_load(PBWorldScene *scene,
         failure = PB_WORLD_SCENE_SHAPE_INVALID;
         goto fail;
     }
-    PBShapeLeaf leaves[PB_WORLD_MAX_LEAVES];
-    memset(leaves, 0, sizeof(leaves));
     size_t leaf_count = 0U;
-    if (!collect_shape_leaves(&shape_blob, leaves, &leaf_count,
+    if (!collect_shape_leaves(&shape_blob, leaves, scratch->visited,
+                              PB_WORLD_MAX_SHAPE_NODES, &leaf_count,
                               &scene->stats.shape_nodes)) {
         failure = PB_WORLD_SCENE_SHAPE_INVALID;
         goto fail;
@@ -1410,8 +1441,10 @@ PBWorldSceneResult pb_world_scene_load(PBWorldScene *scene,
     }
     scene->stats.display_lists = (uint32_t)display_list_count;
 
-    if (!load_map_textures(scene, archive, contract, leaves, leaf_count,
-                           memory)) {
+    if (!load_map_textures(
+            scene, archive, contract, leaves, leaf_count,
+            scratch->texture_entries, PB_WORLD_TEXTURE_INDEX_CAPACITY,
+            memory)) {
         failure = scene->archive_result == PB_O2R_OUT_OF_MEMORY
                       ? PB_WORLD_SCENE_OUT_OF_MEMORY
                       : (scene->archive_result == PB_O2R_CAPACITY_EXCEEDED
@@ -1555,6 +1588,7 @@ PBWorldSceneResult pb_world_scene_load(PBWorldScene *scene,
     pb_memory_free(memory, PB_MEMORY_SCENE, collision_data, collision_size);
     pb_memory_free(memory, PB_MEMORY_SCENE, vertex_data, vertex_size);
     pb_memory_free(memory, PB_MEMORY_SCENE, shape_data, shape_size);
+    pb_memory_free(memory, PB_MEMORY_TRANSIENT, scratch, sizeof(*scratch));
     return scene->result;
 
 fail:
@@ -1570,6 +1604,7 @@ fail:
         pb_memory_free(memory, PB_MEMORY_SCENE, shape_data, shape_size);
     }
     release_owned_scene(scene, memory);
+    pb_memory_free(memory, PB_MEMORY_TRANSIENT, scratch, sizeof(*scratch));
     scene->result = failure;
     return scene->result;
 }
