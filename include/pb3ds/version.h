@@ -1,8 +1,8 @@
 #pragma once
 
 #define PB3DS_PROJECT_NAME "PaperBoat3DS"
-#define PB3DS_VERSION "0.9.0-m9"
-#define PB3DS_ROADMAP_STAGE "M9 PICA200 renderer"
+#define PB3DS_VERSION "0.10.0-m10"
+#define PB3DS_ROADMAP_STAGE "M10 libultraship graphics"
 
 #ifndef PB3DS_BUILD_SHA
 #define PB3DS_BUILD_SHA "unknown"

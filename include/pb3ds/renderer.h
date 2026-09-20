@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define PB_RENDER_TOP_WIDTH 400U
 #define PB_RENDER_TOP_HEIGHT 240U
 #define PB_RENDER_TARGET_WIDTH 240U
@@ -171,5 +175,43 @@ PBBindResult pb_renderer_bind_pipeline(PBRenderStateCache *cache,
 const char *pb_renderer_init_result_name(PBRendererInitResult result);
 PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer);
 bool pb_renderer_3ds_render(PBRenderer3DS *renderer);
+bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer);
+bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer);
+void pb_renderer_3ds_finish(PBRenderer3DS *renderer);
+bool pb_renderer_3ds_clear(PBRenderer3DS *renderer, bool color, bool depth);
+bool pb_renderer_3ds_set_viewport(PBRenderer3DS *renderer,
+                                  const PBViewport *viewport);
+bool pb_renderer_3ds_set_scissor(PBRenderer3DS *renderer,
+                                 const PBViewport *scissor);
+bool pb_renderer_3ds_set_pipeline(PBRenderer3DS *renderer,
+                                  const PBRenderPipeline *pipeline);
+bool pb_renderer_3ds_upload_texture(PBRenderer3DS *renderer,
+                                    uint32_t texture_id,
+                                    const uint8_t *rgba32,
+                                    uint16_t width, uint16_t height);
+bool pb_renderer_3ds_bind_texture(PBRenderer3DS *renderer, int tile,
+                                  uint32_t texture_id);
+bool pb_renderer_3ds_set_sampler(PBRenderer3DS *renderer,
+                                 uint32_t texture_id,
+                                 PBTextureFilter filter,
+                                 PBTextureWrap wrap_s,
+                                 PBTextureWrap wrap_t);
+void pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
+                                    uint32_t texture_id);
+bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
+                                  int combiner_mode);
+bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
+                                 const float *vertices,
+                                 size_t float_count,
+                                 size_t triangle_count,
+                                 size_t vertex_stride_floats,
+                                 bool uses_texture0,
+                                 bool uses_texture1,
+                                 bool uses_shade,
+                                 bool uses_alpha);
 const PBRendererStats *pb_renderer_3ds_stats(const PBRenderer3DS *renderer);
 void pb_renderer_3ds_destroy(PBRenderer3DS *renderer);
+
+#ifdef __cplusplus
+}
+#endif
