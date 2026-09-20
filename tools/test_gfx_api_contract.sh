@@ -24,7 +24,8 @@ mkdir -p "$build_directory"
 "$host_cxx" -std=gnu++17 -O2 -Wall -Wextra -Werror \
     -Wno-unused-parameter \
     -fno-exceptions -fno-rtti \
-    -I"$project_root/include" -I"$upstream_include" \
+    -I"$project_root/tests/mocks" -I"$project_root/include" \
+    -I"$upstream_include" \
     "$project_root/source/gfx_rendering_api_3ds.cpp" \
     "$project_root/tests/test_gfx_api_contract.cpp" \
     "$build_directory/renderer.o" "$build_directory/gfx_bridge.o" \

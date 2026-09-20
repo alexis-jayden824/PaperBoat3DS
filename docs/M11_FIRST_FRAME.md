@@ -66,6 +66,12 @@ The M11 success frame is one texture-times-shade draw: two triangles and six
 vertices per presented frame. The fallback remains two draws, three triangles,
 and nine vertices and now exercises the corrected same-frame arena.
 
+The first Folium success capture subsequently showed the correct image content
+vertically inverted. Archive lookup, CI8/palette decode, upload, frame counters,
+and fallback selection all behaved as designed, but orientation therefore did
+not pass this milestone's visual criterion. M12 replaces the one-off quad UVs
+with a shared, host-tested PICA mapping used by every title texture.
+
 ## Failure behavior
 
 Any missing archive/resource, invalid header or texture, unsupported ZIP
@@ -94,6 +100,7 @@ An optional local invocation of the resulting test binary can validate a
 private `pm64.o2r`; that archive must never be attached to CI or a public issue.
 
 M11 software completion requires all host checks plus native `.3dsx`, `.3ds`,
-and `.cia` packages. Folium must then show the correctly oriented title frame
-and zero failure/overflow telemetry. Real-hardware `.3dsx` testing remains
-authoritative for PICA correctness, lifecycle recovery, and memory headroom.
+and `.cia` packages. The archive-backed Folium run passed pipeline and telemetry
+checks while exposing the orientation defect. The corrected visual gate is
+carried by M12. Real-hardware `.3dsx` testing remains authoritative for PICA
+correctness, lifecycle recovery, and memory headroom.

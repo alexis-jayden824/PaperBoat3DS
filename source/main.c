@@ -9,6 +9,7 @@
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
 #include "pb3ds/renderer.h"
+#include "pb3ds/title_flow.h"
 #include "pb3ds/version.h"
 
 typedef enum {
@@ -89,7 +90,10 @@ static void print_bottom_screen(PrintConsole *console,
                                 PBGfxApiInitResult graphics_result,
                                 const PBGfxBridgeStats *graphics_stats,
                                 const PBFirstFrame *first_frame,
-                                bool first_frame_ready) {
+                                bool first_frame_ready,
+                                const PBTitleAssets *title_assets,
+                                bool title_flow_ready,
+                                const PBTitleFlow *title_flow) {
     const bool renderer_ready =
         renderer_result == PB_RENDERER_INIT_OK && renderer_stats != NULL;
     const bool graphics_ready =
@@ -101,19 +105,21 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM11 First Archive Frame\n");
+    printf("\x1b[1;2HM12 Title + File Select\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
-    if (first_frame_ready) {
-        printf("\x1b[6;2HFrame: title_bg %ux%u CI8\n",
-               first_frame->source_width, first_frame->source_height);
-        printf("\x1b[7;2HO2R: ready scan:%lu out:%lu KiB\n",
-               (unsigned long)first_frame->archive_stats.entries_scanned,
-               (unsigned long)(first_frame->archive_stats.uncompressed_bytes /
-                               1024U));
-        printf("\x1b[8;2HGPU: RGBA8 %ux%u (%lu KiB)\n",
-               first_frame->texture_width, first_frame->texture_height,
-               (unsigned long)(first_frame->rgba_size / 1024U));
+    if (title_flow_ready) {
+        printf("\x1b[6;2HScene: %-11s slot:%u%s\n",
+               pb_title_flow_screen_name(title_flow->screen),
+               (unsigned int)title_flow->selected_slot + 1U,
+               title_flow->slot_confirmed ? " SELECTED" : "");
+        printf("\x1b[7;2HAssets: BG+logo+prompt+copy OK\n");
+        printf("\x1b[8;2HUV: M11 flip fix applied\n");
+    } else if (first_frame_ready) {
+        printf("\x1b[6;2HScene fallback: title_bg only\n");
+        printf("\x1b[7;2HTitle assets: %s\n",
+               pb_title_assets_result_name(title_assets->result));
+        printf("\x1b[8;2HUV: flip fix applied; no flow\n");
     } else {
         printf("\x1b[6;2HFallback: %s\n",
                first_frame->result == PB_FIRST_FRAME_READY
@@ -184,7 +190,12 @@ static void print_bottom_screen(PrintConsole *console,
            (unsigned long)config->count,
            engine_archive_available ? "OK" : "--",
            game_archive_available ? "OK" : "--");
-    printf("\x1b[30;2HSTART exits M11 shell\n");
+    if (title_flow_ready && title_flow->screen == PB_TITLE_FLOW_FILE_SELECT) {
+        printf("\x1b[29;2HMove: Pad  A select  B title\n");
+    } else {
+        printf("\x1b[29;2HA/START opens file select\n");
+    }
+    printf("\x1b[30;2HL+R+START exits checkpoint\n");
 }
 
 static void sample_memory(PBMemoryMonitor *monitor) {
@@ -219,6 +230,11 @@ int main(int argc, char **argv) {
     PBFirstFrame first_frame;
     pb_first_frame_init(&first_frame);
     bool first_frame_ready = false;
+    PBTitleAssets title_assets;
+    pb_title_assets_init(&title_assets);
+    PBTitleFlow title_flow;
+    pb_title_flow_init(&title_flow);
+    bool title_flow_ready = false;
     const uintptr_t stack_anchor = (uintptr_t)&memory_monitor;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
@@ -256,6 +272,13 @@ int main(int argc, char **argv) {
                 first_frame.texture_height, first_frame.source_width,
                 first_frame.source_height);
         }
+        if (first_frame_ready &&
+            pb_title_assets_load(&title_assets, &game_archive,
+                                 &memory_monitor) == PB_TITLE_ASSETS_READY) {
+            title_flow_ready =
+                pb_gfx_api_3ds_prepare_title_flow(graphics, &title_assets);
+        }
+        pb_title_assets_release_pixels(&title_assets, &memory_monitor);
         pb_first_frame_release_pixels(&first_frame, &memory_monitor);
     } else if (!game_archive_available) {
         first_frame.result = PB_FIRST_FRAME_ARCHIVE_MISSING;
@@ -327,13 +350,20 @@ int main(int argc, char **argv) {
                  (unsigned long)first_frame.archive_stats.entries_scanned,
                  (unsigned long)first_frame.archive_stats.compressed_bytes,
                  (unsigned long)first_frame.archive_stats.uncompressed_bytes);
+    pb_log_write(&log, title_flow_ready ? PB_LOG_INFO : PB_LOG_WARNING,
+                 "title-flow",
+                 "assets=\"%s\" uploaded=%s screen=%s orientation=fix-applied",
+                 pb_title_assets_result_name(title_assets.result),
+                 title_flow_ready ? "yes" : "no",
+                 pb_title_flow_screen_name(title_flow.screen));
 
     print_bottom_screen(&bottom_console, &state, &log, &config,
                         engine_archive_available, game_archive_available,
                         memory, &input, false, renderer_result,
                         pb_renderer_3ds_stats(renderer), graphics_result,
                         pb_gfx_api_3ds_stats(graphics), &first_frame,
-                        first_frame_ready);
+                        first_frame_ready, &title_assets, title_flow_ready,
+                        &title_flow);
 
     u32 memory_sample_frames = 0;
     u32 diagnostics_refresh_frames = 0;
@@ -342,8 +372,21 @@ int main(int argc, char **argv) {
     bool renderer_frame_failed = false;
     while (aptMainLoop()) {
         pb_input_poll(&input);
-        if ((input.n64_pressed & PB_N64_START) != 0) {
+        if ((input.native_pressed & KEY_START) != 0 &&
+            (input.native_held & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) {
             break;
+        }
+        if (title_flow_ready && state.lifecycle == LIFECYCLE_ACTIVE) {
+            const PBTitleFlowEvent event =
+                pb_title_flow_update(&title_flow, &input);
+            if (event != PB_TITLE_FLOW_EVENT_NONE) {
+                state.redraw_bottom = true;
+                pb_log_write(&log, PB_LOG_INFO, "title-flow",
+                             "event=\"%s\" screen=\"%s\" slot=%u",
+                             pb_title_flow_event_name(event),
+                             pb_title_flow_screen_name(title_flow.screen),
+                             (unsigned int)title_flow.selected_slot + 1U);
+            }
         }
         if (input.menu_requested) {
             menu_request_seen = true;
@@ -391,14 +434,16 @@ int main(int argc, char **argv) {
                                 pb_renderer_3ds_stats(renderer),
                                 graphics_result,
                                 pb_gfx_api_3ds_stats(graphics), &first_frame,
-                                first_frame_ready);
+                                first_frame_ready, &title_assets,
+                                title_flow_ready, &title_flow);
         }
 
         if (graphics != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
-            const bool rendered =
-                first_frame_ready
-                    ? pb_gfx_api_3ds_render_first_frame(graphics)
-                    : pb_gfx_api_3ds_render_diagnostic(graphics);
+            const bool rendered = title_flow_ready
+                ? pb_gfx_api_3ds_render_title_flow(graphics, &title_flow)
+                : (first_frame_ready
+                       ? pb_gfx_api_3ds_render_first_frame(graphics)
+                       : pb_gfx_api_3ds_render_diagnostic(graphics));
             if (!rendered &&
                 !renderer_frame_failed) {
                 renderer_frame_failed = true;
@@ -473,6 +518,7 @@ int main(int argc, char **argv) {
 
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
+    pb_title_assets_release_pixels(&title_assets, &memory_monitor);
     pb_first_frame_release_pixels(&first_frame, &memory_monitor);
     pb_gfx_api_3ds_destroy(graphics);
     state.graphics = NULL;

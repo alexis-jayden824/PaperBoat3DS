@@ -81,8 +81,9 @@ not represented as successful no-ops.
 The pinned base class accepts and retains transform, lighting, combiner, and
 custom uniform blocks. M10's diagnostic supplies already projected screen
 coordinates. M11 establishes the first legal archive-backed image through the
-same texture/draw path; applying the game matrix palette and expanding the
-combiner subset for live title/file-select display lists remains M12 work. This
+same texture/draw path. M12 uses that bounded path for a native title/file-
+select checkpoint; applying the game matrix palette and expanding the combiner
+subset for full live display lists remains later integration work. This
 limitation is recorded rather than hidden behind a gameplay claim.
 
 ## Validation

@@ -155,6 +155,31 @@ bool pb_renderer_stream_reserve(size_t capacity_vertices,
     return true;
 }
 
+bool pb_renderer_textured_quad(PBTexturedQuad *quad, float left,
+                               float bottom, float width, float height,
+                               uint16_t texture_width,
+                               uint16_t texture_height,
+                               uint16_t source_width,
+                               uint16_t source_height) {
+    if (quad == NULL || width <= 0.0f || height <= 0.0f ||
+        !dimension_is_valid(texture_width) ||
+        !dimension_is_valid(texture_height) || source_width == 0 ||
+        source_height == 0 || source_width > texture_width ||
+        source_height > texture_height) {
+        return false;
+    }
+
+    quad->left = left;
+    quad->bottom = bottom;
+    quad->right = left + width;
+    quad->top = bottom + height;
+    quad->left_u = 0.5f / (float)texture_width;
+    quad->bottom_v = 0.5f / (float)texture_height;
+    quad->right_u = ((float)source_width - 0.5f) / (float)texture_width;
+    quad->top_v = ((float)source_height - 0.5f) / (float)texture_height;
+    return true;
+}
+
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target) {
     if (logical == NULL || target == NULL || logical->width == 0 ||
