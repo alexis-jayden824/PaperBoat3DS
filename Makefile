@@ -48,6 +48,7 @@ M5_GAME_SOURCES := \
 M5_GAME_CFLAGS  := $(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
 	-O2 -std=gnu11 -Wall -Wextra \
 	-Wno-implicit-function-declaration -Wno-int-conversion \
+	-Wno-error=incompatible-pointer-types \
 	-Wno-initializer-overrides -Wno-return-mismatch -D__3DS__ \
 	-D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
 	-DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
