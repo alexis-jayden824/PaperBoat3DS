@@ -17,7 +17,7 @@ static uint8_t titleCopyrightPixels[256U * 32U * 4U];
         checksRun++;                                                         \
         if (!(expression)) {                                                 \
             std::fprintf(stderr,                                             \
-                         "M11 API contract check failed at %s:%d: %s\n",   \
+                         "M12.1 API contract check failed at %s:%d: %s\n", \
                          __FILE__, __LINE__, #expression);                   \
             return false;                                                    \
         }                                                                    \
@@ -166,7 +166,7 @@ int main() {
     if (!testExactInterface() || !testCBoundary()) {
         return EXIT_FAILURE;
     }
-    std::printf("M12 exact GfxRenderingAPI contract: %u checks passed\n",
+    std::printf("M12.1 exact GfxRenderingAPI contract: %u checks passed\n",
                 checksRun);
     return EXIT_SUCCESS;
 }

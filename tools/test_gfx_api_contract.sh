@@ -21,6 +21,10 @@ mkdir -p "$build_directory"
     -I"$project_root/include" \
     -c "$project_root/source/gfx_bridge.c" \
     -o "$build_directory/gfx_bridge.o"
+"$host_cc" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$project_root/include" \
+    -c "$project_root/source/title_layout.c" \
+    -o "$build_directory/title_layout.o"
 "$host_cxx" -std=gnu++17 -O2 -Wall -Wextra -Werror \
     -Wno-unused-parameter \
     -fno-exceptions -fno-rtti \
@@ -29,6 +33,7 @@ mkdir -p "$build_directory"
     "$project_root/source/gfx_rendering_api_3ds.cpp" \
     "$project_root/tests/test_gfx_api_contract.cpp" \
     "$build_directory/renderer.o" "$build_directory/gfx_bridge.o" \
+    "$build_directory/title_layout.o" \
     -o "$build_directory/test_gfx_api_contract"
 
 "$build_directory/test_gfx_api_contract"

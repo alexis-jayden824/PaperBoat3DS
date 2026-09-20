@@ -103,7 +103,7 @@ export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m6-policy-test \
 	m6-budget-check m8-input-test m9-renderer-test m10-graphics-test \
-	m11-frame-test m12-flow-test clean
+	m11-frame-test m12-flow-test m12-layout-test clean
 
 all: fetch-upstream $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -132,6 +132,10 @@ m11-frame-test: fetch-upstream
 
 m12-flow-test: fetch-upstream
 	@HOST_CC="$(HOST_CC)" sh tools/test_title_flow.sh "$(BUILD)/m12-tests"
+
+m12-layout-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_title_layout.sh \
+		"$(BUILD)/m12-layout-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }

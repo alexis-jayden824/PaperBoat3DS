@@ -163,21 +163,26 @@ or playability. Old 3DS measurements remain part of the performance baseline.
 
 ## M12 title and file-select checkpoint
 
-Use the newest private `port/3ds` `.3dsx` bundle marked `0.12.0-m12`. Copy the
+Use the newest private `port/3ds` `.3dsx` bundle marked `0.12.1-m12.1`. Copy the
 owner-generated `paperboat.o2r` and `pm64.o2r` beside the executable under
 `/3ds/PaperBoat3DS/`; never share or upload those archives.
 
 1. Cold-boot and verify the background, logo, prompt, and copyright are upright,
-   correctly colored, centered, and stable for 60 seconds.
-2. Press A and START separately from fresh title visits; each must enter the
+   correctly colored, centered, and stable for 60 seconds. On New 3DS XL/LL,
+   the bottom diagnostic must report `Safe:320@x40`; the fixed title canvas has
+   equal black 40-pixel pillars and must not be stretched or cropped.
+2. Capture the title once while the bottom diagnostic reports prompt `A:255`.
+   PRESS START must be visible with PaperBoat's pale-yellow tint. `A:0` is an
+   intentional blink-off frame, not a missing asset.
+3. Press A and START separately from fresh title visits; each must enter the
    four-panel file-select checkpoint.
-3. Visit all four slots with Circle Pad and D-Pad/C-direction input. Focus must
+4. Visit all four slots with Circle Pad and D-Pad/C-direction input. Focus must
    move once per new direction and stay within the 2x2 grid.
-4. Confirm each slot with A or START. The active border must turn green. Press B
+5. Confirm each slot with A or START. The active border must turn green. Press B
    to return to title; no save or world load is expected yet.
-5. Close the lid for at least five seconds, reopen it, release all controls to
+6. Close the lid for at least five seconds, reopen it, release all controls to
    clear the neutral gate, and repeat one title/file-select round trip.
-6. Confirm zero renderer rejects, failures, and stream overflows, then exit with
+7. Confirm zero renderer rejects, failures, and stream overflows, then exit with
    L+R+START and preserve `PaperBoat3DS.log`.
 
 Report the exact build SHA, New 3DS XL/LL model, firmware, launch environment,
