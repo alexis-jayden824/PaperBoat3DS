@@ -5,9 +5,10 @@
 This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
 the host-tested M8 native input layer, the M9 citro3d renderer foundation,
-the M10 pinned-libultraship graphics adapter, and the M11 bounded legal-archive
-frame path. It is not yet a playable PaperBoat port. A successful package build
-proves that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+the M10 pinned-libultraship graphics adapter, the M11 bounded legal-archive
+frame path, and the M12 title/file-select checkpoint. It is not yet a playable
+PaperBoat port. A successful package build proves that one ARM11 ELF can
+produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -82,6 +83,18 @@ The test creates synthetic archives only. The ARM11 build compiles the bounded
 inflate subset from the exact Torch checkout pinned in
 `upstream/PAPERBOAT.lock`; it does not depend on a mutable system zlib package.
 
+Run the M12 RGBA32/IA8 texture decoder, title-asset loader, memory-release,
+prompt timing, and title/file-select transition checks with:
+
+```sh
+make fetch-upstream
+make m12-flow-test
+```
+
+These tests use generated public fixtures. A private local path can be passed
+directly to `tools/test_title_flow.sh` for owner-generated `pm64.o2r`
+validation; never add that path to CI.
+
 ## Host-side asset preparation
 
 M7 provides one cross-platform Python entry point that verifies a legally
@@ -96,12 +109,12 @@ Do not upload the ROM or generated game archive to GitHub Actions. See
 `docs/M7_ASSET_PIPELINE.md` for prerequisites, staging, validation, Windows
 usage, and the exact legal boundary.
 
-M11 reads these exact SD paths at runtime:
+M11 and M12 read these exact SD paths at runtime:
 
 - `sdmc:/3ds/PaperBoat3DS/paperboat.o2r`
 - `sdmc:/3ds/PaperBoat3DS/pm64.o2r`
 
-Only `pm64.o2r` supplies the current title-background frame. Neither archive is
+Only `pm64.o2r` supplies the current title-screen textures. Neither archive is
 embedded in public packages or CI artifacts.
 
 ## Build

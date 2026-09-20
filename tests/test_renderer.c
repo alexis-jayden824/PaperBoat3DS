@@ -139,6 +139,32 @@ static bool test_viewport_rotation(void) {
     return true;
 }
 
+static bool test_textured_quad_orientation(void) {
+    PBTexturedQuad quad;
+    CHECK(pb_renderer_textured_quad(&quad, 52.0f, 20.0f, 296.0f, 200.0f,
+                                    512, 256, 296, 200));
+    CHECK(quad.left == 52.0f);
+    CHECK(quad.bottom == 20.0f);
+    CHECK(quad.right == 348.0f);
+    CHECK(quad.top == 220.0f);
+    CHECK(quad.left_u == 0.5f / 512.0f);
+    CHECK(quad.bottom_v == 0.5f / 256.0f);
+    CHECK(quad.right_u == 295.5f / 512.0f);
+    CHECK(quad.top_v == 199.5f / 256.0f);
+
+    /* Regression for the M11 Folium capture: bottom gets min V, top max V. */
+    CHECK(quad.bottom_v < quad.top_v);
+    CHECK(!pb_renderer_textured_quad(NULL, 0.0f, 0.0f, 8.0f, 8.0f,
+                                     8, 8, 8, 8));
+    CHECK(!pb_renderer_textured_quad(&quad, 0.0f, 0.0f, 0.0f, 8.0f,
+                                     8, 8, 8, 8));
+    CHECK(!pb_renderer_textured_quad(&quad, 0.0f, 0.0f, 8.0f, 8.0f,
+                                     12, 8, 8, 8));
+    CHECK(!pb_renderer_textured_quad(&quad, 0.0f, 0.0f, 8.0f, 8.0f,
+                                     8, 8, 9, 8));
+    return true;
+}
+
 static PBRenderPipeline valid_pipeline(void) {
     const PBRenderPipeline pipeline = {
         .cull_mode = PB_CULL_BACK_CCW,
@@ -241,8 +267,8 @@ static bool test_buffer_contract_and_status(void) {
 
 int main(void) {
     if (!test_texture_formats() || !test_texture_swizzle() ||
-        !test_viewport_rotation() || !test_pipeline_and_cache() ||
-        !test_buffer_contract_and_status()) {
+        !test_viewport_rotation() || !test_textured_quad_orientation() ||
+        !test_pipeline_and_cache() || !test_buffer_contract_and_status()) {
         return EXIT_FAILURE;
     }
 

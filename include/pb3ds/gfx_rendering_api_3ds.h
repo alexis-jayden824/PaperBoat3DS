@@ -2,6 +2,9 @@
 
 #include "pb3ds/gfx_bridge.h"
 
+typedef struct PBTitleAssets PBTitleAssets;
+typedef struct PBTitleFlow PBTitleFlow;
+
 #ifdef __cplusplus
 
 #include <cstddef>
@@ -86,6 +89,8 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
                            uint16_t textureHeight, uint16_t sourceWidth,
                            uint16_t sourceHeight);
     bool RenderFirstFrame();
+    bool PrepareTitleFlow(const PBTitleAssets *assets);
+    bool RenderTitleFlow(const PBTitleFlow *flow);
     void SetActive(bool active);
     const void *GetBridgeStats() const;
 
@@ -120,6 +125,10 @@ bool pb_gfx_api_3ds_prepare_first_frame(PBGfxApi3DS *api,
                                         uint16_t source_width,
                                         uint16_t source_height);
 bool pb_gfx_api_3ds_render_first_frame(PBGfxApi3DS *api);
+bool pb_gfx_api_3ds_prepare_title_flow(PBGfxApi3DS *api,
+                                       const PBTitleAssets *assets);
+bool pb_gfx_api_3ds_render_title_flow(PBGfxApi3DS *api,
+                                      const PBTitleFlow *flow);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
 void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api);

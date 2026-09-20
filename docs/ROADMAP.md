@@ -104,18 +104,29 @@ authoritative. See `docs/M10_GRAPHICS.md`.
 ### M11 - First rendered game frame
 Load legal archives and display a deterministic Paper Mario frame on the top screen with diagnostic fallback on failure.
 
-Status: **implementation in validation**. A bounded O2R reader locates and
+Status: **archive path validated; orientation correction moved into M12**. A bounded O2R reader locates and
 CRC-checks the legal `backgrounds/title_bg` CI8 image and RGBA16 palette,
 inflates only those fixed entries, decodes them into a 512x256 RGBA8 GPU
 texture, and renders the 296x200 frame centered on the top screen through the
 M10 adapter. Missing, malformed, unsupported, oversized, or memory-rejected
 inputs retain the checker/sail fallback with an explicit reason. Synthetic
 ZIP64-local-header tests and a private local test against the project owner's
-generated archive pass; native CI and Folium evidence are the remaining gates.
+generated archive pass. The first Folium capture proved the archive, decode,
+upload, and draw path but exposed a vertically inverted image; the shared M12
+quad mapping contains the correction and regression test.
 See `docs/M11_FIRST_FRAME.md`.
 
 ### M12 - Title and file-select flow
 Reach title/file-select, validate transitions and input, and document remaining graphical defects.
+
+Status: **implementation in validation**. The checkpoint loads the authentic
+RGBA32 logo plus IA8 prompt/copyright resources through the bounded O2R path,
+renders them over the corrected title background, and mirrors PaperBoat's
+A/START, 2x2 slot navigation, confirm, and B-return contract. Host fixtures and
+the owner's private archive pass. The file-select panels are a bounded native
+checkpoint compositor; save data, text/message/window display lists, and the
+overworld handoff remain explicit later-milestone work. See
+`docs/M12_TITLE_FLOW.md`.
 
 ### M13 - Core overworld gameplay
 Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.

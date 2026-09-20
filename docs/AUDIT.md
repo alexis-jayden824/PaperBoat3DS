@@ -70,8 +70,9 @@ The first backend is intentionally not a claim of full Fast3D coverage. It
 supports shade, texture 0, and texture-times-shade one-cycle programs. Complex
 combiner options and offscreen/readback operations reject with telemetry. The
 base-class transform/uniform state is retained. M11 proves an archive-backed
-static image through this adapter; M12 must apply the game matrix palette and
-PaperBoat display-list coordinates before claiming live title flow.
+static image through this adapter; M12 adds a narrowly scoped native title/file-
+select checkpoint. Full game matrix and PaperBoat display-list execution remain
+outside that checkpoint and must precede gameplay claims.
 
 Merge `4b5e6faef11ef469953a86d1ca84ecde32844d3a` passed both pull-request checks.
 Post-merge devkitARM run 114 repeated the M6/M8/M9/M10 host contracts, linked
@@ -110,10 +111,31 @@ CRC, padding/color, and allocation-release tests pass. A private local run also
 loaded the project owner's generated 60,826-entry archive successfully without
 placing the archive or its contents in source control.
 
+The first Folium render then showed the correct resource upside down. The
+archive/decode evidence remains valid, but orientation did not satisfy M11's
+visual gate. M12 fixes the mapping in one renderer helper and covers its exact
+half-texel/top-bottom contract in the portable suite.
+
+## M12 audit result
+
+M12 extends the same bounded reader to three exact title-screen entries rather
+than opening a general-purpose asset surface. RGBA32 and IA8 are the only new
+decode formats. Each extraction has a fixed bound, decoded buffers are charged
+to the M6 scene class, and all CPU pixels are released immediately after GPU
+upload. Synthetic stored/deflate and private owner-archive runs pass with no
+residual archive, transient, or scene allocation.
+
+The interactive state machine mirrors the audited upstream input contract:
+A/START enters file select, a latched stick or direction edge moves within a
+2x2 grid, A/START confirms, and B returns. L+R+START is kept outside the mapped
+N64 flow as the explicit checkpoint exit chord. Confirmation intentionally
+stops at the M13 handoff. The rendered file panels do not claim save I/O,
+message/font/window display lists, audio, or overworld execution.
+
 ## Open gates
 
-1. Pass the M11 native build/package and public synthetic CI gates.
-2. Validate the archive-backed M11 frame and corrected fallback in Folium.
-3. Validate renderer lifecycle and memory behavior on real hardware.
+1. Pass the M12 native build/package and public synthetic CI gates.
+2. Validate the corrected title and file-select interaction in Folium.
+3. Validate renderer lifecycle, input, and memory behavior on real hardware.
 4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.

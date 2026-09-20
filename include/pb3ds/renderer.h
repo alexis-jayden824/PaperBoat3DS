@@ -81,6 +81,24 @@ typedef struct {
     size_t bytes;
 } PBTextureLayout;
 
+/*
+ * A textured rectangle in the renderer's bottom-left 400x240 coordinate
+ * system. PICA samples the decoded OTR resource correctly when the lower
+ * screen edge uses the minimum V coordinate and the upper edge uses the
+ * maximum V coordinate. Keeping this mapping in one tested helper prevents
+ * individual checkpoint scenes from silently reintroducing vertical flips.
+ */
+typedef struct {
+    float left;
+    float bottom;
+    float right;
+    float top;
+    float left_u;
+    float bottom_v;
+    float right_u;
+    float top_v;
+} PBTexturedQuad;
+
 /* Logical top-screen coordinates use a bottom-left 400x240 origin. */
 typedef struct {
     uint16_t x;
@@ -170,6 +188,12 @@ bool pb_renderer_stream_reserve(size_t capacity_vertices,
                                 size_t requested_vertices,
                                 size_t *first_vertex,
                                 size_t *next_used_vertices);
+bool pb_renderer_textured_quad(PBTexturedQuad *quad, float left,
+                               float bottom, float width, float height,
+                               uint16_t texture_width,
+                               uint16_t texture_height,
+                               uint16_t source_width,
+                               uint16_t source_height);
 
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target);

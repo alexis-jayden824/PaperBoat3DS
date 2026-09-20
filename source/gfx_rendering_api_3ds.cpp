@@ -6,6 +6,7 @@
 #include <new>
 
 #include "pb3ds/renderer.h"
+#include "pb3ds/title_flow.h"
 
 namespace Fast {
 
@@ -37,6 +38,9 @@ constexpr uint64_t kTextureShadeShader =
 constexpr uint64_t kAlphaOption = uint64_t{1} << PB_GFX_OPT_ALPHA;
 constexpr size_t kFirstFrameVertexStride = 11U;
 constexpr size_t kFirstFrameVertexCount = 6U;
+constexpr size_t kShadeVertexStride = 9U;
+constexpr size_t kFileSelectQuadCount = 9U;
+constexpr size_t kFileSelectVertexCount = kFileSelectQuadCount * 6U;
 
 PBTextureWrap TranslateWrap(uint32_t mode) {
     const bool mirror = (mode & 1U) != 0;
@@ -165,9 +169,10 @@ float kSailVertices[] = {
     202.0f, 196.0f, 0.70f, 1.0f, 0.0f, 0.16f, 0.95f, 0.78f, 0.88f,
 };
 
-void SetFirstFrameVertex(
-    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount> &vertices,
-    size_t index, float x, float y, float u, float v) {
+void SetTexturedVertex(float *vertices, size_t index, float x, float y,
+                       float u, float v, float red = 1.0f,
+                       float green = 1.0f, float blue = 1.0f,
+                       float alpha = 1.0f) {
     const size_t offset = index * kFirstFrameVertexStride;
     vertices[offset + 0U] = x;
     vertices[offset + 1U] = y;
@@ -176,10 +181,71 @@ void SetFirstFrameVertex(
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = u;
     vertices[offset + 6U] = v;
-    vertices[offset + 7U] = 1.0f;
-    vertices[offset + 8U] = 1.0f;
-    vertices[offset + 9U] = 1.0f;
-    vertices[offset + 10U] = 1.0f;
+    vertices[offset + 7U] = red;
+    vertices[offset + 8U] = green;
+    vertices[offset + 9U] = blue;
+    vertices[offset + 10U] = alpha;
+}
+
+bool BuildTexturedQuad(
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        &vertices,
+    float left, float bottom, float width, float height,
+    uint16_t textureWidth, uint16_t textureHeight, uint16_t sourceWidth,
+    uint16_t sourceHeight, float red = 1.0f, float green = 1.0f,
+    float blue = 1.0f, float alpha = 1.0f) {
+    PBTexturedQuad quad;
+    if (!pb_renderer_textured_quad(&quad, left, bottom, width, height,
+                                   textureWidth, textureHeight, sourceWidth,
+                                   sourceHeight)) {
+        return false;
+    }
+    SetTexturedVertex(vertices.data(), 0, quad.left, quad.bottom,
+                      quad.left_u, quad.bottom_v, red, green, blue, alpha);
+    SetTexturedVertex(vertices.data(), 1, quad.right, quad.bottom,
+                      quad.right_u, quad.bottom_v, red, green, blue, alpha);
+    SetTexturedVertex(vertices.data(), 2, quad.right, quad.top,
+                      quad.right_u, quad.top_v, red, green, blue, alpha);
+    SetTexturedVertex(vertices.data(), 3, quad.right, quad.top,
+                      quad.right_u, quad.top_v, red, green, blue, alpha);
+    SetTexturedVertex(vertices.data(), 4, quad.left, quad.top,
+                      quad.left_u, quad.top_v, red, green, blue, alpha);
+    SetTexturedVertex(vertices.data(), 5, quad.left, quad.bottom,
+                      quad.left_u, quad.bottom_v, red, green, blue, alpha);
+    return true;
+}
+
+void SetShadeVertex(float *vertices, size_t index, float x, float y,
+                    float red, float green, float blue, float alpha) {
+    const size_t offset = index * kShadeVertexStride;
+    vertices[offset + 0U] = x;
+    vertices[offset + 1U] = y;
+    vertices[offset + 2U] = 0.55f;
+    vertices[offset + 3U] = 1.0f;
+    vertices[offset + 4U] = 0.0f;
+    vertices[offset + 5U] = red;
+    vertices[offset + 6U] = green;
+    vertices[offset + 7U] = blue;
+    vertices[offset + 8U] = alpha;
+}
+
+void AppendShadeQuad(float *vertices, size_t *vertexIndex, float left,
+                     float bottom, float width, float height, float red,
+                     float green, float blue, float alpha) {
+    const float right = left + width;
+    const float top = bottom + height;
+    SetShadeVertex(vertices, (*vertexIndex)++, left, bottom, red, green, blue,
+                   alpha);
+    SetShadeVertex(vertices, (*vertexIndex)++, right, bottom, red, green, blue,
+                   alpha);
+    SetShadeVertex(vertices, (*vertexIndex)++, right, top, red, green, blue,
+                   alpha);
+    SetShadeVertex(vertices, (*vertexIndex)++, right, top, red, green, blue,
+                   alpha);
+    SetShadeVertex(vertices, (*vertexIndex)++, left, top, red, green, blue,
+                   alpha);
+    SetShadeVertex(vertices, (*vertexIndex)++, left, bottom, red, green, blue,
+                   alpha);
 }
 
 } // namespace
@@ -198,6 +264,8 @@ struct GfxRenderingAPI3DS::Impl {
     Fast::ShaderProgram *diagnosticTextureShader = nullptr;
     Fast::ShaderProgram *diagnosticShadeShader = nullptr;
     Fast::ShaderProgram *firstFrameShader = nullptr;
+    Fast::ShaderProgram *titleTextureShader = nullptr;
+    Fast::ShaderProgram *titleShadeShader = nullptr;
     Fast::FilteringMode filterMode = Fast::FILTER_THREE_POINT;
     PBRenderPipeline pipeline = {
         PB_CULL_NONE, false, false, PB_COMPARE_GREATER_EQUAL,
@@ -206,8 +274,19 @@ struct GfxRenderingAPI3DS::Impl {
     };
     uint32_t diagnosticTexture = 0;
     uint32_t firstFrameTexture = 0;
+    uint32_t titleLogoTexture = 0;
+    uint32_t titlePromptTexture = 0;
+    uint32_t titleCopyrightTexture = 0;
     std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
         firstFrameVertices = {};
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        titleLogoVertices = {};
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        titlePromptVertices = {};
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        titleCopyrightVertices = {};
+    std::array<float, kShadeVertexStride * kFileSelectVertexCount>
+        fileSelectVertices = {};
     int currentTile = 0;
     bool zmodeDecal = false;
     bool strictDecal = false;
@@ -280,6 +359,8 @@ void GfxRenderingAPI3DS::ClearShaderCache() {
     mImpl->diagnosticTextureShader = nullptr;
     mImpl->diagnosticShadeShader = nullptr;
     mImpl->firstFrameShader = nullptr;
+    mImpl->titleTextureShader = nullptr;
+    mImpl->titleShadeShader = nullptr;
     for (Fast::ShaderProgram &shader : mImpl->shaders) {
         shader = {};
     }
@@ -768,29 +849,10 @@ bool GfxRenderingAPI3DS::PrepareFirstFrame(
         (static_cast<float>(PB_RENDER_TOP_WIDTH) - sourceWidth) * 0.5f;
     const float bottom =
         (static_cast<float>(PB_RENDER_TOP_HEIGHT) - sourceHeight) * 0.5f;
-    const float right = left + sourceWidth;
-    const float top = bottom + sourceHeight;
-    const float minimumU = 0.5f / static_cast<float>(textureWidth);
-    const float minimumV = 0.5f / static_cast<float>(textureHeight);
-    const float maximumU =
-        (static_cast<float>(sourceWidth) - 0.5f) /
-        static_cast<float>(textureWidth);
-    const float maximumV =
-        (static_cast<float>(sourceHeight) - 0.5f) /
-        static_cast<float>(textureHeight);
-    SetFirstFrameVertex(mImpl->firstFrameVertices, 0, left, bottom, minimumU,
-                        maximumV);
-    SetFirstFrameVertex(mImpl->firstFrameVertices, 1, right, bottom,
-                        maximumU, maximumV);
-    SetFirstFrameVertex(mImpl->firstFrameVertices, 2, right, top, maximumU,
-                        minimumV);
-    SetFirstFrameVertex(mImpl->firstFrameVertices, 3, right, top, maximumU,
-                        minimumV);
-    SetFirstFrameVertex(mImpl->firstFrameVertices, 4, left, top, minimumU,
-                        minimumV);
-    SetFirstFrameVertex(mImpl->firstFrameVertices, 5, left, bottom, minimumU,
-                        maximumV);
-    return true;
+    return BuildTexturedQuad(mImpl->firstFrameVertices, left, bottom,
+                             static_cast<float>(sourceWidth),
+                             static_cast<float>(sourceHeight), textureWidth,
+                             textureHeight, sourceWidth, sourceHeight);
 }
 
 bool GfxRenderingAPI3DS::RenderFirstFrame() {
@@ -812,6 +874,183 @@ bool GfxRenderingAPI3DS::RenderFirstFrame() {
     SetUseAlpha(false);
     DrawTriangles(mImpl->firstFrameVertices.data(),
                   mImpl->firstFrameVertices.size(), 2);
+    EndFrame();
+    return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
+}
+
+bool GfxRenderingAPI3DS::PrepareTitleFlow(const PBTitleAssets *assets) {
+    const auto textureMatches = [](const PBDecodedTexture &texture,
+                                   uint16_t textureWidth,
+                                   uint16_t textureHeight,
+                                   uint16_t sourceWidth,
+                                   uint16_t sourceHeight) {
+        return texture.rgba != nullptr && texture.texture_width == textureWidth &&
+               texture.texture_height == textureHeight &&
+               texture.source_width == sourceWidth &&
+               texture.source_height == sourceHeight &&
+               texture.rgba_size ==
+                   static_cast<size_t>(textureWidth) * textureHeight * 4U;
+    };
+    if (mImpl == nullptr || assets == nullptr ||
+        assets->result != PB_TITLE_ASSETS_READY ||
+        mImpl->firstFrameTexture == 0 || mImpl->firstFrameShader == nullptr ||
+        !textureMatches(assets->logo, 256, 128, PB_TITLE_LOGO_WIDTH,
+                        PB_TITLE_LOGO_HEIGHT) ||
+        !textureMatches(assets->prompt, 128, 32, PB_TITLE_PROMPT_WIDTH,
+                        PB_TITLE_PROMPT_HEIGHT) ||
+        !textureMatches(assets->copyright, 256, 32,
+                        PB_TITLE_COPYRIGHT_WIDTH,
+                        PB_TITLE_COPYRIGHT_HEIGHT)) {
+        return false;
+    }
+
+    Init();
+    mImpl->titleTextureShader =
+        CreateAndLoadNewShader(kTextureShadeShader, kAlphaOption);
+    mImpl->titleShadeShader =
+        CreateAndLoadNewShader(kShadeShader, kAlphaOption);
+    if (mImpl->titleTextureShader == nullptr ||
+        mImpl->titleShadeShader == nullptr ||
+        !mImpl->titleTextureShader->plan.supported ||
+        !mImpl->titleShadeShader->plan.supported) {
+        return false;
+    }
+
+    const auto discardTitleTextures = [this]() {
+        uint32_t *textures[] = {
+            &mImpl->titleLogoTexture,
+            &mImpl->titlePromptTexture,
+            &mImpl->titleCopyrightTexture,
+        };
+        for (uint32_t *texture : textures) {
+            if (*texture != 0) {
+                DeleteTexture(*texture);
+                *texture = 0;
+            }
+        }
+    };
+    discardTitleTextures();
+
+    const auto uploadTexture = [this](uint32_t *textureId,
+                                      const PBDecodedTexture &texture) {
+        *textureId = NewTexture();
+        if (*textureId == 0) {
+            return false;
+        }
+        SelectTexture(0, *textureId);
+        UploadTexture(texture.rgba, texture.texture_width,
+                      texture.texture_height);
+        SetTextureFilter(Fast::FILTER_LINEAR);
+        SetSamplerParameters(0, true, 2U, 2U);
+        const PBGfxTextureRecord *record =
+            pb_gfx_bridge_find_texture(&mImpl->bridge, *textureId);
+        return record != nullptr && record->uploaded;
+    };
+    if (!uploadTexture(&mImpl->titleLogoTexture, assets->logo) ||
+        !uploadTexture(&mImpl->titlePromptTexture, assets->prompt) ||
+        !uploadTexture(&mImpl->titleCopyrightTexture, assets->copyright) ||
+        !BuildTexturedQuad(mImpl->titleLogoVertices, 100.0f, 113.0f,
+                           PB_TITLE_LOGO_WIDTH, PB_TITLE_LOGO_HEIGHT,
+                           assets->logo.texture_width,
+                           assets->logo.texture_height,
+                           assets->logo.source_width,
+                           assets->logo.source_height) ||
+        !BuildTexturedQuad(mImpl->titlePromptVertices, 136.0f, 71.0f,
+                           PB_TITLE_PROMPT_WIDTH, PB_TITLE_PROMPT_HEIGHT,
+                           assets->prompt.texture_width,
+                           assets->prompt.texture_height,
+                           assets->prompt.source_width,
+                           assets->prompt.source_height) ||
+        !BuildTexturedQuad(mImpl->titleCopyrightVertices, 128.0f, 17.0f,
+                           PB_TITLE_COPYRIGHT_WIDTH,
+                           PB_TITLE_COPYRIGHT_HEIGHT,
+                           assets->copyright.texture_width,
+                           assets->copyright.texture_height,
+                           assets->copyright.source_width,
+                           assets->copyright.source_height)) {
+        discardTitleTextures();
+        return false;
+    }
+    return true;
+}
+
+bool GfxRenderingAPI3DS::RenderTitleFlow(const PBTitleFlow *flow) {
+    if (mImpl == nullptr || flow == nullptr ||
+        (flow->screen != PB_TITLE_FLOW_TITLE &&
+         flow->screen != PB_TITLE_FLOW_FILE_SELECT) ||
+        flow->selected_slot >= PB_FILE_SELECT_SLOT_COUNT ||
+        mImpl->firstFrameShader == nullptr ||
+        mImpl->firstFrameTexture == 0 ||
+        mImpl->titleTextureShader == nullptr ||
+        mImpl->titleShadeShader == nullptr ||
+        mImpl->titleLogoTexture == 0 || mImpl->titlePromptTexture == 0 ||
+        mImpl->titleCopyrightTexture == 0) {
+        return false;
+    }
+
+    const uint64_t previousFrames = mImpl->bridge.stats.frames_presented;
+    StartFrame();
+    if (!mImpl->bridge.frame_open) {
+        return false;
+    }
+    SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetDepthTestAndMask(false, false);
+    SetCullMode(0);
+
+    LoadShader(mImpl->firstFrameShader);
+    SelectTexture(0, mImpl->firstFrameTexture);
+    SetUseAlpha(false);
+    DrawTriangles(mImpl->firstFrameVertices.data(),
+                  mImpl->firstFrameVertices.size(), 2);
+
+    if (flow->screen == PB_TITLE_FLOW_TITLE) {
+        const float promptAlpha =
+            static_cast<float>(flow->prompt_alpha) / 255.0f;
+        for (size_t vertex = 0; vertex < kFirstFrameVertexCount; vertex++) {
+            mImpl->titlePromptVertices[
+                vertex * kFirstFrameVertexStride + 10U] = promptAlpha;
+        }
+
+        LoadShader(mImpl->titleTextureShader);
+        SetUseAlpha(true);
+        SelectTexture(0, mImpl->titleLogoTexture);
+        DrawTriangles(mImpl->titleLogoVertices.data(),
+                      mImpl->titleLogoVertices.size(), 2);
+        SelectTexture(0, mImpl->titlePromptTexture);
+        DrawTriangles(mImpl->titlePromptVertices.data(),
+                      mImpl->titlePromptVertices.size(), 2);
+        SelectTexture(0, mImpl->titleCopyrightTexture);
+        DrawTriangles(mImpl->titleCopyrightVertices.data(),
+                      mImpl->titleCopyrightVertices.size(), 2);
+    } else {
+        size_t vertex = 0;
+        AppendShadeQuad(mImpl->fileSelectVertices.data(), &vertex,
+                        0.0f, 0.0f, 400.0f, 240.0f,
+                        0.02f, 0.04f, 0.12f, 0.72f);
+        for (uint8_t slot = 0; slot < PB_FILE_SELECT_SLOT_COUNT; slot++) {
+            const float left = slot % 2U == 0U ? 49.0f : 189.0f;
+            const float bottom = slot / 2U == 0U ? 145.0f : 76.0f;
+            const bool selected = slot == flow->selected_slot;
+            const bool confirmed = selected && flow->slot_confirmed;
+            AppendShadeQuad(
+                mImpl->fileSelectVertices.data(), &vertex,
+                left, bottom, 130.0f, 54.0f,
+                confirmed ? 0.25f : (selected ? 1.0f : 0.28f),
+                confirmed ? 0.95f : (selected ? 0.72f : 0.38f),
+                confirmed ? 0.42f : (selected ? 0.12f : 0.62f),
+                0.96f);
+            AppendShadeQuad(mImpl->fileSelectVertices.data(), &vertex,
+                            left + 3.0f, bottom + 3.0f, 124.0f, 48.0f,
+                            0.03f, 0.08f, 0.19f, 0.94f);
+        }
+
+        LoadShader(mImpl->titleShadeShader);
+        SetUseAlpha(true);
+        DrawTriangles(mImpl->fileSelectVertices.data(),
+                      mImpl->fileSelectVertices.size(),
+                      kFileSelectVertexCount / 3U);
+    }
     EndFrame();
     return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
 }
@@ -901,6 +1140,18 @@ extern "C" bool pb_gfx_api_3ds_prepare_first_frame(
 extern "C" bool pb_gfx_api_3ds_render_first_frame(PBGfxApi3DS *api) {
     return api != nullptr && api->implementation != nullptr &&
            api->implementation->RenderFirstFrame();
+}
+
+extern "C" bool pb_gfx_api_3ds_prepare_title_flow(
+    PBGfxApi3DS *api, const PBTitleAssets *assets) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->PrepareTitleFlow(assets);
+}
+
+extern "C" bool pb_gfx_api_3ds_render_title_flow(
+    PBGfxApi3DS *api, const PBTitleFlow *flow) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->RenderTitleFlow(flow);
 }
 
 extern "C" void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active) {

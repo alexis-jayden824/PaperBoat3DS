@@ -137,6 +137,22 @@ not proof of heap exhaustion; real-hardware logging remains authoritative.
 - Not established by this result: corrected multi-draw output, O2R frame load,
   lifecycle restoration, physical PICA correctness, or Old 3DS performance
 
+### 2026-09-20 - M11 archive-backed frame
+
+- Runtime build: `d5a3b09c7eba` (`0.11.0-m11`)
+- Artifact: private `PaperBoat3DS.3ds` plus owner-generated O2R payload
+- Environment: Folium Nintendo 3DS core on iOS
+- Pipeline result: `title_bg` resolved as 296x200 CI8, decoded to a 512x256
+  RGBA8 texture, both archives reported available, and the renderer advanced
+  with zero rejects, failures, and stream overflows
+- Visual result: the complete expected title image appeared but was vertically
+  inverted; M11's visual acceptance therefore remained open
+- M12 correction: all imported-image quads now share a host-tested PICA V
+  mapping instead of the inverted one-off M11 vertices
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: corrected orientation, interactive title
+  flow, lifecycle restoration, physical PICA correctness, or Old 3DS performance
+
 ## M8 input check
 
 Use the newest build marked `0.8.0-m8`. Exercise A, B, X, Y, L, R, D-Pad,
@@ -170,11 +186,12 @@ console gates.
 
 ## M11 first-frame check
 
-Use the newest private bundle marked `0.11.0-m11`, with its supplied legal O2R
-payload installed in Folium's virtual SD at `3ds/PaperBoat3DS/`. The top display
-should show the 296x200 Paper Mario title background centered within the navy
-400x240 screen. It must not be upside down, mirrored, cropped, diagonally split,
-or replaced by checker/sail fallback.
+The recorded `0.11.0-m11` private-bundle run found and decoded the expected
+296x200 CI8 title background, reported both archives available, advanced the
+one-draw/two-triangle path with zero rejects/failures, and displayed no fallback.
+The image was vertically inverted, so the visual acceptance gate did not pass.
+That result isolated the defect to textured-quad V mapping rather than archive
+import or decoding; M12 centralizes and reverses the native mapping.
 
 The bottom display must report `Frame: title_bg 296x200 CI8`, `O2R: ready`, a
 512x256 RGBA8 GPU texture, advancing frames at one draw/two triangles/six
@@ -184,3 +201,26 @@ checker and the complete two-triangle panel plus sail must appear with
 `Fallback: pm64.o2r missing`. Capture both success and fallback displays with
 the exact build SHA. Folium does not close the physical lifecycle or Old 3DS
 performance gates.
+
+## M12 title/file-select check
+
+Use the newest private bundle marked `0.12.0-m12`, with its legal O2R payload
+installed at `3ds/PaperBoat3DS/` in Folium's virtual SD.
+
+1. Confirm the background, logo, prompt, and copyright are all upright,
+   centered, and neither mirrored nor cropped. This is the regression test for
+   the M11 capture.
+2. Press A or START and confirm the display changes to four file-slot panels.
+3. Move through all four slots with the Circle Pad or direction controls. The
+   highlight must move once per press/deflection and remain inside the 2x2 grid.
+4. Press A or START; the chosen border must turn green without a crash. Press B
+   and confirm the title returns.
+5. Confirm the bottom display reports `M12 Title + File Select`, title assets
+   ready, the M11 flip fix applied, zero rejects/failures, and zero stream
+   overflows.
+6. Exit with L+R+START. Preserve the exact build SHA and both-screen captures.
+
+The simple panels are expected at M12. Missing save text/window decoration,
+audio, and an overworld transition are documented milestone boundaries rather
+than emulator failures. Folium still cannot establish physical lifecycle,
+input, or Old 3DS performance behavior.

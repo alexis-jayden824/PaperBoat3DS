@@ -1,4 +1,5 @@
 #include "pb3ds/gfx_rendering_api_3ds.h"
+#include "pb3ds/title_flow.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -7,6 +8,9 @@
 
 static unsigned int checksRun;
 static uint8_t firstFramePixels[512U * 256U * 4U];
+static uint8_t titleLogoPixels[256U * 128U * 4U];
+static uint8_t titlePromptPixels[128U * 32U * 4U];
+static uint8_t titleCopyrightPixels[256U * 32U * 4U];
 
 #define CHECK(expression)                                                    \
     do {                                                                     \
@@ -24,6 +28,23 @@ static_assert(std::is_base_of<Fast::GfxRenderingAPI,
               "3DS backend must implement the pinned libultraship API");
 static_assert(!std::is_abstract<PB3DS::GfxRenderingAPI3DS>::value,
               "every pure virtual graphics method must be implemented");
+
+static PBTitleAssets makeTitleAssets() {
+    PBTitleAssets assets = {};
+    assets.result = PB_TITLE_ASSETS_READY;
+    assets.logo = { titleLogoPixels, sizeof(titleLogoPixels),
+                    PB_TITLE_LOGO_WIDTH, PB_TITLE_LOGO_HEIGHT, 256, 128,
+                    PB_RESOURCE_TEXTURE_RGBA32 };
+    assets.prompt = { titlePromptPixels, sizeof(titlePromptPixels),
+                      PB_TITLE_PROMPT_WIDTH, PB_TITLE_PROMPT_HEIGHT, 128, 32,
+                      PB_RESOURCE_TEXTURE_IA8 };
+    assets.copyright = {
+        titleCopyrightPixels, sizeof(titleCopyrightPixels),
+        PB_TITLE_COPYRIGHT_WIDTH, PB_TITLE_COPYRIGHT_HEIGHT, 256, 32,
+        PB_RESOURCE_TEXTURE_IA8
+    };
+    return assets;
+}
 
 static bool testExactInterface() {
     PB3DS::GfxRenderingAPI3DS api(nullptr);
@@ -64,11 +85,37 @@ static bool testExactInterface() {
     CHECK(stats->shaders_live == 2);
     CHECK(!api.PrepareFirstFrame(firstFramePixels, 256, 256, 296, 200));
 
+    PBTitleAssets assets = makeTitleAssets();
+    CHECK(api.PrepareTitleFlow(&assets));
+    CHECK(stats->textures_live == 5);
+    CHECK(stats->texture_bytes ==
+          512U * 256U * 4U + 256U + sizeof(titleLogoPixels) +
+              sizeof(titlePromptPixels) + sizeof(titleCopyrightPixels));
+    PBTitleFlow flow = {};
+    flow.screen = PB_TITLE_FLOW_TITLE;
+    flow.prompt_alpha = 255;
+    CHECK(api.RenderTitleFlow(&flow));
+    CHECK(stats->frames_presented == 4);
+    CHECK(stats->draw_calls == 9);
+    CHECK(stats->triangles == 16);
+    CHECK(stats->vertices == 48);
+    flow.screen = PB_TITLE_FLOW_FILE_SELECT;
+    flow.selected_slot = 3;
+    flow.slot_confirmed = true;
+    CHECK(api.RenderTitleFlow(&flow));
+    CHECK(stats->frames_presented == 5);
+    CHECK(stats->draw_calls == 11);
+    CHECK(stats->triangles == 36);
+    CHECK(stats->vertices == 108);
+    flow.selected_slot = PB_FILE_SELECT_SLOT_COUNT;
+    CHECK(!api.RenderTitleFlow(&flow));
+    CHECK(!api.PrepareTitleFlow(nullptr));
+
     api.SetActive(false);
     CHECK(!api.RenderDiagnostic());
     api.SetActive(true);
     CHECK(api.RenderDiagnostic());
-    CHECK(stats->frames_presented == 4);
+    CHECK(stats->frames_presented == 6);
 
     CHECK(api.CreateFramebuffer() == -1);
     CHECK(api.GetFramebufferTextureId(0) == nullptr);
@@ -86,10 +133,21 @@ static bool testCBoundary() {
     CHECK(pb_gfx_api_3ds_prepare_first_frame(api, firstFramePixels, 512, 256,
                                              296, 200));
     CHECK(pb_gfx_api_3ds_render_first_frame(api));
+    PBTitleAssets assets = makeTitleAssets();
+    CHECK(pb_gfx_api_3ds_prepare_title_flow(api, &assets));
+    PBTitleFlow flow = {};
+    flow.screen = PB_TITLE_FLOW_TITLE;
+    flow.prompt_alpha = 128;
+    CHECK(pb_gfx_api_3ds_render_title_flow(api, &flow));
+    flow.screen = PB_TITLE_FLOW_FILE_SELECT;
+    flow.selected_slot = 2;
+    CHECK(pb_gfx_api_3ds_render_title_flow(api, &flow));
     const PBGfxBridgeStats *stats = pb_gfx_api_3ds_stats(api);
     CHECK(stats != nullptr);
-    CHECK(stats->frames_presented == 2);
-    CHECK(stats->draw_calls == 3);
+    CHECK(stats->frames_presented == 4);
+    CHECK(stats->draw_calls == 9);
+    CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
+    CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     pb_gfx_api_3ds_set_active(api, false);
     CHECK(!pb_gfx_api_3ds_render_diagnostic(api));
     pb_gfx_api_3ds_destroy(api);
@@ -108,7 +166,7 @@ int main() {
     if (!testExactInterface() || !testCBoundary()) {
         return EXIT_FAILURE;
     }
-    std::printf("M11 exact GfxRenderingAPI contract: %u checks passed\n",
+    std::printf("M12 exact GfxRenderingAPI contract: %u checks passed\n",
                 checksRun);
     return EXIT_SUCCESS;
 }

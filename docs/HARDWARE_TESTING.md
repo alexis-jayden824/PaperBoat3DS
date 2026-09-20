@@ -160,3 +160,27 @@ Report the exact build SHA, New 3DS XL/LL model, firmware, launch environment,
 success/fallback photos, lifecycle result, and log. This checkpoint validates a
 legal archive-backed static frame, not title input, game-state execution, audio,
 or playability. Old 3DS measurements remain part of the performance baseline.
+
+## M12 title and file-select checkpoint
+
+Use the newest private `port/3ds` `.3dsx` bundle marked `0.12.0-m12`. Copy the
+owner-generated `paperboat.o2r` and `pm64.o2r` beside the executable under
+`/3ds/PaperBoat3DS/`; never share or upload those archives.
+
+1. Cold-boot and verify the background, logo, prompt, and copyright are upright,
+   correctly colored, centered, and stable for 60 seconds.
+2. Press A and START separately from fresh title visits; each must enter the
+   four-panel file-select checkpoint.
+3. Visit all four slots with Circle Pad and D-Pad/C-direction input. Focus must
+   move once per new direction and stay within the 2x2 grid.
+4. Confirm each slot with A or START. The active border must turn green. Press B
+   to return to title; no save or world load is expected yet.
+5. Close the lid for at least five seconds, reopen it, release all controls to
+   clear the neutral gate, and repeat one title/file-select round trip.
+6. Confirm zero renderer rejects, failures, and stream overflows, then exit with
+   L+R+START and preserve `PaperBoat3DS.log`.
+
+Report the exact build SHA, New 3DS XL/LL model, firmware, launch environment,
+photos of both screens on title and file select, lifecycle result, input result,
+and complete log. This closes the owner's target-hardware check only; Old 3DS
+performance/memory evidence remains outstanding.

@@ -61,6 +61,16 @@ is reflected by both renderer texture telemetry and sampled linear free space.
 The public M11 tests assert that every allocation class returns to zero after
 success and each exercised failure path.
 
+## M12 title-flow allocation profile
+
+M12 extracts one title resource at a time and releases each archive buffer
+after decoding. Its three padded CPU RGBA8 buffers total 176 KiB: 128 KiB for
+the 256x128 logo, 16 KiB for the 128x32 prompt, and 32 KiB for the 256x32
+copyright texture. Together with M11's 512 KiB background they consume 688 KiB
+of persistent GPU texture memory after upload. All CPU scene allocations are
+released before the interactive loop. Public and private host tests assert
+that archive, transient, and scene accounting returns to zero.
+
 ## Hardware evidence still required
 
 Folium is useful for presentation and failure-path checks but cannot establish
