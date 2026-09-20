@@ -1,0 +1,96 @@
+name: M7 asset contract
+
+on:
+  push:
+    branches:
+      - port/3ds
+    paths:
+      - .github/workflows/m7-assets.yml
+      - docs/BUILDING.md
+      - docs/M7_ASSET_PIPELINE.md
+      - README.md
+      - include/pb3ds/version.h
+      - tests/test_assets.py
+      - tools/pb3ds_assets.py
+      - tools/test_asset_pipeline.sh
+      - upstream/ASSET_CONTRACT.json
+      - upstream/PAPERBOAT.lock
+  pull_request:
+    paths:
+      - .github/workflows/m7-assets.yml
+      - docs/BUILDING.md
+      - docs/M7_ASSET_PIPELINE.md
+      - README.md
+      - tests/test_assets.py
+      - tools/pb3ds_assets.py
+      - tools/test_asset_pipeline.sh
+      - upstream/ASSET_CONTRACT.json
+      - upstream/PAPERBOAT.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Record host-tool versions
+        run: |
+          python3 --version
+          cmake --version
+          c++ --version
+
+      - name: Reject proprietary inputs in the repository
+        run: |
+          if find . -path ./.git -prune -o -type f \
+              \( -name '*.z64' -o -name '*.n64' -o -name '*.v64' \
+                 -o -name '*.o2r' -o -name '*.otr' \) -print -quit \
+              | grep -q .; then
+            echo 'Proprietary/generated asset input is tracked in the repository.' >&2
+            exit 1
+          fi
+
+      - name: Run synthetic asset-pipeline tests
+        run: sh tools/test_asset_pipeline.sh
+
+      - name: Fetch pinned PaperBoat and Torch sources
+        run: sh tools/fetch_upstream.sh
+
+      - name: Audit the pinned extraction contract
+        run: python3 tools/pb3ds_assets.py audit
+
+      - name: Reproduce and validate the engine archive
+        run: |
+          mkdir -p build/m7
+          python3 tools/pb3ds_assets.py pack-port \
+            --source .cache/upstream/PaperBoat/port \
+            --output build/m7/paperboat-a.o2r
+          python3 tools/pb3ds_assets.py pack-port \
+            --source .cache/upstream/PaperBoat/port \
+            --output build/m7/paperboat-b.o2r
+          cmp build/m7/paperboat-a.o2r build/m7/paperboat-b.o2r
+          python3 tools/pb3ds_assets.py verify-archive \
+            build/m7/paperboat-a.o2r \
+            --kind paperboat \
+            --source-directory .cache/upstream/PaperBoat/port \
+            --manifest build/m7/paperboat-manifest.json
+
+      - name: Build the pinned host-side Torch executable
+        run: |
+          python3 tools/pb3ds_assets.py build-torch \
+            --paperboat-root .cache/upstream/PaperBoat \
+            --build-directory "$RUNNER_TEMP/pb3ds-torch" \
+            --jobs 2
+
+      - name: Publish non-proprietary validation report
+        uses: actions/upload-artifact@v6
+        with:
+          name: PaperBoat3DS-M7-asset-contract-${{ github.sha }}
+          if-no-files-found: error
+          path: build/m7/paperboat-manifest.json
+          retention-days: 14
