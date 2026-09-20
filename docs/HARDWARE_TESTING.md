@@ -189,3 +189,23 @@ Report the exact build SHA, New 3DS XL/LL model, firmware, launch environment,
 photos of both screens on title and file select, lifecycle result, input result,
 and complete log. This closes the owner's target-hardware check only; Old 3DS
 performance/memory evidence remains outstanding.
+
+## M13 overworld integration checkpoint
+
+Use a private `.3dsx` bundle marked `0.13.0-m13` with the owner-generated O2R
+files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
+repeat it on the New 3DS XL/LL when the console is available. In addition:
+
+1. Verify `nok_bg` is centered at the same 52,20 LCD origin as the 296x200
+   Paper Mario viewport. The XL/LL has a physically larger panel but still a
+   400x240 top framebuffer; no model-specific crop is permitted.
+2. Pause and resume at least ten times and verify the top-screen dim overlay,
+   counters, and input neutral gate remain stable.
+3. Close the lid while active and once while paused. On wake, release all
+   controls and verify rendering resumes in the prior world state.
+4. Confirm zero renderer rejects, frame failures, stream overflows, and memory
+   budget failures, then preserve `PaperBoat3DS.log`.
+
+The static authentic background plus structural map validation are the first
+M13 integration gate, not playable overworld gameplay. Camera, entities,
+collision response, scripts, and transitions remain open.

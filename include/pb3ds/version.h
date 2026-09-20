@@ -1,8 +1,8 @@
 #pragma once
 
 #define PB3DS_PROJECT_NAME "PaperBoat3DS"
-#define PB3DS_VERSION "0.12.1-m12.1"
-#define PB3DS_ROADMAP_STAGE "M12.1 title presentation correction"
+#define PB3DS_VERSION "0.13.0-m13"
+#define PB3DS_ROADMAP_STAGE "M13 overworld integration checkpoint"
 
 #ifndef PB3DS_BUILD_SHA
 #define PB3DS_BUILD_SHA "unknown"

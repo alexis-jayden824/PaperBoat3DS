@@ -11,6 +11,7 @@
 #include "pb3ds/renderer.h"
 #include "pb3ds/title_flow.h"
 #include "pb3ds/version.h"
+#include "pb3ds/world_boot.h"
 
 typedef enum {
     LIFECYCLE_ACTIVE,
@@ -93,7 +94,10 @@ static void print_bottom_screen(PrintConsole *console,
                                 bool first_frame_ready,
                                 const PBTitleAssets *title_assets,
                                 bool title_flow_ready,
-                                const PBTitleFlow *title_flow) {
+                                const PBTitleFlow *title_flow,
+                                const PBWorldBoot *world_boot,
+                                const PBWorldFlow *world_flow,
+                                bool world_frame_ready) {
     const bool renderer_ready =
         renderer_result == PB_RENDERER_INIT_OK && renderer_stats != NULL;
     const bool graphics_ready =
@@ -105,9 +109,71 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM12.1 Title Presentation\n");
+    printf("\x1b[1;2HM13 Overworld Integration\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
+    if (world_flow->state == PB_WORLD_FLOW_ACTIVE ||
+        world_flow->state == PB_WORLD_FLOW_PAUSED) {
+        printf("\x1b[6;2HMap: %s  entry:%u  slot:%u\n",
+               PB_WORLD_BOOT_MAP_ID, (unsigned int)PB_WORLD_BOOT_ENTRY_ID,
+               (unsigned int)world_flow->selected_slot + 1U);
+        printf("\x1b[7;2HState: %s\n",
+               pb_world_flow_state_name(world_flow->state));
+        printf("\x1b[8;2HAsset: %s + %s  %s\n",
+               PB_WORLD_BOOT_MAP_ID, PB_WORLD_BOOT_BACKGROUND_ID,
+               pb_world_boot_result_name(world_boot->result));
+        printf("\x1b[9;2HShape: %lu nodes  %lu DL refs\n",
+               (unsigned long)world_boot->world_stats.shape_nodes,
+               (unsigned long)world_boot->world_stats.shape_display_lists);
+        printf("\x1b[10;2HVertices:%lu  sample DL:%lu cmds\n",
+               (unsigned long)world_boot->world_stats.vertex_count,
+               (unsigned long)world_boot->world_stats.display_list_commands);
+        printf("\x1b[11;2HHit: %lu col %lu vtx %lu tri\n",
+               (unsigned long)world_boot->world_stats.collision_colliders,
+               (unsigned long)world_boot->world_stats.collision_vertices,
+               (unsigned long)world_boot->world_stats.collision_triangles);
+        printf("\x1b[12;2HZone:%lu col %lu vtx %lu tri\n",
+               (unsigned long)world_boot->world_stats.zone_colliders,
+               (unsigned long)world_boot->world_stats.zone_vertices,
+               (unsigned long)world_boot->world_stats.zone_triangles);
+        printf("\x1b[14;2HGPU background: %s\n",
+               world_frame_ready ? "nok_bg uploaded" : "FAILED");
+        if (graphics_ready) {
+            printf("\x1b[15;2HFrames:%llu Draws:%llu Tris:%llu\n",
+                   (unsigned long long)graphics_stats->frames_presented,
+                   (unsigned long long)graphics_stats->draw_calls,
+                   (unsigned long long)graphics_stats->triangles);
+            printf("\x1b[16;2HReject:%lu fail:%lu unsupported:%lu\n",
+                   (unsigned long)graphics_stats->rejected_commands,
+                   (unsigned long)graphics_stats->frame_failures,
+                   (unsigned long)graphics_stats->unsupported_shaders);
+        }
+        printf("\x1b[18;2HSystem: %s  %s\n",
+               state->model_query_ok
+                   ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
+                   : "unknown",
+               lifecycle_name(state->lifecycle));
+        printf("\x1b[19;2HKernel: %08lX\n",
+               (unsigned long)state->kernel_version);
+        printf("\x1b[20;2HInput: %s N64:%04X\n",
+               input->waiting_for_neutral ? "WAIT" : "active",
+               (unsigned int)input->n64_held);
+        printf("\x1b[21;2HStick:%4d,%4d  pauses:%lu\n",
+               input->stick_x, input->stick_y,
+               (unsigned long)world_flow->pause_count);
+        printf("\x1b[23;2HBudgets: %s fail:%lu\n",
+               memory->pressure ? "PRESSURE" : "OK",
+               (unsigned long)memory->allocation_failures);
+        printf("\x1b[24;2HLinear free: %6lu KiB\n",
+               (unsigned long)(memory->linear_free / 1024));
+        printf("\x1b[25;2HScene peak: %6lu KiB\n",
+               (unsigned long)(memory->class_peak[PB_MEMORY_SCENE] / 1024));
+        printf("\x1b[26;2HSD log: %s\n",
+               pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
+        printf("\x1b[28;2HSTART pause/resume; SELECT menu\n");
+        printf("\x1b[30;2HL+R+START exits checkpoint\n");
+        return;
+    }
     if (title_flow_ready) {
         printf("\x1b[6;2HScene: %-11s slot:%u%s\n",
                pb_title_flow_screen_name(title_flow->screen),
@@ -159,6 +225,12 @@ static void print_bottom_screen(PrintConsole *console,
                command_permille / 10U, command_permille % 10U,
                (unsigned long)(renderer_stats->vertex_buffer_bytes / 1024U));
     }
+    if (world_flow->state == PB_WORLD_FLOW_FAILED) {
+        printf("\x1b[22;2HWorld: %s%s\n",
+               pb_world_boot_result_name(world_boot->result),
+               world_boot->result == PB_WORLD_BOOT_READY
+                   ? " (GPU failed)" : "");
+    }
 
     printf("\x1b[17;2HSystem: %s\n",
            state->model_query_ok
@@ -192,7 +264,9 @@ static void print_bottom_screen(PrintConsole *console,
            engine_archive_available ? "OK" : "--",
            game_archive_available ? "OK" : "--");
     if (title_flow_ready && title_flow->screen == PB_TITLE_FLOW_FILE_SELECT) {
-        printf("\x1b[29;2HMove: Pad  A select  B title\n");
+        printf("\x1b[29;2HMove: Pad  A %s  B title\n",
+               world_flow->state == PB_WORLD_FLOW_FAILED
+                   ? "retry" : "select");
     } else {
         printf("\x1b[29;2HA/START opens file select\n");
     }
@@ -236,6 +310,11 @@ int main(int argc, char **argv) {
     PBTitleFlow title_flow;
     pb_title_flow_init(&title_flow);
     bool title_flow_ready = false;
+    PBWorldBoot world_boot;
+    pb_world_boot_init(&world_boot);
+    PBWorldFlow world_flow;
+    pb_world_flow_init(&world_flow);
+    bool world_frame_ready = false;
     const uintptr_t stack_anchor = (uintptr_t)&memory_monitor;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
@@ -364,7 +443,8 @@ int main(int argc, char **argv) {
                         pb_renderer_3ds_stats(renderer), graphics_result,
                         pb_gfx_api_3ds_stats(graphics), &first_frame,
                         first_frame_ready, &title_assets, title_flow_ready,
-                        &title_flow);
+                        &title_flow, &world_boot, &world_flow,
+                        world_frame_ready);
 
     u32 memory_sample_frames = 0;
     u32 diagnostics_refresh_frames = 0;
@@ -377,7 +457,22 @@ int main(int argc, char **argv) {
             (input.native_held & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) {
             break;
         }
-        if (title_flow_ready && state.lifecycle == LIFECYCLE_ACTIVE) {
+        if ((world_flow.state == PB_WORLD_FLOW_ACTIVE ||
+             world_flow.state == PB_WORLD_FLOW_PAUSED) &&
+            state.lifecycle == LIFECYCLE_ACTIVE) {
+            const PBWorldFlowEvent event =
+                pb_world_flow_update(&world_flow, &input);
+            if (event != PB_WORLD_FLOW_EVENT_NONE) {
+                state.redraw_bottom = true;
+                pb_log_write(&log, PB_LOG_INFO, "world-flow",
+                             "event=\"%s\" state=\"%s\" map=%s entry=%u",
+                             pb_world_flow_event_name(event),
+                             pb_world_flow_state_name(world_flow.state),
+                             PB_WORLD_BOOT_MAP_ID,
+                             (unsigned int)PB_WORLD_BOOT_ENTRY_ID);
+            }
+        } else if (title_flow_ready &&
+                   state.lifecycle == LIFECYCLE_ACTIVE) {
             const PBTitleFlowEvent event =
                 pb_title_flow_update(&title_flow, &input);
             if (event != PB_TITLE_FLOW_EVENT_NONE) {
@@ -387,6 +482,56 @@ int main(int argc, char **argv) {
                              pb_title_flow_event_name(event),
                              pb_title_flow_screen_name(title_flow.screen),
                              (unsigned int)title_flow.selected_slot + 1U);
+                if (event == PB_TITLE_FLOW_EVENT_CONFIRM_SLOT &&
+                    pb_world_flow_request(&world_flow,
+                                          title_flow.selected_slot) ==
+                        PB_WORLD_FLOW_EVENT_LOAD_REQUESTED) {
+                    state.redraw_bottom = true;
+                    const bool resources_ready =
+                        pb_world_boot_load(&world_boot, &game_archive,
+                                           &memory_monitor) ==
+                        PB_WORLD_BOOT_READY;
+                    world_frame_ready = resources_ready &&
+                        pb_gfx_api_3ds_prepare_world_background(
+                            graphics, world_boot.background.rgba,
+                            world_boot.background.texture_width,
+                            world_boot.background.texture_height,
+                            world_boot.background.source_width,
+                            world_boot.background.source_height);
+                    pb_world_boot_release(&world_boot, &memory_monitor);
+                    const PBWorldFlowEvent world_event =
+                        pb_world_flow_finish(&world_flow,
+                                             world_frame_ready);
+                    pb_log_write(
+                        &log,
+                        world_frame_ready ? PB_LOG_INFO : PB_LOG_ERROR,
+                        "world-boot",
+                        "event=\"%s\" result=\"%s\" map=%s entry=%u "
+                        "slot=%u nodes=%lu dlrefs=%lu vertices=%lu "
+                        "hit=%lu/%lu/%lu zones=%lu/%lu/%lu dlcmds=%lu "
+                        "background_uploaded=%s",
+                        pb_world_flow_event_name(world_event),
+                        pb_world_boot_result_name(world_boot.result),
+                        PB_WORLD_BOOT_MAP_ID,
+                        (unsigned int)PB_WORLD_BOOT_ENTRY_ID,
+                        (unsigned int)world_flow.selected_slot + 1U,
+                        (unsigned long)world_boot.world_stats.shape_nodes,
+                        (unsigned long)
+                            world_boot.world_stats.shape_display_lists,
+                        (unsigned long)world_boot.world_stats.vertex_count,
+                        (unsigned long)
+                            world_boot.world_stats.collision_colliders,
+                        (unsigned long)
+                            world_boot.world_stats.collision_vertices,
+                        (unsigned long)
+                            world_boot.world_stats.collision_triangles,
+                        (unsigned long)world_boot.world_stats.zone_colliders,
+                        (unsigned long)world_boot.world_stats.zone_vertices,
+                        (unsigned long)world_boot.world_stats.zone_triangles,
+                        (unsigned long)
+                            world_boot.world_stats.display_list_commands,
+                        world_frame_ready ? "yes" : "no");
+                }
             }
         }
         if (input.menu_requested) {
@@ -436,15 +581,19 @@ int main(int argc, char **argv) {
                                 graphics_result,
                                 pb_gfx_api_3ds_stats(graphics), &first_frame,
                                 first_frame_ready, &title_assets,
-                                title_flow_ready, &title_flow);
+                                title_flow_ready, &title_flow, &world_boot,
+                                &world_flow, world_frame_ready);
         }
 
         if (graphics != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
-            const bool rendered = title_flow_ready
+            const bool rendered = world_frame_ready
+                ? pb_gfx_api_3ds_render_world_background(
+                      graphics, world_flow.state == PB_WORLD_FLOW_PAUSED)
+                : (title_flow_ready
                 ? pb_gfx_api_3ds_render_title_flow(graphics, &title_flow)
                 : (first_frame_ready
                        ? pb_gfx_api_3ds_render_first_frame(graphics)
-                       : pb_gfx_api_3ds_render_diagnostic(graphics));
+                       : pb_gfx_api_3ds_render_diagnostic(graphics)));
             if (!rendered &&
                 !renderer_frame_failed) {
                 renderer_frame_failed = true;
@@ -519,6 +668,7 @@ int main(int argc, char **argv) {
 
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
+    pb_world_boot_release(&world_boot, &memory_monitor);
     pb_title_assets_release_pixels(&title_assets, &memory_monitor);
     pb_first_frame_release_pixels(&first_frame, &memory_monitor);
     pb_gfx_api_3ds_destroy(graphics);

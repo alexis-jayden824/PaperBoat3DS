@@ -132,10 +132,32 @@ N64 flow as the explicit checkpoint exit chord. Confirmation intentionally
 stops at the M13 handoff. The rendered file panels do not claim save I/O,
 message/font/window display lists, audio, or overworld execution.
 
+## M13 checkpoint audit result
+
+The first M13 slice follows pinned PaperBoat data rather than inventing a new
+game path. PaperBoat's demo table selects `mac_00` entry 6, and its world table
+associates that map with `nok_bg`. The 3DS loader therefore requests only six
+bounded O2R entries: the map-shape blob, collision blob, vertex resource, one
+representative F3DEX2 display list, background, and palette.
+
+Before entering the world state it validates shape-tree offsets and depth,
+display-list references, vertex payload sizing, collision and zone indices,
+the sampled display-list terminator, exact CI8/RGBA16 background formats, and
+all allocation releases. Synthetic stored/deflate and malformed fixtures pass;
+the private owner archive reports 223 nodes, 223 display-list references,
+3,211 vertices, collision `110/727/873`, zones `18/76/69`, and 19 sampled
+commands. No proprietary bytes enter source control or CI.
+
+The world background uses its own GPU texture, so a failed upload cannot erase
+the working title path. Active and paused states are observable and retryable.
+This is preflight and presentation evidence only: full map display-list
+execution, camera, entities, collision response, scripts, and transitions are
+still open M13 gates.
+
 ## Open gates
 
-1. Pass the M12 native build/package and public synthetic CI gates.
-2. Validate the corrected title and file-select interaction in Folium.
+1. Pass the M13 native build/package and public synthetic CI gates.
+2. Validate the prompt correction and overworld checkpoint in Folium.
 3. Validate renderer lifecycle, input, and memory behavior on real hardware.
 4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.

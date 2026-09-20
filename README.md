@@ -6,15 +6,13 @@ An experimental native Nintendo 3DS port of PaperBoat.
 
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
 on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
-real-ROM acceptance run, and M8-M10 have package plus Folium evidence. The
-current checkpoint is M12.1: the bounded M11 O2R path now supplies the title
-background, logo, prompt, and copyright textures to an interactive title/file-
-select state machine. M12 also corrects the vertical texture-coordinate defect
-exposed by the first M11 Folium capture. M12.1 locks the fixed title art to a
-centered 320x240, one-source-pixel-per-LCD-pixel safe area on every 400x240 3DS
-top screen, including New 3DS XL/LL, replaces the diagnostic navy surround
-with black, and restores PaperBoat's prompt tint. M6/M8-M12.1 hardware
-validation remains pending; the project owner is the real-hardware tester.
+real-ROM acceptance run, and M8-M12.1 have package plus Folium evidence. M13
+is now in progress: its first integration checkpoint validates PaperBoat's
+real `mac_00` map, collision, vertex, display-list, and `nok_bg` resources
+before entering a native world/pause state. The title stays in a centered
+320x240 safe area on the 400x240 top screen, including New 3DS XL/LL. M13 also
+corrects the PRESS START tint path exposed by the M12.1 capture. Real-hardware
+validation remains pending; the project owner is the hardware tester.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.
@@ -43,6 +41,8 @@ The M12 resource contract, input transitions, orientation fix, and explicit
 graphical boundary are in [docs/M12_TITLE_FLOW.md](docs/M12_TITLE_FLOW.md).
 The M12.1 screen geometry and New 3DS XL/LL validation contract are in
 [docs/M12_1_PRESENTATION.md](docs/M12_1_PRESENTATION.md).
+The current M13 resource contract, upstream anchors, test procedure, and
+remaining gameplay boundary are in [docs/M13_OVERWORLD.md](docs/M13_OVERWORLD.md).
 
 ## Legal asset policy
 

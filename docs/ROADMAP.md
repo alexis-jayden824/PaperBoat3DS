@@ -119,14 +119,15 @@ See `docs/M11_FIRST_FRAME.md`.
 ### M12 - Title and file-select flow
 Reach title/file-select, validate transitions and input, and document remaining graphical defects.
 
-Status: **functional Folium path validated; M12.1 presentation correction in
-validation**. The checkpoint loads the authentic
+Status: **functional Folium path validated; M12.1 framing accepted and prompt
+correction carried into M13**. The checkpoint loads the authentic
 RGBA32 logo plus IA8 prompt/copyright resources through the bounded O2R path,
 renders them over the corrected title background, and mirrors PaperBoat's
 A/START, 2x2 slot navigation, confirm, and B-return contract. Host fixtures and
 the owner's private archive pass. Folium evidence confirms upright assets and
 the title/file-select interaction path, while also exposing the diagnostic
-navy surround and inconclusive prompt visibility addressed by M12.1. The
+navy surround and the later M12.1 capture validated the corrected framing. Its
+remaining prompt-combiner defect is corrected and retested in M13. The
 file-select panels are a bounded native
 checkpoint compositor; save data, text/message/window display lists, and the
 overworld handoff remain explicit later-milestone work. See
@@ -143,6 +144,17 @@ title art. See `docs/M12_1_PRESENTATION.md`.
 
 ### M13 - Core overworld gameplay
 Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.
+
+Status: **in progress; first authentic overworld integration checkpoint
+implemented**. Confirming a file slot now preflights the pinned PaperBoat
+`mac_00`/entry 6 contract against the private O2R, validates its real shape,
+vertex, representative F3DEX2 display list, collision, zone, and `nok_bg`
+resources, uploads the background without replacing the title texture, and
+enters an observable active/paused world state. The pinned upstream world,
+transition, pause, camera-math, and collision sources are cross-compiled in CI.
+Live map display-list execution, camera control, entities, collision response,
+scripts, and representative map transitions remain required before M13 can be
+closed. See `docs/M13_OVERWORLD.md`.
 
 ### M14 - ndsp audio backend
 Implement initialization, mixing, streaming, buffering, sample conversion, latency control, suspend/resume, and clean shutdown. Validate Folium with its required DSP firmware as a secondary check, while treating real-hardware ndsp results as authoritative.

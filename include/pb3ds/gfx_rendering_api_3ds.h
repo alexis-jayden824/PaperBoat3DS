@@ -91,6 +91,12 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     bool RenderFirstFrame();
     bool PrepareTitleFlow(const PBTitleAssets *assets);
     bool RenderTitleFlow(const PBTitleFlow *flow);
+    bool PrepareWorldBackground(const uint8_t *rgba,
+                                uint16_t textureWidth,
+                                uint16_t textureHeight,
+                                uint16_t sourceWidth,
+                                uint16_t sourceHeight);
+    bool RenderWorldBackground(bool paused);
     void SetActive(bool active);
     const void *GetBridgeStats() const;
 
@@ -129,6 +135,10 @@ bool pb_gfx_api_3ds_prepare_title_flow(PBGfxApi3DS *api,
                                        const PBTitleAssets *assets);
 bool pb_gfx_api_3ds_render_title_flow(PBGfxApi3DS *api,
                                       const PBTitleFlow *flow);
+bool pb_gfx_api_3ds_prepare_world_background(
+    PBGfxApi3DS *api, const uint8_t *rgba, uint16_t texture_width,
+    uint16_t texture_height, uint16_t source_width, uint16_t source_height);
+bool pb_gfx_api_3ds_render_world_background(PBGfxApi3DS *api, bool paused);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
 void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api);

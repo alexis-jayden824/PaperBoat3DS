@@ -278,6 +278,7 @@ struct GfxRenderingAPI3DS::Impl {
     uint32_t titleLogoTexture = 0;
     uint32_t titlePromptTexture = 0;
     uint32_t titleCopyrightTexture = 0;
+    uint32_t worldBackgroundTexture = 0;
     std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
         firstFrameVertices = {};
     std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
@@ -288,6 +289,10 @@ struct GfxRenderingAPI3DS::Impl {
         titleCopyrightVertices = {};
     std::array<float, kShadeVertexStride * kFileSelectVertexCount>
         fileSelectVertices = {};
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        worldBackgroundVertices = {};
+    std::array<float, kShadeVertexStride * kFirstFrameVertexCount>
+        worldPauseVertices = {};
     PBTitleLayout titleLayout = {};
     int currentTile = 0;
     bool zmodeDecal = false;
@@ -957,8 +962,17 @@ bool GfxRenderingAPI3DS::PrepareTitleFlow(const PBTitleAssets *assets) {
             pb_gfx_bridge_find_texture(&mImpl->bridge, *textureId);
         return record != nullptr && record->uploaded;
     };
+    std::array<uint8_t, 128U * 32U * 4U> tintedPrompt = {};
+    std::copy_n(assets->prompt.rgba, tintedPrompt.size(),
+                tintedPrompt.data());
+    if (!pb_title_prompt_bake_tint(tintedPrompt.data(),
+                                   tintedPrompt.size())) {
+        return false;
+    }
+    PBDecodedTexture prompt = assets->prompt;
+    prompt.rgba = tintedPrompt.data();
     if (!uploadTexture(&mImpl->titleLogoTexture, assets->logo) ||
-        !uploadTexture(&mImpl->titlePromptTexture, assets->prompt) ||
+        !uploadTexture(&mImpl->titlePromptTexture, prompt) ||
         !uploadTexture(&mImpl->titleCopyrightTexture, assets->copyright) ||
         !BuildTexturedQuad(mImpl->titleLogoVertices,
                            mImpl->titleLayout.logo.left,
@@ -977,13 +991,7 @@ bool GfxRenderingAPI3DS::PrepareTitleFlow(const PBTitleAssets *assets) {
                            assets->prompt.texture_width,
                            assets->prompt.texture_height,
                            assets->prompt.source_width,
-                           assets->prompt.source_height,
-                           static_cast<float>(PB_TITLE_PROMPT_TINT_RED) /
-                               255.0f,
-                           static_cast<float>(PB_TITLE_PROMPT_TINT_GREEN) /
-                               255.0f,
-                           static_cast<float>(PB_TITLE_PROMPT_TINT_BLUE) /
-                               255.0f) ||
+                           assets->prompt.source_height) ||
         !BuildTexturedQuad(mImpl->titleCopyrightVertices,
                            mImpl->titleLayout.copyright.left,
                            mImpl->titleLayout.copyright.bottom,
@@ -1075,6 +1083,97 @@ bool GfxRenderingAPI3DS::RenderTitleFlow(const PBTitleFlow *flow) {
         DrawTriangles(mImpl->fileSelectVertices.data(),
                       mImpl->fileSelectVertices.size(),
                       kFileSelectVertexCount / 3U);
+    }
+    EndFrame();
+    return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
+}
+
+bool GfxRenderingAPI3DS::PrepareWorldBackground(
+    const uint8_t *rgba, uint16_t textureWidth, uint16_t textureHeight,
+    uint16_t sourceWidth, uint16_t sourceHeight) {
+    if (mImpl == nullptr || rgba == nullptr || sourceWidth == 0U ||
+        sourceHeight == 0U || sourceWidth > textureWidth ||
+        sourceHeight > textureHeight ||
+        sourceWidth != PB_TITLE_BACKGROUND_WIDTH ||
+        sourceHeight != PB_TITLE_BACKGROUND_HEIGHT ||
+        !pb_title_layout_compute(&mImpl->titleLayout, PB_RENDER_TOP_WIDTH,
+                                 PB_RENDER_TOP_HEIGHT)) {
+        return false;
+    }
+
+    Init();
+    mImpl->firstFrameShader =
+        CreateAndLoadNewShader(kTextureShadeShader, kAlphaOption);
+    mImpl->titleShadeShader =
+        CreateAndLoadNewShader(kShadeShader, kAlphaOption);
+    if (mImpl->firstFrameShader == nullptr ||
+        mImpl->titleShadeShader == nullptr ||
+        !mImpl->firstFrameShader->plan.supported ||
+        !mImpl->titleShadeShader->plan.supported) {
+        return false;
+    }
+
+    const uint32_t candidate = NewTexture();
+    if (candidate == 0U) {
+        return false;
+    }
+    SelectTexture(0, candidate);
+    UploadTexture(rgba, textureWidth, textureHeight);
+    SetTextureFilter(Fast::FILTER_THREE_POINT);
+    SetSamplerParameters(0, false, 2U, 2U);
+    const PBGfxTextureRecord *record =
+        pb_gfx_bridge_find_texture(&mImpl->bridge, candidate);
+    if (record == nullptr || !record->uploaded ||
+        !BuildTexturedQuad(
+            mImpl->worldBackgroundVertices,
+            mImpl->titleLayout.background.left,
+            mImpl->titleLayout.background.bottom,
+            mImpl->titleLayout.background.width,
+            mImpl->titleLayout.background.height,
+            textureWidth, textureHeight, sourceWidth, sourceHeight)) {
+        DeleteTexture(candidate);
+        return false;
+    }
+
+    size_t pauseVertex = 0U;
+    AppendShadeQuad(mImpl->worldPauseVertices.data(), &pauseVertex,
+                    0.0f, 0.0f,
+                    static_cast<float>(PB_RENDER_TOP_WIDTH),
+                    static_cast<float>(PB_RENDER_TOP_HEIGHT),
+                    0.0f, 0.0f, 0.0f, 0.48f);
+    if (mImpl->worldBackgroundTexture != 0U) {
+        DeleteTexture(mImpl->worldBackgroundTexture);
+    }
+    mImpl->worldBackgroundTexture = candidate;
+    return true;
+}
+
+bool GfxRenderingAPI3DS::RenderWorldBackground(bool paused) {
+    if (mImpl == nullptr || mImpl->firstFrameShader == nullptr ||
+        mImpl->titleShadeShader == nullptr ||
+        mImpl->worldBackgroundTexture == 0U) {
+        return false;
+    }
+    const uint64_t previousFrames = mImpl->bridge.stats.frames_presented;
+    StartFrame();
+    if (!mImpl->bridge.frame_open) {
+        return false;
+    }
+    SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetDepthTestAndMask(false, false);
+    SetCullMode(0);
+
+    LoadShader(mImpl->firstFrameShader);
+    SelectTexture(0, mImpl->worldBackgroundTexture);
+    SetUseAlpha(false);
+    DrawTriangles(mImpl->worldBackgroundVertices.data(),
+                  mImpl->worldBackgroundVertices.size(), 2U);
+    if (paused) {
+        LoadShader(mImpl->titleShadeShader);
+        SetUseAlpha(true);
+        DrawTriangles(mImpl->worldPauseVertices.data(),
+                      mImpl->worldPauseVertices.size(), 2U);
     }
     EndFrame();
     return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
@@ -1177,6 +1276,20 @@ extern "C" bool pb_gfx_api_3ds_render_title_flow(
     PBGfxApi3DS *api, const PBTitleFlow *flow) {
     return api != nullptr && api->implementation != nullptr &&
            api->implementation->RenderTitleFlow(flow);
+}
+
+extern "C" bool pb_gfx_api_3ds_prepare_world_background(
+    PBGfxApi3DS *api, const uint8_t *rgba, uint16_t textureWidth,
+    uint16_t textureHeight, uint16_t sourceWidth, uint16_t sourceHeight) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->PrepareWorldBackground(
+               rgba, textureWidth, textureHeight, sourceWidth, sourceHeight);
+}
+
+extern "C" bool pb_gfx_api_3ds_render_world_background(
+    PBGfxApi3DS *api, bool paused) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->RenderWorldBackground(paused);
 }
 
 extern "C" void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active) {

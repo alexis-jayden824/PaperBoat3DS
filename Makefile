@@ -33,6 +33,7 @@ TORCH_ZLIB_ROOT := $(PAPERBOAT_ROOT)/external/torch/lib/StormLib/src/zlib
 ZLIB_CFILES     := adler32.c inffast.c inflate.c inftrees.c zutil.c
 ZLIB_OFILES     := $(ZLIB_CFILES:.c=.o)
 M5_BUILD        := $(CURDIR)/build/m5-core
+M13_BUILD       := $(CURDIR)/build/m13-core
 M5_GAME_SOURCES := \
 	src/main_pre.c \
 	src/43F0.c \
@@ -51,6 +52,16 @@ M5_GAME_CFLAGS  := $(ARCH) -mword-relocations -ffunction-sections -fdata-section
 	-I"$(CURDIR)/include" -I"$(PAPERBOAT_ROOT)/include" \
 	-I"$(PAPERBOAT_ROOT)/src" -I"$(PAPERBOAT_ROOT)/src/port" \
 	-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
+M13_GAME_SOURCES := \
+	src/game_modes.c \
+	src/state_demo.c \
+	src/state_world.c \
+	src/state_map_transitions.c \
+	src/state_pause.c \
+	src/cam_math.c \
+	src/collision.c \
+	src/world/world.c \
+	src/pause/pause_main.c
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
@@ -103,7 +114,8 @@ export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m6-policy-test \
 	m6-budget-check m8-input-test m9-renderer-test m10-graphics-test \
-	m11-frame-test m12-flow-test m12-layout-test clean
+	m11-frame-test m12-flow-test m12-layout-test m13-world-test \
+	m13-core-check clean
 
 all: fetch-upstream $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -136,6 +148,10 @@ m12-flow-test: fetch-upstream
 m12-layout-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_title_layout.sh \
 		"$(BUILD)/m12-layout-tests"
+
+m13-world-test: fetch-upstream
+	@HOST_CC="$(HOST_CC)" sh tools/test_world_boot.sh \
+		"$(BUILD)/m13-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
@@ -175,6 +191,17 @@ m5-core-check: fetch-upstream
 	done
 	@test -s "$(M5_BUILD)/decode_yay0.o"
 	@test -s "$(M5_BUILD)/libc_compat.o"
+
+m13-core-check: fetch-upstream
+	@mkdir -p "$(M13_BUILD)"
+	@echo cross-compiling pinned PaperBoat M13 overworld subsystem slice
+	@set -e; for source in $(M13_GAME_SOURCES); do \
+		object=$$(printf '%s' "$$source" | tr '/.' '__'); \
+		echo "  ARM11 $$source"; \
+		$(CC) -c "$(PAPERBOAT_ROOT)/$$source" \
+			-o "$(M13_BUILD)/$$object.o" $(M5_GAME_CFLAGS); \
+		test -s "$(M13_BUILD)/$$object.o"; \
+	done
 
 $(BUILD):
 	@mkdir -p $@

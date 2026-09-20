@@ -228,3 +228,29 @@ The simple panels are expected at M12. Missing save text/window decoration,
 audio, and an overworld transition are documented milestone boundaries rather
 than emulator failures. Folium still cannot establish physical lifecycle,
 input, or Old 3DS performance behavior.
+
+## M13 overworld integration checkpoint
+
+Use the private bundle marked `0.13.0-m13` with the same owner-generated O2R
+files installed in Folium's virtual SD.
+
+1. On the title, capture a frame where the bottom screen reports `A:255` and
+   verify the pale-yellow PRESS START prompt is now visible. The fixed title
+   canvas remains 320x240 with equal 40-pixel pillars; New 3DS XL emulation
+   changes physical scale, not the 400x240 logical framebuffer.
+2. Enter file select and confirm any slot. The application must validate the
+   authentic `mac_00` entry-6 resources and change the top screen to the
+   centered 296x200 `nok_bg` Toad Town background.
+3. Confirm the bottom screen reports `mac_00`, entry 6, `world active`,
+   `mac_00 ready`, 223 nodes, 223 display-list references, 3,211 vertices,
+   collision `110/727/873`, zones `18/76/69`, and a 19-command sampled display
+   list. Zero rejected commands and frame failures are required.
+4. Press START once. The top screen must dim and the state must become
+   `paused`. Press START again; the background must brighten and state return
+   to `world active` with the pause counter retained.
+5. Exit with L+R+START and preserve the build SHA, captures, and log.
+
+This checkpoint deliberately displays the authentic map background only. It
+does not yet execute the full PaperBoat map display-list tree, camera, entity,
+collision response, scripts, or transitions; their absence is remaining M13
+work, not a claim that the game has been recreated.

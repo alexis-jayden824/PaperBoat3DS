@@ -6,9 +6,10 @@ This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
 the host-tested M8 native input layer, the M9 citro3d renderer foundation,
 the M10 pinned-libultraship graphics adapter, the M11 bounded legal-archive
-frame path, and the M12 title/file-select checkpoint. It is not yet a playable
-PaperBoat port. A successful package build proves that one ARM11 ELF can
-produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+frame path, and the M12 title/file-select checkpoint. M13 is in progress with
+an authentic `mac_00` resource preflight and native world/pause presentation
+gate. It is not yet a playable PaperBoat port. A successful package build
+proves that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -100,6 +101,29 @@ The M12.1 layout test is asset-free. It locks the New 3DS XL/LL 400x240
 presentation to a centered 320x240 safe canvas with equal 40-pixel pillars and
 checks every title rectangle against the upstream Paper Mario coordinates.
 
+Run the public M13 O2R fixture, map-structure, collision, display-list,
+background, retry, and pause-flow checks with:
+
+```sh
+make fetch-upstream
+make m13-world-test
+make m13-core-check
+```
+
+`m13-core-check` cross-compiles the pinned PaperBoat world mode, demo entry,
+map transitions, pause mode, camera math, collision, world table, and pause
+implementation for ARM11 without pretending that the full subsystem is linked
+yet. For an owner-only acceptance run, pass the generated private archive as a
+second argument:
+
+```sh
+sh tools/test_world_boot.sh build/m13-private /path/to/pm64.o2r
+```
+
+Never commit or upload that private archive. The pinned archive currently
+reports 223 shape nodes, 223 display-list references, 3,211 vertices, 110
+collision groups, and 18 zone groups for `mac_00`.
+
 ## Host-side asset preparation
 
 M7 provides one cross-platform Python entry point that verifies a legally
@@ -114,7 +138,7 @@ Do not upload the ROM or generated game archive to GitHub Actions. See
 `docs/M7_ASSET_PIPELINE.md` for prerequisites, staging, validation, Windows
 usage, and the exact legal boundary.
 
-M11 and M12 read these exact SD paths at runtime:
+M11 through M13 read these exact SD paths at runtime:
 
 - `sdmc:/3ds/PaperBoat3DS/paperboat.o2r`
 - `sdmc:/3ds/PaperBoat3DS/pm64.o2r`

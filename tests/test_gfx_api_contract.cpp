@@ -17,7 +17,7 @@ static uint8_t titleCopyrightPixels[256U * 32U * 4U];
         checksRun++;                                                         \
         if (!(expression)) {                                                 \
             std::fprintf(stderr,                                             \
-                         "M12.1 API contract check failed at %s:%d: %s\n", \
+                         "M13 graphics contract check failed at %s:%d: %s\n", \
                          __FILE__, __LINE__, #expression);                   \
             return false;                                                    \
         }                                                                    \
@@ -111,11 +111,27 @@ static bool testExactInterface() {
     CHECK(!api.RenderTitleFlow(&flow));
     CHECK(!api.PrepareTitleFlow(nullptr));
 
+    CHECK(api.PrepareWorldBackground(firstFramePixels, 512, 256, 296, 200));
+    CHECK(stats->textures_live == 6);
+    CHECK(api.RenderWorldBackground(false));
+    CHECK(stats->frames_presented == 6);
+    CHECK(stats->draw_calls == 12);
+    CHECK(stats->triangles == 38);
+    CHECK(api.RenderWorldBackground(true));
+    CHECK(stats->frames_presented == 7);
+    CHECK(stats->draw_calls == 14);
+    CHECK(stats->triangles == 42);
+    CHECK(!api.PrepareWorldBackground(firstFramePixels, 256, 256, 296, 200));
+    flow.screen = PB_TITLE_FLOW_TITLE;
+    flow.selected_slot = 0;
+    CHECK(api.RenderTitleFlow(&flow));
+    CHECK(stats->frames_presented == 8);
+
     api.SetActive(false);
     CHECK(!api.RenderDiagnostic());
     api.SetActive(true);
     CHECK(api.RenderDiagnostic());
-    CHECK(stats->frames_presented == 6);
+    CHECK(stats->frames_presented == 9);
 
     CHECK(api.CreateFramebuffer() == -1);
     CHECK(api.GetFramebufferTextureId(0) == nullptr);
@@ -142,12 +158,19 @@ static bool testCBoundary() {
     flow.screen = PB_TITLE_FLOW_FILE_SELECT;
     flow.selected_slot = 2;
     CHECK(pb_gfx_api_3ds_render_title_flow(api, &flow));
+    CHECK(pb_gfx_api_3ds_prepare_world_background(
+        api, firstFramePixels, 512, 256, 296, 200));
+    CHECK(pb_gfx_api_3ds_render_world_background(api, false));
+    CHECK(pb_gfx_api_3ds_render_world_background(api, true));
     const PBGfxBridgeStats *stats = pb_gfx_api_3ds_stats(api);
     CHECK(stats != nullptr);
-    CHECK(stats->frames_presented == 4);
-    CHECK(stats->draw_calls == 9);
+    CHECK(stats->frames_presented == 6);
+    CHECK(stats->draw_calls == 12);
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
+    CHECK(!pb_gfx_api_3ds_prepare_world_background(
+        nullptr, firstFramePixels, 512, 256, 296, 200));
+    CHECK(!pb_gfx_api_3ds_render_world_background(nullptr, false));
     pb_gfx_api_3ds_set_active(api, false);
     CHECK(!pb_gfx_api_3ds_render_diagnostic(api));
     pb_gfx_api_3ds_destroy(api);
@@ -166,7 +189,7 @@ int main() {
     if (!testExactInterface() || !testCBoundary()) {
         return EXIT_FAILURE;
     }
-    std::printf("M12.1 exact GfxRenderingAPI contract: %u checks passed\n",
+    std::printf("M13 exact GfxRenderingAPI contract: %u checks passed\n",
                 checksRun);
     return EXIT_SUCCESS;
 }
