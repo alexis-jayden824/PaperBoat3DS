@@ -36,6 +36,7 @@ M5_BUILD        := $(CURDIR)/build/m5-core
 M13_RUNTIME_BUILD := $(TOPDIR)/build/m13-runtime
 M13_RUNTIME_LIB := $(M13_RUNTIME_BUILD)/libpaperboat-m13.a
 M13_RUNTIME_AR  := $(DEVKITARM)/bin/arm-none-eabi-ar
+ARCH            := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 M5_GAME_SOURCES := \
 	src/main_pre.c \
 	src/43F0.c \
@@ -56,7 +57,6 @@ M5_GAME_CFLAGS  := $(ARCH) -mword-relocations -ffunction-sections -fdata-section
 	-I"$(PAPERBOAT_ROOT)/src" -I"$(PAPERBOAT_ROOT)/src/port" \
 	-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 
-ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
             -DPB3DS_BUILD_SHA=\"$(PB3DS_BUILD_SHA)\" \
