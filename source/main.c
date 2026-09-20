@@ -3,6 +3,7 @@
 
 #include "pb3ds/compat.h"
 #include "pb3ds/diagnostics.h"
+#include "pb3ds/gfx_rendering_api_3ds.h"
 #include "pb3ds/input.h"
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
@@ -23,6 +24,7 @@ typedef struct {
     volatile LifecycleState lifecycle;
     volatile bool redraw_bottom;
     PBInputState *input;
+    PBGfxApi3DS *graphics;
 } BootstrapState;
 
 static const char *lifecycle_name(LifecycleState state) {
@@ -64,6 +66,11 @@ static void apt_hook(APT_HookType hook, void *param) {
             return;
     }
 
+    if (state->graphics != NULL) {
+        pb_gfx_api_3ds_set_active(state->graphics,
+                                  state->lifecycle == LIFECYCLE_ACTIVE);
+    }
+
     state->redraw_bottom = true;
 }
 
@@ -77,9 +84,13 @@ static void print_bottom_screen(PrintConsole *console,
                                 const PBInputState *input,
                                 bool menu_request_seen,
                                 PBRendererInitResult renderer_result,
-                                const PBRendererStats *renderer_stats) {
+                                const PBRendererStats *renderer_stats,
+                                PBGfxApiInitResult graphics_result,
+                                const PBGfxBridgeStats *graphics_stats) {
     const bool renderer_ready =
         renderer_result == PB_RENDERER_INIT_OK && renderer_stats != NULL;
+    const bool graphics_ready =
+        graphics_result == PB_GFX_API_INIT_OK && graphics_stats != NULL;
     const unsigned int command_permille =
         renderer_ready
             ? (unsigned int)(renderer_stats->command_buffer_peak * 1000.0f)
@@ -87,28 +98,35 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM9 PICA200 Renderer\n");
+    printf("\x1b[1;2HM10 libultraship Graphics\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
-    printf("\x1b[6;2HC3D: %-19s\n",
-           pb_renderer_init_result_name(renderer_result));
-    printf("\x1b[7;2HTarget: 400x240 -> 240x400\n");
-    printf("\x1b[8;2HShader: %s\n", renderer_ready ? "PICA shbin OK" : "unavailable");
+    printf("\x1b[6;2HAPI: %-20s\n",
+           pb_gfx_api_init_result_name(graphics_result));
+    printf("\x1b[7;2HContract: Fast::GfxRenderingAPI\n");
+    printf("\x1b[8;2HPICA: %s  Z:0..1  Tex:1024\n",
+           renderer_ready ? "ready" : "unavailable");
+    if (graphics_ready) {
+        printf("\x1b[9;2HTEV shaders:%lu unsupported:%lu\n",
+               (unsigned long)graphics_stats->shaders_live,
+               (unsigned long)graphics_stats->unsupported_shaders);
+        printf("\x1b[10;2HTextures:%lu %lu B  Stream:%lu B\n",
+               (unsigned long)graphics_stats->textures_live,
+               (unsigned long)graphics_stats->texture_bytes,
+               (unsigned long)graphics_stats->stream_peak_bytes);
+        printf("\x1b[11;2HFrames:%llu Draws:%llu Tris:%llu\n",
+               (unsigned long long)graphics_stats->frames_presented,
+               (unsigned long long)graphics_stats->draw_calls,
+               (unsigned long long)graphics_stats->triangles);
+        printf("\x1b[12;2HVertices:%llu Reject:%lu fail:%lu\n",
+               (unsigned long long)graphics_stats->vertices,
+               (unsigned long)graphics_stats->rejected_commands,
+               (unsigned long)graphics_stats->frame_failures);
+    }
     if (renderer_ready) {
-        printf("\x1b[9;2HTexture: RGBA8 8x8 %lu B\n",
-               (unsigned long)renderer_stats->texture_bytes);
-        printf("\x1b[10;2HVBO: %lu B  Frames:%llu\n",
-               (unsigned long)renderer_stats->vertex_buffer_bytes,
-               (unsigned long long)renderer_stats->frames);
-        printf("\x1b[11;2HDraws:%llu  Vertices:%llu\n",
-               (unsigned long long)renderer_stats->draw_calls,
-               (unsigned long long)renderer_stats->vertices);
-        printf("\x1b[12;2HCmd peak: %u.%u%% fail:%lu\n",
+        printf("\x1b[13;2HCmd peak:%u.%u%%  VBO:%lu KiB\n",
                command_permille / 10U, command_permille % 10U,
-               (unsigned long)renderer_stats->frame_failures);
-        printf("\x1b[13;2HState: %lu change %lu cached\n",
-               (unsigned long)renderer_stats->state_changes,
-               (unsigned long)renderer_stats->state_deduplicated);
+               (unsigned long)(renderer_stats->vertex_buffer_bytes / 1024U));
     }
 
     printf("\x1b[15;2HSystem: %s\n",
@@ -163,6 +181,7 @@ int main(int argc, char **argv) {
         .lifecycle = LIFECYCLE_ACTIVE,
         .redraw_bottom = false,
         .input = &input,
+        .graphics = NULL,
     };
     aptHookCookie apt_cookie;
     PrintConsole bottom_console;
@@ -172,6 +191,7 @@ int main(int argc, char **argv) {
     PBArchive game_archive;
     PBMemoryMonitor memory_monitor;
     PBRenderer3DS *renderer = NULL;
+    PBGfxApi3DS *graphics = NULL;
     const uintptr_t stack_anchor = (uintptr_t)&memory_monitor;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
@@ -191,6 +211,17 @@ int main(int argc, char **argv) {
         pb_archive_open(&game_archive, "sdmc:/3ds/PaperBoat3DS/pm64.o2r");
     const PBRendererInitResult renderer_result =
         pb_renderer_3ds_create(&renderer);
+    PBGfxApiInitResult graphics_result = PB_GFX_API_INIT_INVALID_ARGUMENT;
+    if (renderer_result == PB_RENDERER_INIT_OK) {
+        graphics_result = pb_gfx_api_3ds_create(&graphics, renderer);
+        if (graphics_result == PB_GFX_API_INIT_OK &&
+            !pb_gfx_api_3ds_prepare_diagnostic(graphics)) {
+            graphics_result = PB_GFX_API_INIT_DIAGNOSTIC;
+            pb_gfx_api_3ds_destroy(graphics);
+            graphics = NULL;
+        }
+    }
+    state.graphics = graphics;
 
     sample_memory(&memory_monitor);
     const PBMemorySnapshot *memory =
@@ -208,6 +239,10 @@ int main(int argc, char **argv) {
     pb_log_write(&log, PB_LOG_INFO, "renderer",
                  "status=\"%s\" logical=400x240 target=240x400",
                  pb_renderer_init_result_name(renderer_result));
+    pb_log_write(&log, PB_LOG_INFO, "graphics-api",
+                 "status=\"%s\" contract=Fast::GfxRenderingAPI "
+                 "backend=\"PICA200 (citro3d)\" max_texture=1024",
+                 pb_gfx_api_init_result_name(graphics_result));
     if (renderer != NULL) {
         const PBRendererStats *stats = pb_renderer_3ds_stats(renderer);
         pb_log_write(&log, PB_LOG_INFO, "renderer-resources",
@@ -245,7 +280,8 @@ int main(int argc, char **argv) {
     print_bottom_screen(&bottom_console, &state, &log, &config,
                         engine_archive_available, game_archive_available,
                         memory, &input, false, renderer_result,
-                        pb_renderer_3ds_stats(renderer));
+                        pb_renderer_3ds_stats(renderer), graphics_result,
+                        pb_gfx_api_3ds_stats(graphics));
 
     u32 memory_sample_frames = 0;
     u32 diagnostics_refresh_frames = 0;
@@ -300,17 +336,20 @@ int main(int argc, char **argv) {
                                 engine_archive_available,
                                 game_archive_available, memory, &input,
                                 menu_request_seen, renderer_result,
-                                pb_renderer_3ds_stats(renderer));
+                                pb_renderer_3ds_stats(renderer),
+                                graphics_result,
+                                pb_gfx_api_3ds_stats(graphics));
         }
 
-        if (renderer != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
-            if (!pb_renderer_3ds_render(renderer) && !renderer_frame_failed) {
+        if (graphics != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
+            if (!pb_gfx_api_3ds_render_diagnostic(graphics) &&
+                !renderer_frame_failed) {
                 renderer_frame_failed = true;
                 state.redraw_bottom = true;
-                pb_log_write(&log, PB_LOG_ERROR, "renderer",
-                             "frame submission failed");
+                pb_log_write(&log, PB_LOG_ERROR, "graphics-api",
+                             "adapter frame submission failed");
             }
-        } else if (renderer == NULL) {
+        } else if (graphics == NULL) {
             gfxFlushBuffers();
             gfxSwapBuffers();
             gspWaitForVBlank();
@@ -322,6 +361,25 @@ int main(int argc, char **argv) {
     sample_memory(&memory_monitor);
     memory = pb_memory_monitor_snapshot(&memory_monitor);
     const PBRendererStats *renderer_stats = pb_renderer_3ds_stats(renderer);
+    const PBGfxBridgeStats *graphics_stats =
+        pb_gfx_api_3ds_stats(graphics);
+    if (graphics_stats != NULL) {
+        pb_log_write(&log, PB_LOG_INFO, "graphics-api-shutdown",
+                     "frames=%llu draws=%llu triangles=%llu vertices=%llu "
+                     "stream_bytes=%llu stream_peak=%lu textures=%lu "
+                     "shaders=%lu unsupported=%lu rejected=%lu failures=%lu",
+                     (unsigned long long)graphics_stats->frames_presented,
+                     (unsigned long long)graphics_stats->draw_calls,
+                     (unsigned long long)graphics_stats->triangles,
+                     (unsigned long long)graphics_stats->vertices,
+                     (unsigned long long)graphics_stats->streamed_bytes,
+                     (unsigned long)graphics_stats->stream_peak_bytes,
+                     (unsigned long)graphics_stats->textures_live,
+                     (unsigned long)graphics_stats->shaders_live,
+                     (unsigned long)graphics_stats->unsupported_shaders,
+                     (unsigned long)graphics_stats->rejected_commands,
+                     (unsigned long)graphics_stats->frame_failures);
+    }
     if (renderer_stats != NULL) {
         pb_log_write(&log, PB_LOG_INFO, "renderer-shutdown",
                      "frames=%llu draws=%llu vertices=%llu frame_failures=%lu "
@@ -355,6 +413,8 @@ int main(int argc, char **argv) {
 
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
+    pb_gfx_api_3ds_destroy(graphics);
+    state.graphics = NULL;
     pb_renderer_3ds_destroy(renderer);
     pb_log_close(&log);
     aptUnhook(&apt_cookie);
