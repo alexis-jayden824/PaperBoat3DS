@@ -67,11 +67,19 @@ Map Circle Pad, D-pad, face/shoulder buttons, touch, and system lifecycle behavi
 Status: **in progress**. The native input boundary, complete Old 3DS mapping,
 optional New 3DS duplicates, touch state, edge semantics, lifecycle neutral
 gate, SELECT menu reservation, live diagnostics, and deterministic host tests
-are implemented. Package build and owner runtime validation remain; see
-`docs/M8_INPUT.md`.
+are implemented. The three packages built successfully at merge
+`0735cd7bde2127b8559061a1b563b0f84ca7a6db`, and Folium confirmed the New 3DS
+profile, active input gate, and SELECT menu request. Full physical-control,
+touch, and lifecycle validation remains; see `docs/M8_INPUT.md`.
 
 ### M9 - PICA200 renderer foundation
 Implement the citro3d translation layer, shader conversion path, texture formats, buffers, render states, and top-screen viewport.
+
+Status: **in progress**. A portable PICA contract, texture sizing/swizzle,
+viewport rotation, render-state cache, Picasso shader build, citro3d target,
+linear VBO, sampled texture, deterministic diagnostic scene, telemetry, and
+host tests are implemented. Package and runtime evidence remain; see
+`docs/M9_RENDERER.md`.
 
 ### M10 - libultraship graphics integration
 Connect the renderer to libultraship's graphics contract and replace desktop window/context behavior with 3DS lifecycle handling.

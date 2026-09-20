@@ -6,10 +6,10 @@ An experimental native Nintendo 3DS port of PaperBoat.
 
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
 on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
-real-ROM acceptance run. The current software checkpoint is M8: a native,
-host-tested Circle Pad, button, touch, menu-request, and lifecycle input layer.
-M6 hardware memory calibration remains pending; the project owner is the
-real-hardware tester.
+real-ROM acceptance run, and M8 has package plus partial Folium input evidence.
+The current software checkpoint is M9: a host-tested PICA200 contract and a
+native citro3d diagnostic renderer. M6/M8/M9 hardware validation remains
+pending; the project owner is the real-hardware tester.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.
@@ -28,6 +28,8 @@ Build instructions are in [docs/BUILDING.md](docs/BUILDING.md). The M7 asset
 workflow is documented in
 [docs/M7_ASSET_PIPELINE.md](docs/M7_ASSET_PIPELINE.md).
 The M8 mapping and conflict audit are in [docs/M8_INPUT.md](docs/M8_INPUT.md).
+The M9 renderer contract and M10 handoff are in
+[docs/M9_RENDERER.md](docs/M9_RENDERER.md).
 
 ## Legal asset policy
 

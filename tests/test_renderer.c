@@ -1,0 +1,226 @@
+#include "pb3ds/renderer.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static unsigned int checks_run;
+
+#define CHECK(expression)                                                      \
+    do {                                                                       \
+        checks_run++;                                                          \
+        if (!(expression)) {                                                   \
+            fprintf(stderr, "renderer contract check failed at %s:%d: %s\n", \
+                    __FILE__, __LINE__, #expression);                          \
+            return false;                                                      \
+        }                                                                      \
+    } while (0)
+
+static bool test_texture_formats(void) {
+    static const uint8_t expected_bits[] = {
+        32, 24, 16, 16, 16, 16, 16, 8, 8, 8, 4, 4, 4, 8,
+    };
+    static const char *const expected_names[] = {
+        "RGBA8", "RGB8", "RGBA5551", "RGB565", "RGBA4", "LA8",
+        "HILO8", "L8", "A8", "LA4", "L4", "A4", "ETC1",
+        "ETC1A4",
+    };
+
+    for (unsigned int format = 0; format < PB_TEXTURE_FORMAT_COUNT; format++) {
+        PBTextureLayout layout;
+        CHECK(pb_renderer_texture_layout(&layout, 8, 8,
+                                         (PBTextureFormat)format));
+        CHECK(layout.width == 8);
+        CHECK(layout.height == 8);
+        CHECK(layout.format == (PBTextureFormat)format);
+        CHECK(layout.bits_per_pixel == expected_bits[format]);
+        CHECK(layout.bytes == 64U * expected_bits[format] / 8U);
+        CHECK(strcmp(pb_renderer_texture_format_name((PBTextureFormat)format),
+                     expected_names[format]) == 0);
+    }
+
+    PBTextureLayout layout;
+    CHECK(pb_renderer_texture_layout(&layout, 1024, 1024, PB_TEXTURE_RGBA8));
+    CHECK(layout.bytes == 4U * 1024U * 1024U);
+    CHECK(!pb_renderer_texture_layout(&layout, 7, 8, PB_TEXTURE_RGBA8));
+    CHECK(!pb_renderer_texture_layout(&layout, 12, 8, PB_TEXTURE_RGBA8));
+    CHECK(!pb_renderer_texture_layout(&layout, 8, 1025, PB_TEXTURE_RGBA8));
+    CHECK(!pb_renderer_texture_layout(
+        &layout, 8, 8, (PBTextureFormat)PB_TEXTURE_FORMAT_COUNT));
+    CHECK(!pb_renderer_texture_layout(NULL, 8, 8, PB_TEXTURE_RGBA8));
+    CHECK(strcmp(pb_renderer_texture_format_name((PBTextureFormat)-1),
+                 "invalid") == 0);
+    return true;
+}
+
+static bool test_texture_swizzle(void) {
+    CHECK(pb_renderer_swizzled_texel_index(0, 0, 8, 8) == 0);
+    CHECK(pb_renderer_swizzled_texel_index(1, 0, 8, 8) == 1);
+    CHECK(pb_renderer_swizzled_texel_index(0, 1, 8, 8) == 2);
+    CHECK(pb_renderer_swizzled_texel_index(2, 0, 8, 8) == 4);
+    CHECK(pb_renderer_swizzled_texel_index(7, 7, 8, 8) == 63);
+    CHECK(pb_renderer_swizzled_texel_index(8, 0, 16, 8) == 64);
+    CHECK(pb_renderer_swizzled_texel_index(0, 8, 8, 16) == 64);
+
+    bool visited[64] = { false };
+    for (uint16_t y = 0; y < 8; y++) {
+        for (uint16_t x = 0; x < 8; x++) {
+            const size_t index =
+                pb_renderer_swizzled_texel_index(x, y, 8, 8);
+            CHECK(index < 64);
+            CHECK(!visited[index]);
+            visited[index] = true;
+        }
+    }
+    CHECK(pb_renderer_swizzled_texel_index(8, 0, 8, 8) == SIZE_MAX);
+    CHECK(pb_renderer_swizzled_texel_index(0, 8, 8, 8) == SIZE_MAX);
+    CHECK(pb_renderer_swizzled_texel_index(0, 0, 12, 8) == SIZE_MAX);
+
+    uint8_t source[8U * 8U * 4U];
+    uint8_t destination[sizeof(source)];
+    for (size_t texel = 0; texel < 64; texel++) {
+        source[texel * 4U + 0U] = (uint8_t)texel;
+        source[texel * 4U + 1U] = (uint8_t)(texel + 1U);
+        source[texel * 4U + 2U] = (uint8_t)(texel + 2U);
+        source[texel * 4U + 3U] = (uint8_t)(255U - texel);
+    }
+    memset(destination, 0, sizeof(destination));
+    CHECK(pb_renderer_swizzle_rgba8(destination, sizeof(destination), source,
+                                    sizeof(source), 8, 8));
+    const size_t source_texel = 2U * 8U + 3U;
+    const size_t swizzled_texel =
+        pb_renderer_swizzled_texel_index(3, 2, 8, 8);
+    CHECK(destination[swizzled_texel * 4U + 0U] ==
+          source[source_texel * 4U + 3U]);
+    CHECK(destination[swizzled_texel * 4U + 1U] ==
+          source[source_texel * 4U + 2U]);
+    CHECK(destination[swizzled_texel * 4U + 2U] ==
+          source[source_texel * 4U + 1U]);
+    CHECK(destination[swizzled_texel * 4U + 3U] ==
+          source[source_texel * 4U + 0U]);
+    CHECK(!pb_renderer_swizzle_rgba8(destination, sizeof(destination) - 1U,
+                                     source, sizeof(source), 8, 8));
+    CHECK(!pb_renderer_swizzle_rgba8(destination, sizeof(destination), source,
+                                     sizeof(source) - 1U, 8, 8));
+    CHECK(!pb_renderer_swizzle_rgba8(NULL, sizeof(destination), source,
+                                     sizeof(source), 8, 8));
+    return true;
+}
+
+static bool test_viewport_rotation(void) {
+    PBTargetViewport target;
+    const PBViewport full = {
+        .x = 0,
+        .y = 0,
+        .width = PB_RENDER_TOP_WIDTH,
+        .height = PB_RENDER_TOP_HEIGHT,
+    };
+    CHECK(pb_renderer_viewport_to_target(&full, &target));
+    CHECK(target.x == 0);
+    CHECK(target.y == 0);
+    CHECK(target.width == PB_RENDER_TARGET_WIDTH);
+    CHECK(target.height == PB_RENDER_TARGET_HEIGHT);
+
+    const PBViewport inset = { .x = 40, .y = 20, .width = 100, .height = 50 };
+    CHECK(pb_renderer_viewport_to_target(&inset, &target));
+    CHECK(target.x == 20);
+    CHECK(target.y == 260);
+    CHECK(target.width == 50);
+    CHECK(target.height == 100);
+
+    const PBViewport empty = { .x = 0, .y = 0, .width = 0, .height = 1 };
+    const PBViewport off_right = { .x = 399, .y = 0, .width = 2, .height = 1 };
+    const PBViewport off_top = { .x = 0, .y = 239, .width = 1, .height = 2 };
+    CHECK(!pb_renderer_viewport_to_target(&empty, &target));
+    CHECK(!pb_renderer_viewport_to_target(&off_right, &target));
+    CHECK(!pb_renderer_viewport_to_target(&off_top, &target));
+    CHECK(!pb_renderer_viewport_to_target(NULL, &target));
+    CHECK(!pb_renderer_viewport_to_target(&full, NULL));
+    return true;
+}
+
+static PBRenderPipeline valid_pipeline(void) {
+    const PBRenderPipeline pipeline = {
+        .cull_mode = PB_CULL_BACK_CCW,
+        .depth_test_enabled = true,
+        .depth_write_enabled = true,
+        .depth_function = PB_COMPARE_GREATER,
+        .blend_mode = PB_BLEND_ALPHA,
+        .min_filter = PB_FILTER_NEAREST,
+        .mag_filter = PB_FILTER_LINEAR,
+        .wrap_s = PB_WRAP_REPEAT,
+        .wrap_t = PB_WRAP_CLAMP_TO_EDGE,
+    };
+    return pipeline;
+}
+
+static bool test_pipeline_and_cache(void) {
+    PBRenderPipeline pipeline = valid_pipeline();
+    CHECK(pb_renderer_pipeline_is_valid(&pipeline));
+    pipeline.depth_test_enabled = false;
+    CHECK(!pb_renderer_pipeline_is_valid(&pipeline));
+    pipeline.depth_write_enabled = false;
+    CHECK(pb_renderer_pipeline_is_valid(&pipeline));
+    pipeline = valid_pipeline();
+    pipeline.wrap_s = (PBTextureWrap)PB_WRAP_COUNT;
+    CHECK(!pb_renderer_pipeline_is_valid(&pipeline));
+    CHECK(!pb_renderer_pipeline_is_valid(NULL));
+
+    PBRenderStateCache cache;
+    pb_renderer_state_cache_init(&cache);
+    CHECK(cache.changes == 0);
+    CHECK(cache.deduplicated == 0);
+    CHECK(cache.rejected == 0);
+
+    const PBViewport full = {
+        .x = 0,
+        .y = 0,
+        .width = PB_RENDER_TOP_WIDTH,
+        .height = PB_RENDER_TOP_HEIGHT,
+    };
+    CHECK(pb_renderer_bind_viewport(&cache, &full) == PB_BIND_CHANGED);
+    CHECK(pb_renderer_bind_viewport(&cache, &full) == PB_BIND_UNCHANGED);
+    CHECK(cache.viewport_bound);
+
+    pipeline = valid_pipeline();
+    CHECK(pb_renderer_bind_pipeline(&cache, &pipeline) == PB_BIND_CHANGED);
+    CHECK(pb_renderer_bind_pipeline(&cache, &pipeline) == PB_BIND_UNCHANGED);
+    CHECK(cache.pipeline_bound);
+
+    pipeline.depth_test_enabled = false;
+    CHECK(pb_renderer_bind_pipeline(&cache, &pipeline) == PB_BIND_REJECTED);
+    CHECK(cache.changes == 2);
+    CHECK(cache.deduplicated == 2);
+    CHECK(cache.rejected == 1);
+    CHECK(pb_renderer_bind_pipeline(NULL, &pipeline) == PB_BIND_REJECTED);
+    return true;
+}
+
+static bool test_buffer_contract_and_status(void) {
+    size_t bytes;
+    CHECK(pb_renderer_vertex_buffer_size(36, 9, &bytes));
+    CHECK(bytes == 324);
+    CHECK(!pb_renderer_vertex_buffer_size(0, 9, &bytes));
+    CHECK(!pb_renderer_vertex_buffer_size(36, 0, &bytes));
+    CHECK(!pb_renderer_vertex_buffer_size(SIZE_MAX, 2, &bytes));
+    CHECK(!pb_renderer_vertex_buffer_size(36, 9, NULL));
+
+    CHECK(strcmp(pb_renderer_init_result_name(PB_RENDERER_INIT_OK),
+                 "ready") == 0);
+    CHECK(strcmp(pb_renderer_init_result_name(PB_RENDERER_INIT_SHADER),
+                 "shader load failed") == 0);
+    CHECK(strcmp(pb_renderer_init_result_name((PBRendererInitResult)999),
+                 "unknown") == 0);
+    return true;
+}
+
+int main(void) {
+    if (!test_texture_formats() || !test_texture_swizzle() ||
+        !test_viewport_rotation() || !test_pipeline_and_cache() ||
+        !test_buffer_contract_and_status()) {
+        return EXIT_FAILURE;
+    }
+
+    printf("M9 renderer contract: %u checks passed\n", checks_run);
+    return EXIT_SUCCESS;
+}

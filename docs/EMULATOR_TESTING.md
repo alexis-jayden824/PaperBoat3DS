@@ -85,6 +85,21 @@ not proof of heap exhaustion; real-hardware logging remains authoritative.
 - Not established by this result: virtual-SD archive discovery, physical input,
   touch accuracy, suspend/resume, or real-hardware compatibility
 
+### 2026-09-20 - M8 input backend
+
+- Build commit: `0735cd7bde2127b8559061a1b563b0f84ca7a6db`
+- Workflow run: `35481886518`
+- Artifact: `PaperBoat3DS.3ds`
+- Environment: Folium Nintendo 3DS core on iOS
+- Result: booted successfully as `0.8.0-m8`; detected the New 3DS profile,
+  reported an active lifecycle and input gate, retained healthy memory-budget
+  and SD-log diagnostics, and latched `Menu SELECT: REQUESTED`
+- Archive observation: generated archives were not installed in Folium's
+  virtual SD and were correctly reported missing
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: the complete button map, Circle Pad range,
+  touch coordinates, lid lifecycle, clean START exit, or hardware behavior
+
 ## M8 input check
 
 Use the newest build marked `0.8.0-m8`. Exercise A, B, X, Y, L, R, D-Pad,
@@ -93,3 +108,13 @@ SELECT must latch `Menu SELECT: REQUESTED` without adding an N64 bit. START
 exits the diagnostic shell. Record any Folium overlay control that does not
 reach the expected input; emulator mapping defects must not be mistaken for
 libctru hardware behavior.
+
+## M9 renderer check
+
+Use the newest build marked `0.9.0-m9`. The top display should show a dark navy
+background, a repeated teal/light checker panel, and a translucent triangular
+sail. The bottom display must report `C3D: ready`, `Shader: PICA shbin OK`, an
+8x8 RGBA8 texture, and a 324-byte VBO. Frame, draw, vertex, and cached-state
+counters must increase; `fail` must remain zero. Capture both displays and the
+exact build SHA. A Folium pass establishes an emulator rendering smoke test,
+not physical PICA correctness or Old 3DS performance.

@@ -96,3 +96,23 @@ Report the build SHA, console model, system version, launch method, mapping
 results, lifecycle result, a photo of the live diagnostics, and the resulting
 `/3ds/PaperBoat3DS/PaperBoat3DS.log`. A New 3DS XL/LL result validates the
 owner's target console; Old 3DS remains the performance baseline.
+
+## M9 renderer checkpoint
+
+Use the newest passing `port/3ds` `.3dsx` artifact marked `0.9.0-m9`.
+
+1. Cold-boot the diagnostic and confirm the top display contains the dark navy,
+   teal/light checker, and translucent sail scene described in
+   `docs/M9_RENDERER.md`.
+2. Confirm the bottom display reports `C3D: ready`, advancing frame/draw/vertex
+   counters, zero frame failures, and a stable command-buffer peak.
+3. Leave it running for 60 seconds and check for corruption, flicker, freezes,
+   or memory pressure.
+4. Close the lid for at least five seconds, reopen it, and confirm rendering
+   resumes without stale input or a crash.
+5. Press START to exit, then preserve the SD log.
+
+Report the exact build SHA, model, firmware, launch environment, photographs of
+both displays, idle/lifecycle result, and complete log. The owner's New 3DS
+XL/LL result is required for the target console. An Old 3DS result remains
+required for baseline performance and memory conclusions.

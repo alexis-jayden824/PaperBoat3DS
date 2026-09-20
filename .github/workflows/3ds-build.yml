@@ -31,6 +31,9 @@ jobs:
       - name: Test M8 input backend
         run: make m8-input-test
 
+      - name: Test M9 renderer contract
+        run: make m9-renderer-test
+
       - name: Fetch pinned upstream sources
         run: sh tools/fetch_upstream.sh
 

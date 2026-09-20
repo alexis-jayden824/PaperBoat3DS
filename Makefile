@@ -70,6 +70,7 @@ export DEPSDIR := $(CURDIR)/$(BUILD)
 CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+PICAFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.v.pica)))
 BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 ifeq ($(strip $(CPPFILES)),)
@@ -79,9 +80,11 @@ export LD := $(CXX)
 endif
 
 export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES_BIN     := $(addsuffix .o,$(BINFILES))
+export OFILES_BIN     := $(addsuffix .o,$(BINFILES)) \
+                         $(PICAFILES:.v.pica=.shbin.o)
 export OFILES         := $(OFILES_BIN) $(OFILES_SOURCES)
-export HFILES         := $(addsuffix .h,$(subst .,_,$(BINFILES)))
+export HFILES         := $(addsuffix .h,$(subst .,_,$(BINFILES))) \
+                         $(PICAFILES:.v.pica=_shbin.h)
 export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                          $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                          -I$(CURDIR)/$(BUILD)
@@ -90,7 +93,7 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m6-policy-test \
-	m6-budget-check m8-input-test clean
+	m6-budget-check m8-input-test m9-renderer-test clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -105,6 +108,9 @@ m6-budget-check: all
 
 m8-input-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_input_backend.sh "$(BUILD)/m8-tests"
+
+m9-renderer-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_renderer_contract.sh "$(BUILD)/m9-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
@@ -160,6 +166,11 @@ $(OFILES_SOURCES): $(HFILES)
 $(OUTPUT).elf: $(OFILES)
 
 %.bin.o %_bin.h: %.bin
+	@echo $(notdir $<)
+	@$(bin2o)
+
+.PRECIOUS: %.shbin
+%.shbin.o %_shbin.h: %.shbin
 	@echo $(notdir $<)
 	@$(bin2o)
 
