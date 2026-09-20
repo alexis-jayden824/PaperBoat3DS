@@ -2,9 +2,10 @@
 
 ## Current scope
 
-This branch contains the native application shell and the completed M5 compilation
-gate; it is not yet a playable PaperBoat port. A successful package build proves
-that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+This branch contains the native application shell, the completed M5 compilation
+gate, M6 memory guardrails, and the M7 legal host-side asset workflow; it is not
+yet a playable PaperBoat port. A successful package build proves that one ARM11
+ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -36,6 +37,20 @@ make m5-core-check
 ```
 
 CI runs both operations on every branch build.
+
+## Host-side asset preparation
+
+M7 provides one cross-platform Python entry point that verifies a legally
+dumped ROM, builds pinned Torch, creates `paperboat.o2r` and `pm64.o2r`, and
+validates both archives:
+
+```sh
+python3 tools/pb3ds_assets.py prepare /path/to/baserom.us.z64
+```
+
+Do not upload the ROM or generated game archive to GitHub Actions. See
+`docs/M7_ASSET_PIPELINE.md` for prerequisites, staging, validation, Windows
+usage, and the exact legal boundary.
 
 ## Build
 
@@ -75,4 +90,7 @@ The `.cia` uses the provisional homebrew unique ID `0xF0B42`. Install it only on
 
 ## Asset policy
 
-ROMs, extracted Nintendo assets, generated `.o2r` packages, encryption keys, and proprietary files must never be committed. Later asset-generation milestones run on the user's PC against a legally obtained game copy.
+ROMs, extracted Nintendo assets, generated `.o2r` packages, encryption keys,
+and proprietary files must never be committed. The M7 workflow runs locally
+against a legally obtained copy and only CI-tests non-proprietary and synthetic
+inputs.
