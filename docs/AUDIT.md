@@ -69,21 +69,51 @@ frame ordering, and suspend admission.
 The first backend is intentionally not a claim of full Fast3D coverage. It
 supports shade, texture 0, and texture-times-shade one-cycle programs. Complex
 combiner options and offscreen/readback operations reject with telemetry. The
-base-class transform/uniform state is retained, but M11 must apply the real
-matrix palette and PaperBoat display-list coordinates before claiming a game
-frame.
+base-class transform/uniform state is retained. M11 proves an archive-backed
+static image through this adapter; M12 must apply the game matrix palette and
+PaperBoat display-list coordinates before claiming live title flow.
 
 Merge `4b5e6faef11ef469953a86d1ca84ecde32844d3a` passed both pull-request checks.
 Post-merge devkitARM run 114 repeated the M6/M8/M9/M10 host contracts, linked
 the native adapter, enforced memory budgets, and produced non-empty `.3dsx`,
 `.3ds`, and `.cia` packages. This closes the M10 software build/package gate;
-it does not substitute for emulator or physical-console evidence.
+it does not substitute for emulator or physical-console evidence. Folium build
+`bc0139a2f292` subsequently validated adapter counters and exposed the native
+same-frame stream overwrite described in `docs/M10_GRAPHICS.md`.
+
+## M11 audit result
+
+M11 deliberately proves the smallest legal asset-to-PICA path before enabling
+the live title loop. It does not load the 39 MiB game archive into RAM and does
+not claim game-state or display-list execution.
+
+- a 4 KiB cursor scans the ordinary central directory only until both fixed
+  resource names are found;
+- encrypted, multi-disk, unsupported-compression, ZIP64-central-directory,
+  malformed, oversized, checksum-failing, and missing inputs fail closed;
+- stored and raw-deflate entries are supported, including the ZIP64 size extra
+  fields used by Torch's local headers while authoritative central sizes remain
+  32-bit;
+- compressed, inflater, extracted-resource, and decoded-texture allocations use
+  the M6 archive/transient/scene classes and are released after GPU upload;
+- the pinned Torch inflate sources are compiled directly, avoiding a mutable
+  target package or whole libzip/libultraship desktop archive stack;
+- the exact title CI8 image and 256-entry big-endian RGBA5551 palette decode to
+  a 512x256 RGBA8 texture with transparent padding;
+- a deterministic fallback preserves diagnostics and reports the precise
+  archive/frame failure instead of crashing;
+- the M10 native stream buffer now reserves non-overlapping spans per frame and
+  exposes high-water and overflow counters.
+
+Synthetic deflate/stored, local-ZIP64, missing-resource, invalid-resource, bad-
+CRC, padding/color, and allocation-release tests pass. A private local run also
+loaded the project owner's generated 60,826-entry archive successfully without
+placing the archive or its contents in source control.
 
 ## Open gates
 
-1. Validate the distinct M10 checker/sail draws and adapter counters in Folium.
-2. Validate renderer lifecycle and memory behavior on real hardware.
-3. Load the private legal archives and render the first deterministic game
-   frame in M11.
+1. Pass the M11 native build/package and public synthetic CI gates.
+2. Validate the archive-backed M11 frame and corrected fallback in Folium.
+3. Validate renderer lifecycle and memory behavior on real hardware.
 4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.

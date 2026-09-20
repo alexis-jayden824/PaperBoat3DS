@@ -49,6 +49,18 @@ invalid-class rejection, reserve boundaries, allocation accounting, sticky
 pressure, stack warnings, and Folium's unavailable application-memory reading.
 The Nintendo 3DS CI build cannot package artifacts unless this suite passes.
 
+## M11 archive-frame allocation profile
+
+The first legal frame stays inside the same policy rather than creating an
+untracked loader heap. Its central-directory cursor is 4 KiB on the stack; the
+largest fixed extracted resource is 59,280 bytes; raw-deflate state is charged
+to transient memory; and the padded CPU RGBA buffer is 512 KiB of scene memory.
+All archive/inflate/resource/CPU-texture allocations are released after the
+GPU copy. The persistent native texture consumes 512 KiB of linear memory and
+is reflected by both renderer texture telemetry and sampled linear free space.
+The public M11 tests assert that every allocation class returns to zero after
+success and each exercised failure path.
+
 ## Hardware evidence still required
 
 Folium is useful for presentation and failure-path checks but cannot establish

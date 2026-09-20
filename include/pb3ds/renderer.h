@@ -134,6 +134,9 @@ typedef struct {
     uint32_t state_deduplicated;
     uint32_t rejected_commands;
     size_t vertex_buffer_bytes;
+    size_t stream_capacity_vertices;
+    size_t stream_peak_vertices;
+    uint32_t stream_overflows;
     size_t texture_bytes;
     float command_buffer_peak;
 } PBRendererStats;
@@ -162,6 +165,11 @@ bool pb_renderer_swizzle_rgba8(uint8_t *destination, size_t destination_size,
                                uint16_t width, uint16_t height);
 bool pb_renderer_vertex_buffer_size(size_t stride, size_t vertex_count,
                                     size_t *bytes);
+bool pb_renderer_stream_reserve(size_t capacity_vertices,
+                                size_t used_vertices,
+                                size_t requested_vertices,
+                                size_t *first_vertex,
+                                size_t *next_used_vertices);
 
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target);

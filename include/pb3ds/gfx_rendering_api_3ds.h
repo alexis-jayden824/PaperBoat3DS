@@ -82,6 +82,10 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
 
     bool PrepareDiagnostic();
     bool RenderDiagnostic();
+    bool PrepareFirstFrame(const uint8_t *rgba, uint16_t textureWidth,
+                           uint16_t textureHeight, uint16_t sourceWidth,
+                           uint16_t sourceHeight);
+    bool RenderFirstFrame();
     void SetActive(bool active);
     const void *GetBridgeStats() const;
 
@@ -109,6 +113,13 @@ PBGfxApiInitResult pb_gfx_api_3ds_create(PBGfxApi3DS **api,
 const char *pb_gfx_api_init_result_name(PBGfxApiInitResult result);
 bool pb_gfx_api_3ds_prepare_diagnostic(PBGfxApi3DS *api);
 bool pb_gfx_api_3ds_render_diagnostic(PBGfxApi3DS *api);
+bool pb_gfx_api_3ds_prepare_first_frame(PBGfxApi3DS *api,
+                                        const uint8_t *rgba,
+                                        uint16_t texture_width,
+                                        uint16_t texture_height,
+                                        uint16_t source_width,
+                                        uint16_t source_height);
+bool pb_gfx_api_3ds_render_first_frame(PBGfxApi3DS *api);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
 void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api);

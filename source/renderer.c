@@ -139,6 +139,22 @@ bool pb_renderer_vertex_buffer_size(size_t stride, size_t vertex_count,
     return true;
 }
 
+bool pb_renderer_stream_reserve(size_t capacity_vertices,
+                                size_t used_vertices,
+                                size_t requested_vertices,
+                                size_t *first_vertex,
+                                size_t *next_used_vertices) {
+    if (first_vertex == NULL || next_used_vertices == NULL ||
+        requested_vertices == 0 || used_vertices > capacity_vertices ||
+        requested_vertices > capacity_vertices - used_vertices) {
+        return false;
+    }
+
+    *first_vertex = used_vertices;
+    *next_used_vertices = used_vertices + requested_vertices;
+    return true;
+}
+
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target) {
     if (logical == NULL || target == NULL || logical->width == 0 ||

@@ -41,6 +41,7 @@ struct PBRenderer3DS {
     PBRendererStats stats;
     PBRendererVertex *stream_buffer;
     size_t stream_capacity_vertices;
+    size_t stream_used_vertices;
     int projection_uniform;
     bool c3d_ready;
     bool program_ready;
@@ -207,6 +208,8 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
 
     result = PB_RENDERER_INIT_VERTEX_BUFFER;
     renderer->stream_capacity_vertices = PB_GFX_MAX_STREAM_TRIANGLES * 3U;
+    renderer->stats.stream_capacity_vertices =
+        renderer->stream_capacity_vertices;
     if (!pb_renderer_vertex_buffer_size(
             sizeof(PBRendererVertex), renderer->stream_capacity_vertices,
             &renderer->stats.vertex_buffer_bytes)) {
@@ -266,6 +269,7 @@ bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer) {
         return false;
     }
     renderer->frame_open = true;
+    renderer->stream_used_vertices = 0;
     C3D_RenderTargetClear(renderer->target, C3D_CLEAR_ALL,
                           PB_RENDER_CLEAR_COLOR, PB_RENDER_CLEAR_DEPTH);
     if (!C3D_FrameDrawOn(renderer->target)) {
@@ -470,10 +474,18 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
         return false;
     }
     const size_t vertex_count = triangle_count * 3U;
-    if (vertex_count > renderer->stream_capacity_vertices ||
-        vertex_stride_floats == 0 ||
+    if (vertex_stride_floats == 0 ||
         vertex_count > SIZE_MAX / vertex_stride_floats ||
         float_count != vertex_count * vertex_stride_floats) {
+        return false;
+    }
+    size_t first_vertex = 0;
+    size_t next_used_vertices = 0;
+    if (!pb_renderer_stream_reserve(renderer->stream_capacity_vertices,
+                                    renderer->stream_used_vertices,
+                                    vertex_count, &first_vertex,
+                                    &next_used_vertices)) {
+        renderer->stats.stream_overflows++;
         return false;
     }
 
@@ -482,7 +494,7 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
         const float *source =
             &vertices[vertex_index * vertex_stride_floats];
         PBRendererVertex *destination =
-            &renderer->stream_buffer[vertex_index];
+            &renderer->stream_buffer[first_vertex + vertex_index];
         size_t offset = 5U;
 
         destination->position[0] = source[0];
@@ -510,9 +522,17 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
 
     C3D_BufInfo *buffers = C3D_GetBufInfo();
     BufInfo_Init(buffers);
-    BufInfo_Add(buffers, renderer->stream_buffer, sizeof(PBRendererVertex), 3,
-                0x210);
+    PBRendererVertex *draw_buffer = &renderer->stream_buffer[first_vertex];
+    GSPGPU_FlushDataCache(draw_buffer,
+                          vertex_count * sizeof(PBRendererVertex));
+    BufInfo_Add(buffers, draw_buffer, sizeof(PBRendererVertex), 3, 0x210);
     C3D_DrawArrays(GPU_TRIANGLES, 0, (int)vertex_count);
+    renderer->stream_used_vertices = next_used_vertices;
+    if (renderer->stream_used_vertices >
+        renderer->stats.stream_peak_vertices) {
+        renderer->stats.stream_peak_vertices =
+            renderer->stream_used_vertices;
+    }
     renderer->stats.draw_calls++;
     renderer->stats.vertices += vertex_count;
     return true;

@@ -5,9 +5,9 @@
 This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
 the host-tested M8 native input layer, the M9 citro3d renderer foundation,
-and the M10 pinned-libultraship graphics adapter. It is not yet a playable
-PaperBoat port. A successful package build proves that one ARM11 ELF can
-produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+the M10 pinned-libultraship graphics adapter, and the M11 bounded legal-archive
+frame path. It is not yet a playable PaperBoat port. A successful package build
+proves that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -70,6 +70,18 @@ The C++ check includes the `GfxRenderingAPI` header from the exact locked
 libultraship checkout. The normal build therefore fetches/verifies the pinned
 sources before compiling; no upstream source is vendored into this repository.
 
+Run the M11 O2R scanner, stored/raw-deflate extraction, CRC, resource parser,
+CI8/RGBA16 decoder, padding, failure, and memory-release checks with:
+
+```sh
+make fetch-upstream
+make m11-frame-test
+```
+
+The test creates synthetic archives only. The ARM11 build compiles the bounded
+inflate subset from the exact Torch checkout pinned in
+`upstream/PAPERBOAT.lock`; it does not depend on a mutable system zlib package.
+
 ## Host-side asset preparation
 
 M7 provides one cross-platform Python entry point that verifies a legally
@@ -83,6 +95,14 @@ python3 tools/pb3ds_assets.py prepare /path/to/baserom.us.z64
 Do not upload the ROM or generated game archive to GitHub Actions. See
 `docs/M7_ASSET_PIPELINE.md` for prerequisites, staging, validation, Windows
 usage, and the exact legal boundary.
+
+M11 reads these exact SD paths at runtime:
+
+- `sdmc:/3ds/PaperBoat3DS/paperboat.o2r`
+- `sdmc:/3ds/PaperBoat3DS/pm64.o2r`
+
+Only `pm64.o2r` supplies the current title-background frame. Neither archive is
+embedded in public packages or CI artifacts.
 
 ## Build
 

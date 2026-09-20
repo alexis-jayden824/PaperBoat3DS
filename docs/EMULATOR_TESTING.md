@@ -115,6 +115,28 @@ not proof of heap exhaustion; real-hardware logging remains authoritative.
 - Not established by this result: scissor behavior, lifecycle restoration,
   physical PICA correctness, or Old 3DS performance
 
+### 2026-09-20 - M10 libultraship graphics adapter
+
+- Runtime build: `bc0139a2f292` (`0.10.0-m10`)
+- Artifact: `PaperBoat3DS.3ds`
+- Environment: Folium Nintendo 3DS core on iOS
+- Result: reported the exact `Fast::GfxRenderingAPI` contract, two supported
+  TEV shaders, one 256-byte texture, 4,449 presented frames, 8,898 draws,
+  13,347 triangles, 40,041 vertices, zero rejects, and zero frame failures
+- Visual result: the bright translucent sail was clearly visible; only one of
+  the checker's two rectangle triangles survived in the capture
+- Root cause: both same-frame draws reused vertex zero in one asynchronous
+  streaming buffer, so the sail conversion overwrote the first panel triangle
+  before PICA consumed it
+- M11 correction: each draw reserves a non-overlapping span in a reset-on-frame
+  bounded arena, flushes that written span, and reports high-water/overflow
+  telemetry
+- Archive observation: external archives were not installed in Folium's
+  virtual SD and were correctly reported missing
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: corrected multi-draw output, O2R frame load,
+  lifecycle restoration, physical PICA correctness, or Old 3DS performance
+
 ## M8 input check
 
 Use the newest build marked `0.8.0-m8`. Exercise A, B, X, Y, L, R, D-Pad,
@@ -145,3 +167,20 @@ zero frame failures. `Reject` must remain zero during the normal diagnostic.
 Capture both displays and the exact build SHA. This verifies the bounded M10
 adapter path in Folium; APT suspend/resume and hardware behavior remain real-
 console gates.
+
+## M11 first-frame check
+
+Use the newest private bundle marked `0.11.0-m11`, with its supplied legal O2R
+payload installed in Folium's virtual SD at `3ds/PaperBoat3DS/`. The top display
+should show the 296x200 Paper Mario title background centered within the navy
+400x240 screen. It must not be upside down, mirrored, cropped, diagonally split,
+or replaced by checker/sail fallback.
+
+The bottom display must report `Frame: title_bg 296x200 CI8`, `O2R: ready`, a
+512x256 RGBA8 GPU texture, advancing frames at one draw/two triangles/six
+vertices per frame, zero unsupported shaders, zero rejects, zero failures, and
+zero stream overflows. If the virtual-SD payload is deliberately removed, the
+checker and the complete two-triangle panel plus sail must appear with
+`Fallback: pm64.o2r missing`. Capture both success and fallback displays with
+the exact build SHA. Folium does not close the physical lifecycle or Old 3DS
+performance gates.

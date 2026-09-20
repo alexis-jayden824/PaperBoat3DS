@@ -3,6 +3,7 @@
 
 #include "pb3ds/compat.h"
 #include "pb3ds/diagnostics.h"
+#include "pb3ds/first_frame.h"
 #include "pb3ds/gfx_rendering_api_3ds.h"
 #include "pb3ds/input.h"
 #include "pb3ds/log.h"
@@ -86,7 +87,9 @@ static void print_bottom_screen(PrintConsole *console,
                                 PBRendererInitResult renderer_result,
                                 const PBRendererStats *renderer_stats,
                                 PBGfxApiInitResult graphics_result,
-                                const PBGfxBridgeStats *graphics_stats) {
+                                const PBGfxBridgeStats *graphics_stats,
+                                const PBFirstFrame *first_frame,
+                                bool first_frame_ready) {
     const bool renderer_ready =
         renderer_result == PB_RENDERER_INIT_OK && renderer_stats != NULL;
     const bool graphics_ready =
@@ -98,69 +101,90 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM10 libultraship Graphics\n");
+    printf("\x1b[1;2HM11 First Archive Frame\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
-    printf("\x1b[6;2HAPI: %-20s\n",
-           pb_gfx_api_init_result_name(graphics_result));
-    printf("\x1b[7;2HContract: Fast::GfxRenderingAPI\n");
-    printf("\x1b[8;2HPICA: %s  Z:0..1  Tex:1024\n",
+    if (first_frame_ready) {
+        printf("\x1b[6;2HFrame: title_bg %ux%u CI8\n",
+               first_frame->source_width, first_frame->source_height);
+        printf("\x1b[7;2HO2R: ready scan:%lu out:%lu KiB\n",
+               (unsigned long)first_frame->archive_stats.entries_scanned,
+               (unsigned long)(first_frame->archive_stats.uncompressed_bytes /
+                               1024U));
+        printf("\x1b[8;2HGPU: RGBA8 %ux%u (%lu KiB)\n",
+               first_frame->texture_width, first_frame->texture_height,
+               (unsigned long)(first_frame->rgba_size / 1024U));
+    } else {
+        printf("\x1b[6;2HFallback: %s\n",
+               first_frame->result == PB_FIRST_FRAME_READY
+                   ? "GPU upload failed"
+                   : pb_first_frame_result_name(first_frame->result));
+        printf("\x1b[7;2HO2R: %s scan:%lu\n",
+               pb_o2r_result_name(first_frame->archive_result),
+               (unsigned long)first_frame->archive_stats.entries_scanned);
+        printf("\x1b[8;2HDiagnostic: checker + sail\n");
+    }
+    printf("\x1b[9;2HAPI: %s  PICA:%s\n",
+           pb_gfx_api_init_result_name(graphics_result),
            renderer_ready ? "ready" : "unavailable");
     if (graphics_ready) {
-        printf("\x1b[9;2HTEV shaders:%lu unsupported:%lu\n",
+        printf("\x1b[10;2HTEV shaders:%lu unsupported:%lu\n",
                (unsigned long)graphics_stats->shaders_live,
                (unsigned long)graphics_stats->unsupported_shaders);
-        printf("\x1b[10;2HTextures:%lu %lu B  Stream:%lu B\n",
+        printf("\x1b[11;2HTextures:%lu %lu KiB\n",
                (unsigned long)graphics_stats->textures_live,
-               (unsigned long)graphics_stats->texture_bytes,
-               (unsigned long)graphics_stats->stream_peak_bytes);
-        printf("\x1b[11;2HFrames:%llu Draws:%llu Tris:%llu\n",
+               (unsigned long)(graphics_stats->texture_bytes / 1024U));
+        printf("\x1b[12;2HFrames:%llu Draws:%llu Tris:%llu\n",
                (unsigned long long)graphics_stats->frames_presented,
                (unsigned long long)graphics_stats->draw_calls,
                (unsigned long long)graphics_stats->triangles);
-        printf("\x1b[12;2HVertices:%llu Reject:%lu fail:%lu\n",
+        printf("\x1b[13;2HVertices:%llu Reject:%lu fail:%lu\n",
                (unsigned long long)graphics_stats->vertices,
                (unsigned long)graphics_stats->rejected_commands,
                (unsigned long)graphics_stats->frame_failures);
     }
     if (renderer_ready) {
-        printf("\x1b[13;2HCmd peak:%u.%u%%  VBO:%lu KiB\n",
+        printf("\x1b[14;2HStream:%lu/%lu vtx ovf:%lu\n",
+               (unsigned long)renderer_stats->stream_peak_vertices,
+               (unsigned long)renderer_stats->stream_capacity_vertices,
+               (unsigned long)renderer_stats->stream_overflows);
+        printf("\x1b[15;2HCmd peak:%u.%u%%  VBO:%lu KiB\n",
                command_permille / 10U, command_permille % 10U,
                (unsigned long)(renderer_stats->vertex_buffer_bytes / 1024U));
     }
 
-    printf("\x1b[15;2HSystem: %s\n",
+    printf("\x1b[17;2HSystem: %s\n",
            state->model_query_ok
                ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
                : "unknown");
-    printf("\x1b[16;2HKernel: %08lX  %s\n",
+    printf("\x1b[18;2HKernel: %08lX  %s\n",
            (unsigned long)state->kernel_version,
            lifecycle_name(state->lifecycle));
-    printf("\x1b[17;2HInput gate: %s\n",
+    printf("\x1b[19;2HInput gate: %s\n",
            input->waiting_for_neutral ? "WAIT NEUTRAL" : "active");
-    printf("\x1b[18;2HN64:%04X  Stick:%4d,%4d\n",
+    printf("\x1b[20;2HN64:%04X  Stick:%4d,%4d\n",
            (unsigned int)input->n64_held, input->stick_x, input->stick_y);
-    printf("\x1b[19;2HMenu SELECT: %s\n",
+    printf("\x1b[21;2HMenu SELECT: %s\n",
            menu_request_seen ? "REQUESTED" : "ready");
 
-    printf("\x1b[21;2HBudgets: %s fail:%lu\n",
+    printf("\x1b[23;2HBudgets: %s fail:%lu\n",
            memory->pressure ? "PRESSURE" : "OK",
            (unsigned long)memory->allocation_failures);
     if (!memory->application_measurement_available) {
-        printf("\x1b[22;2HApp free: unavailable\n");
+        printf("\x1b[24;2HApp free: unavailable\n");
     } else {
-        printf("\x1b[22;2HApp free: %6lu KiB\n",
+        printf("\x1b[24;2HApp free: %6lu KiB\n",
                (unsigned long)(memory->application_free / 1024));
     }
-    printf("\x1b[23;2HLinear free: %6lu KiB\n",
+    printf("\x1b[25;2HLinear free: %6lu KiB\n",
            (unsigned long)(memory->linear_free / 1024));
-    printf("\x1b[24;2HSD log: %s\n",
+    printf("\x1b[26;2HSD log: %s\n",
            pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
-    printf("\x1b[26;2HConfig:%lu Engine:%s Game:%s\n",
+    printf("\x1b[28;2HConfig:%lu Engine:%s Game:%s\n",
            (unsigned long)config->count,
            engine_archive_available ? "OK" : "--",
            game_archive_available ? "OK" : "--");
-    printf("\x1b[28;2HSTART exits diagnostic shell\n");
+    printf("\x1b[30;2HSTART exits M11 shell\n");
 }
 
 static void sample_memory(PBMemoryMonitor *monitor) {
@@ -192,6 +216,9 @@ int main(int argc, char **argv) {
     PBMemoryMonitor memory_monitor;
     PBRenderer3DS *renderer = NULL;
     PBGfxApi3DS *graphics = NULL;
+    PBFirstFrame first_frame;
+    pb_first_frame_init(&first_frame);
+    bool first_frame_ready = false;
     const uintptr_t stack_anchor = (uintptr_t)&memory_monitor;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
@@ -220,6 +247,18 @@ int main(int argc, char **argv) {
             pb_gfx_api_3ds_destroy(graphics);
             graphics = NULL;
         }
+    }
+    if (graphics != NULL) {
+        if (pb_first_frame_load(&first_frame, &game_archive,
+                                &memory_monitor) == PB_FIRST_FRAME_READY) {
+            first_frame_ready = pb_gfx_api_3ds_prepare_first_frame(
+                graphics, first_frame.rgba, first_frame.texture_width,
+                first_frame.texture_height, first_frame.source_width,
+                first_frame.source_height);
+        }
+        pb_first_frame_release_pixels(&first_frame, &memory_monitor);
+    } else if (!game_archive_available) {
+        first_frame.result = PB_FIRST_FRAME_ARCHIVE_MISSING;
     }
     state.graphics = graphics;
 
@@ -276,12 +315,25 @@ int main(int argc, char **argv) {
                  game_archive_available ? "found" : "missing",
                  (unsigned long)game_archive.size,
                  (unsigned long long)pb_platform_time_ms());
+    pb_log_write(&log, first_frame_ready ? PB_LOG_INFO : PB_LOG_WARNING,
+                 "first-frame",
+                 "status=\"%s\" archive=\"%s\" uploaded=%s source=%ux%u "
+                 "texture=%ux%u scan=%lu compressed=%lu decoded=%lu",
+                 pb_first_frame_result_name(first_frame.result),
+                 pb_o2r_result_name(first_frame.archive_result),
+                 first_frame_ready ? "yes" : "no",
+                 first_frame.source_width, first_frame.source_height,
+                 first_frame.texture_width, first_frame.texture_height,
+                 (unsigned long)first_frame.archive_stats.entries_scanned,
+                 (unsigned long)first_frame.archive_stats.compressed_bytes,
+                 (unsigned long)first_frame.archive_stats.uncompressed_bytes);
 
     print_bottom_screen(&bottom_console, &state, &log, &config,
                         engine_archive_available, game_archive_available,
                         memory, &input, false, renderer_result,
                         pb_renderer_3ds_stats(renderer), graphics_result,
-                        pb_gfx_api_3ds_stats(graphics));
+                        pb_gfx_api_3ds_stats(graphics), &first_frame,
+                        first_frame_ready);
 
     u32 memory_sample_frames = 0;
     u32 diagnostics_refresh_frames = 0;
@@ -338,11 +390,16 @@ int main(int argc, char **argv) {
                                 menu_request_seen, renderer_result,
                                 pb_renderer_3ds_stats(renderer),
                                 graphics_result,
-                                pb_gfx_api_3ds_stats(graphics));
+                                pb_gfx_api_3ds_stats(graphics), &first_frame,
+                                first_frame_ready);
         }
 
         if (graphics != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
-            if (!pb_gfx_api_3ds_render_diagnostic(graphics) &&
+            const bool rendered =
+                first_frame_ready
+                    ? pb_gfx_api_3ds_render_first_frame(graphics)
+                    : pb_gfx_api_3ds_render_diagnostic(graphics);
+            if (!rendered &&
                 !renderer_frame_failed) {
                 renderer_frame_failed = true;
                 state.redraw_bottom = true;
@@ -384,7 +441,8 @@ int main(int argc, char **argv) {
         pb_log_write(&log, PB_LOG_INFO, "renderer-shutdown",
                      "frames=%llu draws=%llu vertices=%llu frame_failures=%lu "
                      "command_peak_permille=%lu state_changes=%lu cached=%lu "
-                     "rejected=%lu",
+                     "rejected=%lu stream_peak_vertices=%lu "
+                     "stream_overflows=%lu",
                      (unsigned long long)renderer_stats->frames,
                      (unsigned long long)renderer_stats->draw_calls,
                      (unsigned long long)renderer_stats->vertices,
@@ -393,7 +451,9 @@ int main(int argc, char **argv) {
                                      1000.0f),
                      (unsigned long)renderer_stats->state_changes,
                      (unsigned long)renderer_stats->state_deduplicated,
-                     (unsigned long)renderer_stats->rejected_commands);
+                     (unsigned long)renderer_stats->rejected_commands,
+                     (unsigned long)renderer_stats->stream_peak_vertices,
+                     (unsigned long)renderer_stats->stream_overflows);
     }
     pb_log_write(&log, PB_LOG_INFO, "shutdown",
                  "application_free=%lu linear_free=%lu peak_application=%lu "
@@ -413,6 +473,7 @@ int main(int argc, char **argv) {
 
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
+    pb_first_frame_release_pixels(&first_frame, &memory_monitor);
     pb_gfx_api_3ds_destroy(graphics);
     state.graphics = NULL;
     pb_renderer_3ds_destroy(renderer);

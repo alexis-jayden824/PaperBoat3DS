@@ -6,13 +6,14 @@
 #include <type_traits>
 
 static unsigned int checksRun;
+static uint8_t firstFramePixels[512U * 256U * 4U];
 
 #define CHECK(expression)                                                    \
     do {                                                                     \
         checksRun++;                                                         \
         if (!(expression)) {                                                 \
             std::fprintf(stderr,                                             \
-                         "M10 API contract check failed at %s:%d: %s\n",   \
+                         "M11 API contract check failed at %s:%d: %s\n",   \
                          __FILE__, __LINE__, #expression);                   \
             return false;                                                    \
         }                                                                    \
@@ -52,11 +53,22 @@ static bool testExactInterface() {
     CHECK(stats->unsupported_shaders == 0);
     CHECK(stats->stream_peak_bytes == 264);
 
+    CHECK(api.PrepareFirstFrame(firstFramePixels, 512, 256, 296, 200));
+    CHECK(api.RenderFirstFrame());
+    CHECK(stats->frames_presented == 3);
+    CHECK(stats->draw_calls == 5);
+    CHECK(stats->triangles == 8);
+    CHECK(stats->vertices == 24);
+    CHECK(stats->textures_live == 2);
+    CHECK(stats->texture_bytes == 512U * 256U * 4U + 256U);
+    CHECK(stats->shaders_live == 2);
+    CHECK(!api.PrepareFirstFrame(firstFramePixels, 256, 256, 296, 200));
+
     api.SetActive(false);
     CHECK(!api.RenderDiagnostic());
     api.SetActive(true);
     CHECK(api.RenderDiagnostic());
-    CHECK(stats->frames_presented == 3);
+    CHECK(stats->frames_presented == 4);
 
     CHECK(api.CreateFramebuffer() == -1);
     CHECK(api.GetFramebufferTextureId(0) == nullptr);
@@ -71,10 +83,13 @@ static bool testCBoundary() {
     CHECK(api != nullptr);
     CHECK(pb_gfx_api_3ds_prepare_diagnostic(api));
     CHECK(pb_gfx_api_3ds_render_diagnostic(api));
+    CHECK(pb_gfx_api_3ds_prepare_first_frame(api, firstFramePixels, 512, 256,
+                                             296, 200));
+    CHECK(pb_gfx_api_3ds_render_first_frame(api));
     const PBGfxBridgeStats *stats = pb_gfx_api_3ds_stats(api);
     CHECK(stats != nullptr);
-    CHECK(stats->frames_presented == 1);
-    CHECK(stats->draw_calls == 2);
+    CHECK(stats->frames_presented == 2);
+    CHECK(stats->draw_calls == 3);
     pb_gfx_api_3ds_set_active(api, false);
     CHECK(!pb_gfx_api_3ds_render_diagnostic(api));
     pb_gfx_api_3ds_destroy(api);
@@ -93,8 +108,7 @@ int main() {
     if (!testExactInterface() || !testCBoundary()) {
         return EXIT_FAILURE;
     }
-    std::printf("M10 exact GfxRenderingAPI contract: %u checks passed\n",
+    std::printf("M11 exact GfxRenderingAPI contract: %u checks passed\n",
                 checksRun);
     return EXIT_SUCCESS;
 }
-

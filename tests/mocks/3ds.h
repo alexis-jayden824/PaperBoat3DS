@@ -80,6 +80,7 @@ void hidCircleRead(circlePosition *position);
 void hidTouchRead(touchPosition *position);
 
 u32 osGetKernelVersion(void);
+u64 osGetTime(void);
 Result APT_CheckNew3DS(bool *is_new_3ds);
 void gfxInitDefault(void);
 void gfxExit(void);
