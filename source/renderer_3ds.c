@@ -8,7 +8,8 @@
 #include "pb3ds/gfx_bridge.h"
 #include "renderer_shbin.h"
 
-#define PB_RENDER_CLEAR_COLOR 0x10243BFFU
+/* Match PaperBoat's fixed-art presentation and the physical black LCD bezel. */
+#define PB_RENDER_CLEAR_COLOR 0x000000FFU
 #define PB_RENDER_CLEAR_DEPTH 0U
 
 #define PB_DISPLAY_TRANSFER_FLAGS                                           \

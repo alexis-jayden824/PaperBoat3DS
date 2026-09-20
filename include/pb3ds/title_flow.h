@@ -6,17 +6,12 @@
 #include "pb3ds/input.h"
 #include "pb3ds/o2r.h"
 #include "pb3ds/texture.h"
+#include "pb3ds/title_layout.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define PB_TITLE_LOGO_WIDTH 200U
-#define PB_TITLE_LOGO_HEIGHT 112U
-#define PB_TITLE_PROMPT_WIDTH 128U
-#define PB_TITLE_PROMPT_HEIGHT 32U
-#define PB_TITLE_COPYRIGHT_WIDTH 144U
-#define PB_TITLE_COPYRIGHT_HEIGHT 32U
 #define PB_FILE_SELECT_SLOT_COUNT 4U
 
 typedef enum {

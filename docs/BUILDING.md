@@ -89,11 +89,16 @@ prompt timing, and title/file-select transition checks with:
 ```sh
 make fetch-upstream
 make m12-flow-test
+make m12-layout-test
 ```
 
 These tests use generated public fixtures. A private local path can be passed
 directly to `tools/test_title_flow.sh` for owner-generated `pm64.o2r`
 validation; never add that path to CI.
+
+The M12.1 layout test is asset-free. It locks the New 3DS XL/LL 400x240
+presentation to a centered 320x240 safe canvas with equal 40-pixel pillars and
+checks every title rectangle against the upstream Paper Mario coordinates.
 
 ## Host-side asset preparation
 

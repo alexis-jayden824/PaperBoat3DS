@@ -119,14 +119,27 @@ See `docs/M11_FIRST_FRAME.md`.
 ### M12 - Title and file-select flow
 Reach title/file-select, validate transitions and input, and document remaining graphical defects.
 
-Status: **implementation in validation**. The checkpoint loads the authentic
+Status: **functional Folium path validated; M12.1 presentation correction in
+validation**. The checkpoint loads the authentic
 RGBA32 logo plus IA8 prompt/copyright resources through the bounded O2R path,
 renders them over the corrected title background, and mirrors PaperBoat's
 A/START, 2x2 slot navigation, confirm, and B-return contract. Host fixtures and
-the owner's private archive pass. The file-select panels are a bounded native
+the owner's private archive pass. Folium evidence confirms upright assets and
+the title/file-select interaction path, while also exposing the diagnostic
+navy surround and inconclusive prompt visibility addressed by M12.1. The
+file-select panels are a bounded native
 checkpoint compositor; save data, text/message/window display lists, and the
 overworld handoff remain explicit later-milestone work. See
 `docs/M12_TITLE_FLOW.md`.
+
+#### M12.1 - Title presentation correction
+
+Preserve Paper Mario's fixed 320x240 title composition at integer scale on the
+400x240 top LCD, with equal 40-pixel side pillars on all retail 3DS models.
+Replace the bootstrap navy clear with black, derive every title rectangle from
+one tested safe-area transform, restore PaperBoat's pale-yellow PRESS START
+tint, and expose its live alpha for visual evidence. Do not stretch or crop the
+title art. See `docs/M12_1_PRESENTATION.md`.
 
 ### M13 - Core overworld gameplay
 Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.

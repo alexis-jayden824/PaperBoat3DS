@@ -73,6 +73,17 @@ and return behavior while these visible differences remain explicit:
 - no bottom-screen configuration frontend until M16;
 - physical PICA, suspend/resume, and memory behavior still require hardware.
 
+## M12.1 presentation follow-up
+
+The M12 Folium captures confirmed the UV correction and interaction path, but
+the bootstrap navy clear made the centered fixed-art canvas look incorrectly
+cropped. M12.1 keeps the authentic 320x240 composition at integer scale,
+centers it on the 400x240 top LCD with equal 40-pixel black pillars, derives all
+title rectangles from one host-tested layout, and restores PaperBoat's
+`(248, 240, 152)` PRESS START tint. The live prompt alpha is printed on the
+bottom screen so an off-phase capture cannot be mistaken for a missing asset.
+See `docs/M12_1_PRESENTATION.md`.
+
 ## Reproducible validation
 
 Run:
@@ -83,6 +94,7 @@ make m9-renderer-test
 make m10-graphics-test
 make m11-frame-test
 make m12-flow-test
+make m12-layout-test
 make packages
 ```
 

@@ -7,6 +7,7 @@
 
 #include "pb3ds/renderer.h"
 #include "pb3ds/title_flow.h"
+#include "pb3ds/title_layout.h"
 
 namespace Fast {
 
@@ -287,6 +288,7 @@ struct GfxRenderingAPI3DS::Impl {
         titleCopyrightVertices = {};
     std::array<float, kShadeVertexStride * kFileSelectVertexCount>
         fileSelectVertices = {};
+    PBTitleLayout titleLayout = {};
     int currentTile = 0;
     bool zmodeDecal = false;
     bool strictDecal = false;
@@ -845,10 +847,17 @@ bool GfxRenderingAPI3DS::PrepareFirstFrame(
         return false;
     }
 
-    const float left =
+    float left =
         (static_cast<float>(PB_RENDER_TOP_WIDTH) - sourceWidth) * 0.5f;
-    const float bottom =
+    float bottom =
         (static_cast<float>(PB_RENDER_TOP_HEIGHT) - sourceHeight) * 0.5f;
+    if (sourceWidth == PB_TITLE_BACKGROUND_WIDTH &&
+        sourceHeight == PB_TITLE_BACKGROUND_HEIGHT &&
+        pb_title_layout_compute(&mImpl->titleLayout, PB_RENDER_TOP_WIDTH,
+                                PB_RENDER_TOP_HEIGHT)) {
+        left = mImpl->titleLayout.background.left;
+        bottom = mImpl->titleLayout.background.bottom;
+    }
     return BuildTexturedQuad(mImpl->firstFrameVertices, left, bottom,
                              static_cast<float>(sourceWidth),
                              static_cast<float>(sourceHeight), textureWidth,
@@ -900,7 +909,9 @@ bool GfxRenderingAPI3DS::PrepareTitleFlow(const PBTitleAssets *assets) {
                         PB_TITLE_PROMPT_HEIGHT) ||
         !textureMatches(assets->copyright, 256, 32,
                         PB_TITLE_COPYRIGHT_WIDTH,
-                        PB_TITLE_COPYRIGHT_HEIGHT)) {
+                        PB_TITLE_COPYRIGHT_HEIGHT) ||
+        !pb_title_layout_compute(&mImpl->titleLayout, PB_RENDER_TOP_WIDTH,
+                                 PB_RENDER_TOP_HEIGHT)) {
         return false;
     }
 
@@ -949,21 +960,35 @@ bool GfxRenderingAPI3DS::PrepareTitleFlow(const PBTitleAssets *assets) {
     if (!uploadTexture(&mImpl->titleLogoTexture, assets->logo) ||
         !uploadTexture(&mImpl->titlePromptTexture, assets->prompt) ||
         !uploadTexture(&mImpl->titleCopyrightTexture, assets->copyright) ||
-        !BuildTexturedQuad(mImpl->titleLogoVertices, 100.0f, 113.0f,
-                           PB_TITLE_LOGO_WIDTH, PB_TITLE_LOGO_HEIGHT,
+        !BuildTexturedQuad(mImpl->titleLogoVertices,
+                           mImpl->titleLayout.logo.left,
+                           mImpl->titleLayout.logo.bottom,
+                           mImpl->titleLayout.logo.width,
+                           mImpl->titleLayout.logo.height,
                            assets->logo.texture_width,
                            assets->logo.texture_height,
                            assets->logo.source_width,
                            assets->logo.source_height) ||
-        !BuildTexturedQuad(mImpl->titlePromptVertices, 136.0f, 71.0f,
-                           PB_TITLE_PROMPT_WIDTH, PB_TITLE_PROMPT_HEIGHT,
+        !BuildTexturedQuad(mImpl->titlePromptVertices,
+                           mImpl->titleLayout.prompt.left,
+                           mImpl->titleLayout.prompt.bottom,
+                           mImpl->titleLayout.prompt.width,
+                           mImpl->titleLayout.prompt.height,
                            assets->prompt.texture_width,
                            assets->prompt.texture_height,
                            assets->prompt.source_width,
-                           assets->prompt.source_height) ||
-        !BuildTexturedQuad(mImpl->titleCopyrightVertices, 128.0f, 17.0f,
-                           PB_TITLE_COPYRIGHT_WIDTH,
-                           PB_TITLE_COPYRIGHT_HEIGHT,
+                           assets->prompt.source_height,
+                           static_cast<float>(PB_TITLE_PROMPT_TINT_RED) /
+                               255.0f,
+                           static_cast<float>(PB_TITLE_PROMPT_TINT_GREEN) /
+                               255.0f,
+                           static_cast<float>(PB_TITLE_PROMPT_TINT_BLUE) /
+                               255.0f) ||
+        !BuildTexturedQuad(mImpl->titleCopyrightVertices,
+                           mImpl->titleLayout.copyright.left,
+                           mImpl->titleLayout.copyright.bottom,
+                           mImpl->titleLayout.copyright.width,
+                           mImpl->titleLayout.copyright.height,
                            assets->copyright.texture_width,
                            assets->copyright.texture_height,
                            assets->copyright.source_width,

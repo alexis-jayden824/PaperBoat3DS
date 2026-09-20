@@ -105,7 +105,7 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM12 Title + File Select\n");
+    printf("\x1b[1;2HM12.1 Title Presentation\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
     if (title_flow_ready) {
@@ -114,7 +114,8 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned int)title_flow->selected_slot + 1U,
                title_flow->slot_confirmed ? " SELECTED" : "");
         printf("\x1b[7;2HAssets: BG+logo+prompt+copy OK\n");
-        printf("\x1b[8;2HUV: M11 flip fix applied\n");
+        printf("\x1b[8;2HSafe:320@x40 UV:OK A:%3u\n",
+               (unsigned int)title_flow->prompt_alpha);
     } else if (first_frame_ready) {
         printf("\x1b[6;2HScene fallback: title_bg only\n");
         printf("\x1b[7;2HTitle assets: %s\n",

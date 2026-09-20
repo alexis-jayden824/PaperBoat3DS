@@ -204,21 +204,25 @@ performance gates.
 
 ## M12 title/file-select check
 
-Use the newest private bundle marked `0.12.0-m12`, with its legal O2R payload
+Use the newest private bundle marked `0.12.1-m12.1`, with its legal O2R payload
 installed at `3ds/PaperBoat3DS/` in Folium's virtual SD.
 
 1. Confirm the background, logo, prompt, and copyright are all upright,
-   centered, and neither mirrored nor cropped. This is the regression test for
-   the M11 capture.
-2. Press A or START and confirm the display changes to four file-slot panels.
-3. Move through all four slots with the Circle Pad or direction controls. The
+   centered, and neither mirrored nor cropped. The bottom display must report
+   `Safe:320@x40`; expect equal black pillars around the centered 320x240
+   fixed-art canvas. Folium's phone surround is not part of the 400x240 target.
+2. Capture the title when the live prompt diagnostic reports `A:255`; PRESS
+   START must be visibly pale yellow. A capture at `A:0` is the normal off
+   phase.
+3. Press A or START and confirm the display changes to four file-slot panels.
+4. Move through all four slots with the Circle Pad or direction controls. The
    highlight must move once per press/deflection and remain inside the 2x2 grid.
-4. Press A or START; the chosen border must turn green without a crash. Press B
+5. Press A or START; the chosen border must turn green without a crash. Press B
    and confirm the title returns.
-5. Confirm the bottom display reports `M12 Title + File Select`, title assets
-   ready, the M11 flip fix applied, zero rejects/failures, and zero stream
+6. Confirm the bottom display reports `M12.1 Title Presentation`, title assets
+   ready, the safe-area/UV line, zero rejects/failures, and zero stream
    overflows.
-6. Exit with L+R+START. Preserve the exact build SHA and both-screen captures.
+7. Exit with L+R+START. Preserve the exact build SHA and both-screen captures.
 
 The simple panels are expected at M12. Missing save text/window decoration,
 audio, and an overworld transition are documented milestone boundaries rather
