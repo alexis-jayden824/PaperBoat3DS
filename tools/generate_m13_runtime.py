@@ -130,6 +130,16 @@ void render_game_mode_frontUI(void) {
 '''
 
 
+NUSYS_ABI_SIGNATURES = {
+    "void osInvalICache(void* vaddr, s32 size)":
+        "void osInvalICache(void* vaddr, int32_t size)",
+    "void osInvalDCache(void* vaddr, s32 size)":
+        "void osInvalDCache(void* vaddr, int32_t size)",
+    "void osWritebackDCache(void* vaddr, s32 size)":
+        "void osWritebackDCache(void* vaddr, int32_t size)",
+}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("upstream", type=Path)
@@ -142,12 +152,24 @@ def main() -> int:
     if source.count(marker) != 1:
         raise SystemExit("pinned world.c registry marker changed")
 
+    nusys_source = args.upstream / "src/port/nusys_overrides.c"
+    nusys = nusys_source.read_text(encoding="utf-8")
+    for upstream_signature, platform_signature in NUSYS_ABI_SIGNATURES.items():
+        if nusys.count(upstream_signature) != 1:
+            raise SystemExit(
+                f"pinned nusys_overrides.c signature changed: {upstream_signature}"
+            )
+        nusys = nusys.replace(upstream_signature, platform_signature)
+
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "runtime_world_mac.c").write_text(
         source.split(marker, 1)[0] + WORLD_SUFFIX.lstrip(), encoding="utf-8"
     )
     (args.output / "runtime_game_modes.c").write_text(
         GAME_MODES, encoding="utf-8"
+    )
+    (args.output / "runtime_nusys_overrides.c").write_text(
+        nusys, encoding="utf-8"
     )
     return 0
 

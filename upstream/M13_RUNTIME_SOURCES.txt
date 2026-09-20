@@ -63,7 +63,6 @@ src/msg_data.c
 src/msg_img.c
 src/7BB60.c
 src/port/libc_compat.c
-src/port/nusys_overrides.c
 src/port/undefined_symbols.c
 src/port/shape_loader.c
 src/port/ld_addr.c
