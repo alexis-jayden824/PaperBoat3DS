@@ -219,6 +219,14 @@ m13-core-check: m13-runtime-lib
 				exit 1; \
 			}; \
 	done
+	@set -e; for symbol in printf puts __printf_chk; do \
+		if $(DEVKITARM)/bin/arm-none-eabi-nm \
+			--defined-only "$(M13_RUNTIME_LIB)" | \
+			awk '{ print $$3 }' | grep -qx "$$symbol"; then \
+			echo "runtime archive must not interpose libc symbol: $$symbol"; \
+			exit 1; \
+		fi; \
+	done
 	@test -s "$(M13_RUNTIME_LIB)"
 	@mkdir -p "$(M13_RUNTIME_BUILD)"
 	@$(CC) -c tests/test_runtime_upstream_consumer.c \

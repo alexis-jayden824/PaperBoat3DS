@@ -29,7 +29,24 @@ while IFS= read -r source; do
     object_name=$(printf '%s' "$source" | sed 's|/|__|g; s|\.|_|g')
     object="$object_dir/$object_name.o"
     echo "  M13 $source"
-    "$compiler" "$@" -c "$paperboat_root/$source" -o "$object"
+    source_cflags=
+    case "$source" in
+        src/is_debug.c)
+            # The N64 build deliberately replaces libc output with the
+            # cartridge IS-Viewer sink.  On 3DS that steals libctru's console
+            # printf/puts and leaves startup diagnostics completely black.
+            # Keep the upstream implementation linked for osSyncPrintf and
+            # boot_main, but namespace only its libc interposition symbols.
+            source_cflags="-Dprintf=pb_runtime_isv_printf \
+                -Dputs=pb_runtime_isv_puts \
+                -D__printf_chk=pb_runtime_isv_printf_chk"
+            ;;
+    esac
+    # Deliberate word splitting: source_cflags contains compiler switches
+    # selected above, never user-provided paths or values.
+    # shellcheck disable=SC2086
+    "$compiler" "$@" $source_cflags \
+        -c "$paperboat_root/$source" -o "$object"
     objects="$objects $object"
 done < "$source_list"
 

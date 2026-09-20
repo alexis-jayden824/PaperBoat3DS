@@ -285,6 +285,19 @@ static void sample_memory(PBMemoryMonitor *monitor) {
     pb_memory_monitor_sample(monitor, stack_marker);
 }
 
+static void show_boot_checkpoint(const char *stage) {
+    printf("\x1b[2J");
+    printf("\x1b[2;2HM13 Runtime Recovery\n");
+    printf("\x1b[4;2HVersion: %s\n", PB3DS_VERSION);
+    printf("\x1b[6;2HStarting PaperBoat...\n");
+    printf("\x1b[8;2H%s\n", stage != NULL ? stage : "booting");
+    printf("\x1b[10;2HIf startup stops here, record this stage.\n");
+    fflush(stdout);
+    gfxFlushBuffers();
+    gfxSwapBuffers();
+    gspWaitForVBlank();
+}
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -326,7 +339,9 @@ int main(int argc, char **argv) {
     pb_memory_monitor_init(&memory_monitor, stack_anchor);
     consoleInit(GFX_BOTTOM, &bottom_console);
     aptHook(&apt_cookie, apt_hook, &state);
+    show_boot_checkpoint("1/5 graphics + console ready");
 
+    show_boot_checkpoint("2/5 opening SD resources");
     (void)pb_log_init(&log);
     pb_config_init(&config);
     const bool config_loaded =
@@ -335,6 +350,7 @@ int main(int argc, char **argv) {
         pb_archive_open(&engine_archive, "sdmc:/3ds/PaperBoat3DS/paperboat.o2r");
     const bool game_archive_available =
         pb_archive_open(&game_archive, "sdmc:/3ds/PaperBoat3DS/pm64.o2r");
+    show_boot_checkpoint("3/5 creating PICA renderer");
     const PBRendererInitResult renderer_result =
         pb_renderer_3ds_create(&renderer);
     PBGfxApiInitResult graphics_result = PB_GFX_API_INIT_INVALID_ARGUMENT;
@@ -347,6 +363,7 @@ int main(int argc, char **argv) {
             graphics = NULL;
         }
     }
+    show_boot_checkpoint("4/5 loading title assets");
     if (graphics != NULL) {
         if (pb_first_frame_load(&first_frame, &game_archive,
                                 &memory_monitor) == PB_FIRST_FRAME_READY) {
@@ -366,6 +383,7 @@ int main(int argc, char **argv) {
     } else if (!game_archive_available) {
         first_frame.result = PB_FIRST_FRAME_ARCHIVE_MISSING;
     }
+    show_boot_checkpoint("5/5 entering title loop");
     state.graphics = graphics;
     pb_runtime_init(&runtime, &game_archive, &memory_monitor, &input,
                     graphics, &log);
