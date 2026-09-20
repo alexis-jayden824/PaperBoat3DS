@@ -106,6 +106,8 @@ builds the pinned PM64-only Torch executable. CI never receives a ROM and never
 generates or uploads `pm64.o2r`. The only published M7 artifact is a small
 non-proprietary validation manifest.
 
-M7's implementation is complete when these checks pass. Final acceptance also
-requires one user-run extraction from a legally dumped supported ROM and the
-resulting manifest; the ROM and archives themselves must stay local.
+M7 acceptance is complete. The project-owner run used the supported ROM
+fingerprint, generated both archives through the pinned Torch build, and passed
+the archive and manifest validators. The privacy-safe evidence recorded 57
+engine entries and 60,826 game entries. The ROM and generated archives remain
+outside version control and CI.
