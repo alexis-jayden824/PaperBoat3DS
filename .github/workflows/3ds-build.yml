@@ -28,6 +28,9 @@ jobs:
       - name: Test M6 memory policy
         run: make m6-policy-test
 
+      - name: Test M8 input backend
+        run: make m8-input-test
+
       - name: Fetch pinned upstream sources
         run: sh tools/fetch_upstream.sh
 

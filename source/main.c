@@ -3,6 +3,7 @@
 
 #include "pb3ds/compat.h"
 #include "pb3ds/diagnostics.h"
+#include "pb3ds/input.h"
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
 #include "pb3ds/version.h"
@@ -20,6 +21,7 @@ typedef struct {
     u32 kernel_version;
     volatile LifecycleState lifecycle;
     volatile bool redraw_bottom;
+    PBInputState *input;
 } BootstrapState;
 
 static const char *lifecycle_name(LifecycleState state) {
@@ -42,16 +44,20 @@ static void apt_hook(APT_HookType hook, void *param) {
     switch (hook) {
         case APTHOOK_ONSUSPEND:
             state->lifecycle = LIFECYCLE_SUSPENDED;
+            pb_input_suspend(state->input);
             break;
         case APTHOOK_ONSLEEP:
             state->lifecycle = LIFECYCLE_SLEEPING;
+            pb_input_suspend(state->input);
             break;
         case APTHOOK_ONRESTORE:
         case APTHOOK_ONWAKEUP:
             state->lifecycle = LIFECYCLE_ACTIVE;
+            pb_input_resume(state->input);
             break;
         case APTHOOK_ONEXIT:
             state->lifecycle = LIFECYCLE_EXITING;
+            pb_input_suspend(state->input);
             break;
         default:
             return;
@@ -76,41 +82,54 @@ static void print_bottom_screen(PrintConsole *console, const BootstrapState *sta
                                 const PBLog *log, const PBConfig *config,
                                 bool engine_archive_available,
                                 bool game_archive_available,
-                                const PBMemorySnapshot *memory) {
+                                const PBMemorySnapshot *memory,
+                                const PBInputState *input,
+                                bool menu_request_seen) {
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[2;2HM7 Asset Pipeline\n");
+    printf("\x1b[2;2HM8 Input Backend\n");
     printf("\x1b[4;2HGFX displays      OK\n");
     printf("\x1b[5;2HAPT lifecycle    OK\n");
     printf("\x1b[6;2HHID input        OK\n");
     printf("\x1b[8;2HSystem: %s\n",
            state->model_query_ok ? (state->is_new_3ds ? "New 3DS" : "Old 3DS") : "unknown");
     printf("\x1b[9;2HKernel: %08lX\n", (unsigned long)state->kernel_version);
-    printf("\x1b[11;2HLifecycle: %-10s\n", lifecycle_name(state->lifecycle));
-    if (!memory->application_measurement_available) {
-        printf("\x1b[13;2HApp free: unavailable\n");
+    printf("\x1b[10;2HLifecycle: %-10s\n", lifecycle_name(state->lifecycle));
+    printf("\x1b[11;2HInput gate: %s\n",
+           input->waiting_for_neutral ? "WAIT NEUTRAL" : "active");
+    printf("\x1b[13;2HN64 held:%04X press:%04X\n",
+           (unsigned int)input->n64_held,
+           (unsigned int)input->n64_pressed);
+    printf("\x1b[14;2HN64 release: %04X\n",
+           (unsigned int)input->n64_released);
+    printf("\x1b[15;2HStick: %4d,%4d\n", input->stick_x, input->stick_y);
+    if (input->touch_held) {
+        printf("\x1b[16;2HTouch: %3u,%3u DOWN\n",
+               (unsigned int)input->touch_x,
+               (unsigned int)input->touch_y);
     } else {
-        printf("\x1b[13;2HApp free:    %6lu KiB\n",
-               (unsigned long)(memory->application_free / 1024));
+        printf("\x1b[16;2HTouch: up\n");
     }
-    printf("\x1b[14;2HLinear free: %6lu KiB\n",
-           (unsigned long)(memory->linear_free / 1024));
-    printf("\x1b[15;2HPeak app/lin: %lu/%lu KiB\n",
-           (unsigned long)(memory->peak_application_used / 1024),
-           (unsigned long)(memory->peak_linear_used / 1024));
-    printf("\x1b[16;2HStack peak: %lu / %lu KiB\n",
-           (unsigned long)(memory->peak_stack_used / 1024),
-           (unsigned long)(PB_MEMORY_STACK_LIMIT / 1024));
-    printf("\x1b[17;2HBudgets: %s  failures: %lu\n",
+    printf("\x1b[17;2HMenu SELECT: %s\n",
+           menu_request_seen ? "REQUESTED" : "ready");
+    printf("\x1b[19;2HBudgets: %s fail:%lu\n",
            memory->pressure ? "PRESSURE" : "OK",
            (unsigned long)memory->allocation_failures);
-    printf("\x1b[19;2HSD log: %s\n",
+    if (!memory->application_measurement_available) {
+        printf("\x1b[20;2HApp free: unavailable\n");
+    } else {
+        printf("\x1b[20;2HApp free: %6lu KiB\n",
+               (unsigned long)(memory->application_free / 1024));
+    }
+    printf("\x1b[21;2HLinear free: %6lu KiB\n",
+           (unsigned long)(memory->linear_free / 1024));
+    printf("\x1b[22;2HSD log: %s\n",
            pb_log_is_persistent(log) ? "ACTIVE" : "unavailable (continuing)");
-    printf("\x1b[21;2HConfig: %lu\n", (unsigned long)config->count);
-    printf("\x1b[22;2HEngine: %s  Game: %s\n",
+    printf("\x1b[24;2HConfig: %lu\n", (unsigned long)config->count);
+    printf("\x1b[25;2HEngine:%s Game:%s\n",
            engine_archive_available ? "FOUND" : "missing",
            game_archive_available ? "FOUND" : "missing");
-    printf("\x1b[23;2HStream chunk: %lu KiB\n",
+    printf("\x1b[26;2HStream chunk: %lu KiB\n",
            (unsigned long)(PB_ARCHIVE_STREAM_CHUNK / 1024));
 }
 
@@ -123,12 +142,15 @@ int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
+    PBInputState input;
+    pb_input_init(&input);
     BootstrapState state = {
         .model_query_ok = false,
         .is_new_3ds = false,
         .kernel_version = osGetKernelVersion(),
         .lifecycle = LIFECYCLE_ACTIVE,
         .redraw_bottom = false,
+        .input = &input,
     };
     aptHookCookie apt_cookie;
     PrintConsole top_console;
@@ -195,13 +217,35 @@ int main(int argc, char **argv) {
     print_top_screen(&top_console);
     print_bottom_screen(&bottom_console, &state, &log, &config,
                         engine_archive_available, game_archive_available,
-                        memory);
+                        memory, &input, false);
 
     u32 memory_sample_frames = 0;
+    u32 active_input_refresh_frames = 0;
+    bool menu_request_seen = false;
     while (aptMainLoop()) {
-        hidScanInput();
-        if ((hidKeysDown() & KEY_START) != 0) {
+        pb_input_poll(&input);
+        if ((input.n64_pressed & PB_N64_START) != 0) {
             break;
+        }
+        if (input.menu_requested) {
+            menu_request_seen = true;
+            state.redraw_bottom = true;
+            pb_log_write(&log, PB_LOG_INFO, "input",
+                         "PaperBoat menu requested through SELECT");
+        }
+        if (input.native_pressed != 0 || input.native_released != 0 ||
+            input.touch_pressed || input.touch_released) {
+            state.redraw_bottom = true;
+        }
+        if (input.native_held != 0 || input.touch_held || input.stick_x != 0 ||
+            input.stick_y != 0) {
+            active_input_refresh_frames++;
+            if (active_input_refresh_frames >= 4) {
+                active_input_refresh_frames = 0;
+                state.redraw_bottom = true;
+            }
+        } else {
+            active_input_refresh_frames = 0;
         }
         if (state.redraw_bottom) {
             state.redraw_bottom = false;
@@ -211,7 +255,8 @@ int main(int argc, char **argv) {
             memory = pb_memory_monitor_snapshot(&memory_monitor);
             print_bottom_screen(&bottom_console, &state, &log, &config,
                                 engine_archive_available,
-                                game_archive_available, memory);
+                                game_archive_available, memory, &input,
+                                menu_request_seen);
         }
         memory_sample_frames++;
         if (memory_sample_frames >= 60) {
@@ -222,7 +267,8 @@ int main(int argc, char **argv) {
             if (memory->pressure != was_under_pressure) {
                 print_bottom_screen(&bottom_console, &state, &log, &config,
                                     engine_archive_available,
-                                    game_archive_available, memory);
+                                    game_archive_available, memory, &input,
+                                    menu_request_seen);
             }
         }
         gfxFlushBuffers();
@@ -242,6 +288,10 @@ int main(int argc, char **argv) {
                  (unsigned long)memory->peak_stack_used,
                  (unsigned long)memory->allocation_failures,
                  memory->pressure ? "yes" : "no");
+    pb_log_write(&log, PB_LOG_INFO, "input",
+                 "frames=%llu menu_request_seen=%s",
+                 (unsigned long long)input.frame_index,
+                 menu_request_seen ? "yes" : "no");
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
     pb_log_close(&log);

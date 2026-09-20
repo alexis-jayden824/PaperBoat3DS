@@ -68,3 +68,28 @@ unknown rather than inferred from the screenshot.
 Folium reported application heap free space as `0 KiB` while linear memory was
 available. The port treats this isolated emulator value as unavailable telemetry,
 not proof of heap exhaustion; real-hardware logging remains authoritative.
+
+### 2026-09-19 - M7 legal asset pipeline shell
+
+- Build commit: `04db69223b32baf6fdddc0822886e8c7825c23a9`
+- Workflow run: `35478862029`
+- Artifact: `PaperBoat3DS.3ds`
+- Environment: Folium Nintendo 3DS core on iOS
+- Result: booted successfully; GFX, APT, and HID reported OK, lifecycle was
+  active, the memory budget reported no pressure and zero failures, SD logging
+  was active, and linear free space was 31,193 KiB
+- Archive observation: engine and game archives reported missing because the
+  external `SD_ROOT/3ds/PaperBoat3DS` payload was not installed into Folium's
+  virtual SD; this is not an extraction-validation failure
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: virtual-SD archive discovery, physical input,
+  touch accuracy, suspend/resume, or real-hardware compatibility
+
+## M8 input check
+
+Use the newest build marked `0.8.0-m8`. Exercise A, B, X, Y, L, R, D-Pad,
+Circle Pad, SELECT, and touch while watching the live masks and coordinates.
+SELECT must latch `Menu SELECT: REQUESTED` without adding an N64 bit. START
+exits the diagnostic shell. Record any Folium overlay control that does not
+reach the expected input; emulator mapping defects must not be mistaken for
+libctru hardware behavior.

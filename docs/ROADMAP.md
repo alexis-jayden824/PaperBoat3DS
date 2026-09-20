@@ -53,16 +53,22 @@ logs; see `docs/M6_MEMORY.md`.
 ### M7 - Legal PC-side asset pipeline
 Provide a separate PC workflow using Torch to produce required `.o2r` archives from a legally obtained copy. Validate hashes/formats without distributing copyrighted content.
 
-Status: **in progress**. The pinned cross-platform host workflow now rejects
+Status: **complete**. The pinned cross-platform host workflow rejects
 unsupported ROMs, builds PM64-only Torch, creates deterministic engine/game
 archives, performs ZIP/resource metadata validation, writes a privacy-safe
-manifest, and stages only generated archives to SD. CI uses synthetic inputs
-and the non-ROM `port/` tree; it never receives copyrighted data. Final
-acceptance requires one local run with the user's legally dumped supported ROM;
-see `docs/M7_ASSET_PIPELINE.md`.
+manifest, and stages only generated archives to SD. The project-owner input
+passed the supported-ROM contract and produced a verified 57-entry
+`paperboat.o2r` plus 60,826-entry `pm64.o2r`; no ROM or generated archive was
+committed or uploaded to CI. See `docs/M7_ASSET_PIPELINE.md`.
 
 ### M8 - Input backend
 Map Circle Pad, D-pad, face/shoulder buttons, touch, and system lifecycle behavior. Audit conflicts before choosing the PaperBoat-menu physical keybind.
+
+Status: **in progress**. The native input boundary, complete Old 3DS mapping,
+optional New 3DS duplicates, touch state, edge semantics, lifecycle neutral
+gate, SELECT menu reservation, live diagnostics, and deterministic host tests
+are implemented. Package build and owner runtime validation remain; see
+`docs/M8_INPUT.md`.
 
 ### M9 - PICA200 renderer foundation
 Implement the citro3d translation layer, shader conversion path, texture formats, buffers, render states, and top-screen viewport.

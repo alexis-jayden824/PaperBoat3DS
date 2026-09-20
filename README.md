@@ -5,8 +5,9 @@ An experimental native Nintendo 3DS port of PaperBoat.
 ## Status
 
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
-on the `port/3ds` branch. The current software checkpoint is M7: a pinned,
-legal PC-side workflow for producing and validating the required O2R archives.
+on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
+real-ROM acceptance run. The current software checkpoint is M8: a native,
+host-tested Circle Pad, button, touch, menu-request, and lifecycle input layer.
 M6 hardware memory calibration remains pending; the project owner is the
 real-hardware tester.
 
@@ -26,6 +27,7 @@ by reproducible evidence. This is not yet a playable PaperBoat port.
 Build instructions are in [docs/BUILDING.md](docs/BUILDING.md). The M7 asset
 workflow is documented in
 [docs/M7_ASSET_PIPELINE.md](docs/M7_ASSET_PIPELINE.md).
+The M8 mapping and conflict audit are in [docs/M8_INPUT.md](docs/M8_INPUT.md).
 
 ## Legal asset policy
 

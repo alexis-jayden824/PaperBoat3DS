@@ -3,9 +3,10 @@
 ## Current scope
 
 This branch contains the native application shell, the completed M5 compilation
-gate, M6 memory guardrails, and the M7 legal host-side asset workflow; it is not
-yet a playable PaperBoat port. A successful package build proves that one ARM11
-ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
+and the host-tested M8 native input layer; it is not yet a playable PaperBoat
+port. A successful package build proves that one ARM11 ELF can produce `.3dsx`,
+`.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -37,6 +38,14 @@ make m5-core-check
 ```
 
 CI runs both operations on every branch build.
+
+Run the native input policy tests on any host with a C11 compiler:
+
+```sh
+sh tools/test_input_backend.sh
+```
+
+The 3DS build job also exposes the same check as `make m8-input-test`.
 
 ## Host-side asset preparation
 

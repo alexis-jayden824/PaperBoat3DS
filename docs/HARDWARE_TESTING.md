@@ -71,3 +71,28 @@ complete log. The shutdown record must include application/linear free space,
 peak application/linear/stack usage, zero allocation failures, and
 `pressure=no`. A New 3DS XL/LL result is useful secondary evidence; an Old 3DS
 result remains required to calibrate and formally close the milestone.
+
+## M8 input checkpoint
+
+Use the newest passing `port/3ds` artifact marked `0.8.0-m8`.
+
+1. Launch the `.3dsx` from `/3ds/PaperBoat3DS/PaperBoat3DS.3dsx`.
+2. Press A, B, X, Y, L, R, and every D-Pad direction individually; confirm the
+   live N64 held/press masks change and clear on release.
+3. Hold L with each D-Pad direction; confirm the shifted N64 D-Pad masks appear
+   instead of the default C-button masks.
+4. Move the Circle Pad slowly around the center and then to each extreme;
+   confirm the deadzone is stable and displayed values approach -80 or 80.
+5. Tap and drag across the bottom screen; confirm DOWN and coordinates stay in
+   the 320x240 range.
+6. Press SELECT; confirm `Menu SELECT: REQUESTED` appears without a gameplay
+   button becoming stuck.
+7. Hold a button, close the lid for at least five seconds, reopen it while still
+   holding the button, then release it. Confirm `WAIT NEUTRAL` clears only after
+   release and no fresh press is generated automatically.
+8. Press START and confirm a clean return to the Homebrew Launcher.
+
+Report the build SHA, console model, system version, launch method, mapping
+results, lifecycle result, a photo of the live diagnostics, and the resulting
+`/3ds/PaperBoat3DS/PaperBoat3DS.log`. A New 3DS XL/LL result validates the
+owner's target console; Old 3DS remains the performance baseline.
