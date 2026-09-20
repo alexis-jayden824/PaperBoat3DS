@@ -51,12 +51,33 @@ backend. In particular, dynamic Fast3D combiner IDs, texture lifetime,
 streaming triangles, scissor state, and framebuffer operations remain M10
 work. Desktop shader/window implementations remain excluded.
 
+Folium build `3c98a1458c01` established native target/shader/texture submission,
+two draws per frame, stable command use, and zero frame failures. Its screenshot
+did not make the intended sail overlay visually distinguishable. M10 removes
+the texture modulation from that overlay and disables depth for the second draw
+so the next runtime gate can verify it unambiguously.
+
+## M10 audit result
+
+The application now instantiates a concrete `PB3DS::GfxRenderingAPI3DS` against
+the exact pinned header. Its diagnostic reaches PICA only through that API.
+Host compilation proves every pure virtual method is present, while the
+portable bridge independently validates packed combiner keys, texture and
+shader bounds, exact vertex layouts, viewport/scissor ranges, streaming limits,
+frame ordering, and suspend admission.
+
+The first backend is intentionally not a claim of full Fast3D coverage. It
+supports shade, texture 0, and texture-times-shade one-cycle programs. Complex
+combiner options and offscreen/readback operations reject with telemetry. The
+base-class transform/uniform state is retained, but M11 must apply the real
+matrix palette and PaperBoat display-list coordinates before claiming a game
+frame.
+
 ## Open gates
 
-1. Prove the M9 shader/backend and all package formats in devkitARM CI.
-2. Validate the M9 scene and counters in Folium.
-3. Implement the pinned libultraship graphics API in M10, with explicit
-   PICA/TEV fallbacks for unsupported combiner behavior.
+1. Prove the M10 adapter and all package formats in devkitARM CI.
+2. Validate the distinct M10 checker/sail draws and adapter counters in Folium.
+3. Validate renderer lifecycle and memory behavior on real hardware.
 4. Load the private legal archives and render the first deterministic game
    frame in M11.
 5. Preserve real-hardware gates for lifecycle, memory, controls, rendering,

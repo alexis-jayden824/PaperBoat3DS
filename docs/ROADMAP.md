@@ -75,14 +75,24 @@ touch, and lifecycle validation remains; see `docs/M8_INPUT.md`.
 ### M9 - PICA200 renderer foundation
 Implement the citro3d translation layer, shader conversion path, texture formats, buffers, render states, and top-screen viewport.
 
-Status: **in progress**. A portable PICA contract, texture sizing/swizzle,
+Status: **software complete; hardware pending**. A portable PICA contract, texture sizing/swizzle,
 viewport rotation, render-state cache, Picasso shader build, citro3d target,
 linear VBO, sampled texture, deterministic diagnostic scene, telemetry, and
-host tests are implemented. Package and runtime evidence remain; see
+host tests are implemented. CI produced `.3dsx`, `.3ds`, and `.cia` packages,
+and Folium build `3c98a1458c01` confirmed the target, compiled shader, sampled
+checker, two draw submissions, advancing counters, and zero failures. The sail
+overlay was not visually distinct in that capture; M10 changes it to a
+shade-only TEV draw. Physical PICA and lifecycle evidence remains; see
 `docs/M9_RENDERER.md`.
 
 ### M10 - libultraship graphics integration
 Connect the renderer to libultraship's graphics contract and replace desktop window/context behavior with 3DS lifecycle handling.
+
+Status: **in progress**. A concrete adapter now implements the exact pinned
+`Fast::GfxRenderingAPI` vtable with bounded shader, texture, streaming, state,
+frame, and APT-lifecycle behavior. The supported one-cycle TEV baseline and all
+rejected features are explicit. Native package and Folium evidence remain; see
+`docs/M10_GRAPHICS.md`.
 
 ### M11 - First rendered game frame
 Load legal archives and display a deterministic Paper Mario frame on the top screen with diagnostic fallback on failure.

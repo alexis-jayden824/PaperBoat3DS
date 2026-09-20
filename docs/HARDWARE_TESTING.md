@@ -116,3 +116,22 @@ Report the exact build SHA, model, firmware, launch environment, photographs of
 both displays, idle/lifecycle result, and complete log. The owner's New 3DS
 XL/LL result is required for the target console. An Old 3DS result remains
 required for baseline performance and memory conclusions.
+
+## M10 libultraship graphics checkpoint
+
+Use the newest passing `port/3ds` `.3dsx` artifact marked `0.10.0-m10`.
+
+1. Confirm the top screen shows the repeated checker and an unmistakable bright
+   translucent sail; photograph both displays.
+2. Confirm `API: ready`, two TEV shaders, one texture, zero unsupported shaders,
+   zero rejected normal commands, and zero frame failures.
+3. Leave the diagnostic active for 60 seconds. Counters must continue at two
+   draws and three triangles per presented frame without flicker or corruption.
+4. Close the lid for at least five seconds, reopen it, and confirm rendering
+   resumes while frame admission and the input neutral gate recover cleanly.
+5. Press START, confirm a clean Homebrew Launcher return, and preserve the SD
+   log.
+
+Report the build SHA, model, firmware, launch environment, photos, lifecycle
+result, and complete log. The New 3DS XL/LL result validates the owner's target
+console. Old 3DS data remains required for the performance and memory baseline.

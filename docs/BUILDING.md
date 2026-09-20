@@ -4,9 +4,10 @@
 
 This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
-the host-tested M8 native input layer, and the M9 citro3d renderer foundation;
-it is not yet a playable PaperBoat port. A successful package build proves that
-one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+the host-tested M8 native input layer, the M9 citro3d renderer foundation,
+and the M10 pinned-libultraship graphics adapter. It is not yet a playable
+PaperBoat port. A successful package build proves that one ARM11 ELF can
+produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -57,6 +58,17 @@ The 3DS build job exposes the same check as `make m9-renderer-test`. The normal
 build discovers `source/*.v.pica`, assembles it with Picasso, converts the
 resulting `.shbin` into a linked object/header pair, and then compiles the
 citro3d backend. Generated shader files stay under `build/`.
+
+Run the portable M10 bridge plus the exact C++ interface check with:
+
+```sh
+make fetch-upstream
+make m10-graphics-test
+```
+
+The C++ check includes the `GfxRenderingAPI` header from the exact locked
+libultraship checkout. The normal build therefore fetches/verifies the pinned
+sources before compiling; no upstream source is vendored into this repository.
 
 ## Host-side asset preparation
 
