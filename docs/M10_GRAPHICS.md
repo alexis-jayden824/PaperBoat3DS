@@ -98,9 +98,14 @@ registry, upload accounting, and integrated draw telemetry. The second compiles
 the real adapter against the pinned header, proves it is non-abstract, and
 exercises the diagnostic through both its C++ and C entry points.
 
-Native acceptance additionally requires devkitARM to compile/link the adapter,
-all three package formats to come from the same ELF, and Folium to show the
-checker plus clearly visible sail while frames/draws advance with zero failures
-and zero unsupported shaders. Real hardware remains authoritative for APT
-lifecycle recovery, PICA behavior, memory headroom, and Old 3DS performance.
+The software gate passed at merge
+`4b5e6faef11ef469953a86d1ca84ecde32844d3a`: post-merge CI run 114 compiled and
+linked the adapter with devkitARM, passed both M10 host suites, and produced
+non-empty `.3dsx`, `.3ds`, and `.cia` packages from the same ELF. The archived
+build has SHA-256
+`c378d54cb66bddd0c00676843b316e87c8e172fe9a127e1b3e2a38b0713c5517`.
 
+Emulator acceptance still requires Folium to show the checker plus clearly
+visible sail while frames/draws advance with zero failures and zero unsupported
+shaders. Real hardware remains authoritative for APT lifecycle recovery, PICA
+behavior, memory headroom, and Old 3DS performance.

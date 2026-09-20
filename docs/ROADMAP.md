@@ -88,11 +88,14 @@ shade-only TEV draw. Physical PICA and lifecycle evidence remains; see
 ### M10 - libultraship graphics integration
 Connect the renderer to libultraship's graphics contract and replace desktop window/context behavior with 3DS lifecycle handling.
 
-Status: **in progress**. A concrete adapter now implements the exact pinned
-`Fast::GfxRenderingAPI` vtable with bounded shader, texture, streaming, state,
-frame, and APT-lifecycle behavior. The supported one-cycle TEV baseline and all
-rejected features are explicit. Native package and Folium evidence remain; see
-`docs/M10_GRAPHICS.md`.
+Status: **software complete; emulator/hardware pending**. A concrete adapter
+implements the exact pinned `Fast::GfxRenderingAPI` vtable with bounded shader,
+texture, streaming, state, frame, and APT-lifecycle behavior. The supported
+one-cycle TEV baseline and all rejected features are explicit. Post-merge CI
+run 114 built `.3dsx`, `.3ds`, and `.cia` from merge
+`4b5e6faef11ef469953a86d1ca84ecde32844d3a`. Folium must still confirm the
+distinct checker/sail draws and live adapter counters; physical lifecycle and
+PICA validation remain authoritative. See `docs/M10_GRAPHICS.md`.
 
 ### M11 - First rendered game frame
 Load legal archives and display a deterministic Paper Mario frame on the top screen with diagnostic fallback on failure.

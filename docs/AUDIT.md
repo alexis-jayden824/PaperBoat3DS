@@ -73,12 +73,17 @@ base-class transform/uniform state is retained, but M11 must apply the real
 matrix palette and PaperBoat display-list coordinates before claiming a game
 frame.
 
+Merge `4b5e6faef11ef469953a86d1ca84ecde32844d3a` passed both pull-request checks.
+Post-merge devkitARM run 114 repeated the M6/M8/M9/M10 host contracts, linked
+the native adapter, enforced memory budgets, and produced non-empty `.3dsx`,
+`.3ds`, and `.cia` packages. This closes the M10 software build/package gate;
+it does not substitute for emulator or physical-console evidence.
+
 ## Open gates
 
-1. Prove the M10 adapter and all package formats in devkitARM CI.
-2. Validate the distinct M10 checker/sail draws and adapter counters in Folium.
-3. Validate renderer lifecycle and memory behavior on real hardware.
-4. Load the private legal archives and render the first deterministic game
+1. Validate the distinct M10 checker/sail draws and adapter counters in Folium.
+2. Validate renderer lifecycle and memory behavior on real hardware.
+3. Load the private legal archives and render the first deterministic game
    frame in M11.
-5. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
+4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.
