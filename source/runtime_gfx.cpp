@@ -1197,7 +1197,8 @@ class RuntimeDisplayListRenderer {
             return false;
         }
         stats.display_lists++;
-        stats.max_call_depth = std::max(stats.max_call_depth, depth);
+        stats.max_call_depth =
+            std::max(stats.max_call_depth, static_cast<uint32_t>(depth));
         for (size_t index = 0U; index < kCommandBudget; index++) {
             if (++commandCount > kCommandBudget) {
                 malformed = true;
