@@ -110,7 +110,7 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM13 Overworld Integration\n");
+    printf("\x1b[1;2HM13 Runtime Recovery\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
     if (world_flow->state == PB_WORLD_FLOW_ACTIVE ||
@@ -120,7 +120,7 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned int)world_flow->selected_slot + 1U);
         printf("\x1b[7;2HState: %s\n",
                pb_world_flow_state_name(world_flow->state));
-        printf("\x1b[8;2HScene: %s  floor:%d\n",
+        printf("\x1b[8;2HDiag scene: %s floor:%d\n",
                pb_world_scene_result_name(world_scene->result),
                world_scene->current_floor);
         printf("\x1b[9;2HMesh:%lu tri %lu tex %lu DL\n",
@@ -144,8 +144,8 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned long)world_scene->script_events,
                (unsigned long)world_scene->transition_count,
                world_scene->star_piece_collected ? "GOT" : "ready");
-        printf("\x1b[14;2HGPU world: %s\n",
-               world_frame_ready ? "mesh + actors ready" : "FAILED");
+        printf("\x1b[14;2HRuntime: DIAG ONLY %s\n",
+               world_frame_ready ? "ready" : "FAILED");
         if (graphics_ready) {
             printf("\x1b[15;2HFrames:%llu Draws:%llu Tris:%llu\n",
                    (unsigned long long)graphics_stats->frames_presented,

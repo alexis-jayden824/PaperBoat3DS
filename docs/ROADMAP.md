@@ -145,15 +145,18 @@ title art. See `docs/M12_1_PRESENTATION.md`.
 ### M13 - Core overworld gameplay
 Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.
 
-Status: **software candidate; native package and emulator acceptance
-pending**. The bounded 3DS runtime now consumes every required display list,
-vertex resource, collision group, and map texture for authentic `mac_00` and
-`mac_01`; renders Mario and a Star Piece; drives movement, collision response,
-follow camera, sign interaction, pause, fades, automatic entry walking, and
-bidirectional representative transitions. Synthetic and owner-only host tests
-cover both maps and release paths. CI cross-compiles the pinned upstream world,
-transition, pause, camera-math, and collision sources. Full NPC/EVT/effect and
-chapter coverage remains M18 work. See `docs/M13_OVERWORLD.md`.
+Status: **reopened for upstream runtime integration**. Folium proved that the
+bounded `PBWorldScene` checkpoint can load resources, submit geometry, accept
+input, and pause, but it also proved that this custom simulation is not an
+acceptable gameplay implementation: movement is not Paper Mario's movement and
+its partial display-list translation produces incorrect presentation.
+`PBWorldScene` is now diagnostic scaffolding only. M13 cannot close until the
+pinned PaperBoat `boot_main` boundary, `step_game_loop`, and `gfx_draw_frame`
+path drive the 3DS build, including upstream player physics, collision, camera,
+entities, EVT scripts, and transitions. CI now links the real upstream entry,
+player, and camera units into one ARM11 object and verifies those symbols rather
+than merely compiling and discarding a few subsystem files. See
+`docs/M13_RUNTIME_RECOVERY.md` and `docs/M13_OVERWORLD.md`.
 
 ### M14 - ndsp audio backend
 Implement initialization, mixing, streaming, buffering, sample conversion, latency control, suspend/resume, and clean shutdown. Validate Folium with its required DSP firmware as a secondary check, while treating real-hardware ndsp results as authoritative.

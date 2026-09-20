@@ -1,10 +1,15 @@
-# M13 Core Overworld Gameplay
+# M13 Diagnostic Overworld Scaffold
 
-M13 turns the earlier archive preflight into a small playable native-overworld
-slice. It consumes PaperBoat/Torch resources from the owner's legal O2R archive;
-no ROM or extracted asset is embedded in the executable or repository. This is
-still a bounded integration milestone, not a replacement for PaperBoat's full
-game logic or a claim of complete game coverage.
+This document records the custom `PBWorldScene` checkpoint that exposed the
+archive, memory, input, and renderer defects found during early M13 testing. It
+consumes PaperBoat/Torch resources from the owner's legal O2R archive; no ROM or
+extracted asset is embedded in the executable or repository.
+
+It is **diagnostic scaffolding, not the M13 gameplay implementation**. Folium
+testing showed that its hand-written movement, collision, camera, actors, and
+partial display-list interpretation do not reproduce Paper Mario faithfully.
+Those systems must not be expanded into a parallel game engine. The recovery
+plan in `M13_RUNTIME_RECOVERY.md` replaces them with the pinned upstream runtime.
 
 ## Pinned upstream contract
 
@@ -20,10 +25,10 @@ choices:
 | `src/state_map_transitions.c` | Fade and return to world state after a map entry. |
 | `src/state_pause.c` | Pause freezes world simulation and resumes in place. |
 
-CI also cross-compiles the pinned world, transition, pause, camera-math, and
-collision sources for ARM11. The playable slice uses a deliberately narrow 3DS
-runtime around those contracts; later content coverage must continue integrating
-upstream behavior rather than growing an independent game implementation.
+CI formerly cross-compiled a small selection of world sources but did not link
+or call them. That check was insufficient and has been replaced by a linked
+ARM11 runtime slice containing the actual entry loop, player update/input,
+world state, and camera symbols.
 
 ## Authentic map and texture path
 
@@ -47,9 +52,9 @@ GPU upload. Geometry and collision remain scene-owned. Measured owner-archive
 scene peaks are about 1,379 KiB for `mac_00` and 1,369 KiB for `mac_01`, within
 the M6 scene policy.
 
-## Playable slice
+## Diagnostic coverage
 
-The milestone candidate provides:
+The scaffold provides:
 
 - authentic `mac_00` and `mac_01` geometry, textures, and `nok_bg`;
 - Mario raster frames, Circle Pad/D-pad movement, facing, and collision slide;
@@ -60,9 +65,9 @@ The milestone candidate provides:
 - START pause/resume with frozen simulation and a visible dim overlay;
 - live map, position, floor, script, transition, renderer, and memory telemetry.
 
-The sign and Star Piece are representative entity/script coverage. Full NPC,
-EVT, effect, item, encounter, and chapter execution remains M18 content
-coverage, not an M13 claim.
+The sign and Star Piece are test doubles, not upstream entity/script coverage.
+They are retained only to exercise resource lifetime, input, pause, and draw
+submission while the real runtime path is connected.
 
 ## Bounded resources and failure behavior
 
@@ -142,6 +147,6 @@ With `pm64.o2r` and `paperboat.o2r` installed in Folium's virtual SD:
    overflows, and memory allocation failures. Preserve both-screen captures and
    `PaperBoat3DS.log`, then exit with L+R+START.
 
-Passing the host and native build gates makes M13 a software candidate. Folium
-acceptance closes emulator evidence; real-hardware lifecycle, controls, memory,
-and Old 3DS performance remain separate project gates.
+These steps remain useful regression checks for the scaffold, but they no
+longer accept or close M13. The upstream-runtime gates in
+`M13_RUNTIME_RECOVERY.md` are authoritative.

@@ -53,15 +53,33 @@ M5_GAME_CFLAGS  := $(ARCH) -mword-relocations -ffunction-sections -fdata-section
 	-I"$(PAPERBOAT_ROOT)/src" -I"$(PAPERBOAT_ROOT)/src/port" \
 	-I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 M13_GAME_SOURCES := \
+	src/main.c \
+	src/main_loop.c \
+	src/port/init_globals.c \
+	src/port/gfx_frame.c \
 	src/game_modes.c \
-	src/state_demo.c \
 	src/state_world.c \
 	src/state_map_transitions.c \
 	src/state_pause.c \
+	src/77480.c \
+	src/7B440.c \
+	src/7BB60.c \
+	src/7E9D0.c \
+	src/cam_main.c \
 	src/cam_math.c \
+	src/cam_mode_interp.c \
+	src/cam_mode_minimal.c \
+	src/cam_mode_no_interp.c \
+	src/cam_mode_unused_ahead.c \
+	src/cam_mode_unused_confined.c \
+	src/cam_mode_unused_leading.c \
+	src/cam_mode_unused_radial.c \
+	src/cam_mode_zone_interp.c \
 	src/collision.c \
 	src/world/world.c \
-	src/pause/pause_main.c
+	src/evt/evt.c
+M13_GAME_OBJECTS := $(foreach source,$(M13_GAME_SOURCES),\
+	$(M13_BUILD)/$(subst .,_,$(subst /,_,$(source))).o)
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
@@ -196,7 +214,7 @@ m5-core-check: fetch-upstream
 
 m13-core-check: fetch-upstream
 	@mkdir -p "$(M13_BUILD)"
-	@echo cross-compiling pinned PaperBoat M13 overworld subsystem slice
+	@echo cross-compiling pinned PaperBoat M13 runtime-integration slice
 	@set -e; for source in $(M13_GAME_SOURCES); do \
 		object=$$(printf '%s' "$$source" | tr '/.' '__'); \
 		echo "  ARM11 $$source"; \
@@ -204,6 +222,19 @@ m13-core-check: fetch-upstream
 			-o "$(M13_BUILD)/$$object.o" $(M5_GAME_CFLAGS); \
 		test -s "$(M13_BUILD)/$$object.o"; \
 	done
+	@echo linking actual PaperBoat runtime entry, player, and camera units
+	@$(CC) -r -o "$(M13_BUILD)/paperboat-runtime-slice.o" \
+		$(M13_GAME_OBJECTS)
+	@set -e; for symbol in boot_main step_game_loop gfx_draw_frame \
+		state_step_world update_player update_player_input update_cameras; do \
+		$(DEVKITARM)/bin/arm-none-eabi-nm \
+			--defined-only "$(M13_BUILD)/paperboat-runtime-slice.o" | \
+			awk '{ print $$3 }' | grep -qx "$$symbol" || { \
+				echo "missing linked upstream runtime symbol: $$symbol"; \
+				exit 1; \
+			}; \
+	done
+	@test -s "$(M13_BUILD)/paperboat-runtime-slice.o"
 
 $(BUILD):
 	@mkdir -p $@

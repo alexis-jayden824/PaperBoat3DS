@@ -55,7 +55,7 @@ jobs:
       - name: Cross-compile M5 upstream core slice
         run: make m5-core-check
 
-      - name: Cross-compile M13 upstream overworld slice
+      - name: Link M13 upstream runtime integration slice
         run: make m13-core-check
 
       - name: Build 3DSX
