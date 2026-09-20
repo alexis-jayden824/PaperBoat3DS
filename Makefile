@@ -90,7 +90,7 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m6-policy-test \
-	m6-budget-check clean
+	m6-budget-check m8-input-test clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -102,6 +102,9 @@ m6-budget-check: all
 	@SIZE="$(DEVKITARM)/bin/arm-none-eabi-size" \
 		sh tools/check_memory_budget.sh "$(TARGET).elf" \
 		"$(BUILD)/memory-budget.txt"
+
+m8-input-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_input_backend.sh "$(BUILD)/m8-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }

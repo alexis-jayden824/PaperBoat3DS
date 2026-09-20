@@ -2,6 +2,7 @@
 build/
 .cache/
 *.3dsx
+*.3ds
 *.elf
 *.smdh
 *.cia
@@ -21,3 +22,5 @@ sdmc/
 Thumbs.db
 .vscode/
 .idea/
+__pycache__/
+*.pyc
