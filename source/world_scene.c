@@ -1432,9 +1432,10 @@ PBWorldSceneResult pb_world_scene_load(PBWorldScene *scene,
 
     for (size_t leaf_index = 0U; leaf_index < leaf_count; leaf_index++) {
         char name[PB_O2R_NAME_CAPACITY];
-        const int length = snprintf(name, sizeof(name), "%s%X",
+        const int length = snprintf(name, sizeof(name), "%s%lX",
                                     display_list_prefix,
-                                    leaves[leaf_index].display_list_offset);
+                                    (unsigned long)
+                                        leaves[leaf_index].display_list_offset);
         const PBDisplayListResource *root =
             length > 0 && (size_t)length < sizeof(name)
                 ? find_display_list_name(display_lists,
