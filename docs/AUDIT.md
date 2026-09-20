@@ -156,15 +156,16 @@ resources, texture fallbacks, malformed lists, or renderer rejects. Public
 synthetic tests still cover archive parsing and the diagnostic scaffold without
 proprietary data; the private archive remains local.
 
-This host evidence does not establish the native ARM11 link, performance, or
-visual fidelity. The PR stays open until CI produces the native candidate and
-side-by-side Folium/hardware captures establish Toad Town presentation and
-movement. Audio, saves, battles, and chapter coverage remain blocked.
+Native CI now links the complete ARM11 ELF, verifies the authoritative runtime
+symbols, passes the static memory gate, and packages `.3dsx`, `.3ds`, and
+`.cia` candidates. This establishes native build closure, but not target
+performance or visual fidelity. The PR stays open until side-by-side
+Folium/hardware captures establish Toad Town presentation and movement. Audio,
+saves, battles, and chapter coverage remain blocked.
 
 ## Open gates
 
-1. Pass the M13 native build/package and public synthetic CI gates.
-2. Validate the complete M13 playable slice in Folium and merge its PR.
-3. Validate renderer lifecycle, input, and memory behavior on real hardware.
-4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
+1. Validate the complete M13 playable slice in Folium and merge its PR.
+2. Validate renderer lifecycle, input, and memory behavior on real hardware.
+3. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.

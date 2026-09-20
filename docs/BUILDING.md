@@ -10,9 +10,9 @@ frame path, and the M12 title/file-select checkpoint. M13 now links the pinned
 PaperBoat runtime closure into the application and hands its authentic frame
 display lists to the 3DS renderer. The older `PBWorldScene` remains a host-
 tested diagnostic scaffold and is no longer the default gameplay path. M13 is
-still open until the native build and Toad Town side-by-side acceptance pass.
-A successful package build proves that one ARM11 ELF can produce `.3dsx`,
-`.3ds`, and `.cia` artifacts.
+still open until Toad Town passes side-by-side movement and presentation
+acceptance. Native CI now proves that one ARM11 ELF contains the required
+upstream runtime symbols and produces `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 

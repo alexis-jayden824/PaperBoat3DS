@@ -157,8 +157,9 @@ entities, EVT scripts, and transitions. The recovery candidate builds the
 required 379-source runtime archive, activates it from file select, feeds its
 real display lists into the renderer, and checks the authoritative symbols in
 the final ELF. Host execution reaches `mac_00`, movement, and pause/resume with
-zero unknown commands or texture fallbacks. Native build and visual/movement
-acceptance remain open. See
+zero unknown commands or texture fallbacks. Native CI now links and packages
+the final ARM11 candidate. Device/emulator visual and movement acceptance
+remain open. See
 `docs/M13_RUNTIME_RECOVERY.md` and `docs/M13_OVERWORLD.md`.
 
 ### M14 - ndsp audio backend

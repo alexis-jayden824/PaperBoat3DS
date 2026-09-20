@@ -132,7 +132,9 @@ and PaperBoat's resource-path/hash commands. The interpreter exposes these
 counters on the bottom screen so the native run can detect a route-specific
 gap immediately.
 
-This evidence proves the host runtime and resource/display-list closure. It
-does not prove the ARM11 link, 3DS performance, or presentation fidelity. M13
-remains open until the native build passes and side-by-side captures establish
+This evidence proves the host runtime and resource/display-list closure. Native
+CI also links the final ARM11 ELF, verifies the entry, frame, player, camera,
+and handoff symbols, passes the static memory budget, and packages `.3dsx`,
+`.3ds`, and `.cia` candidates. It does not prove 3DS performance or
+presentation fidelity. M13 remains open until side-by-side captures establish
 Toad Town framing, layers, textures, transparency, fog, and movement feel.
