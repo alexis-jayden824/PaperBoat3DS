@@ -276,7 +276,6 @@ void osSetEventMesg(OSEvent event, OSMesgQueue *queue, OSMesg message) {
     (void)event; (void)queue; (void)message;
 }
 uint32_t osGetCount(void) { return (uint32_t)(runtime_time++); }
-uint64_t osGetTime(void) { return runtime_time++; }
 void osSetTime(OSTime time) { runtime_time = time; }
 
 void gSPVertexOTR(Gfx *packet, uintptr_t vertices, int count, int first) {
