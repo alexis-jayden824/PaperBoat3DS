@@ -1673,8 +1673,24 @@ PBWorldSceneEvent pb_world_scene_update(PBWorldScene *scene,
         }
     }
 
-    float move_x = (float)input->stick_x / 80.0f * 4.0f;
-    float move_z = -(float)input->stick_y / 80.0f * 4.0f;
+    int16_t movement_x = input->stick_x;
+    int16_t movement_y = input->stick_y;
+    if (movement_x == 0) {
+        const bool left = (input->native_held & KEY_DLEFT) != 0U;
+        const bool right = (input->native_held & KEY_DRIGHT) != 0U;
+        if (left != right) {
+            movement_x = left ? -80 : 80;
+        }
+    }
+    if (movement_y == 0) {
+        const bool up = (input->native_held & KEY_DUP) != 0U;
+        const bool down = (input->native_held & KEY_DDOWN) != 0U;
+        if (up != down) {
+            movement_y = up ? 80 : -80;
+        }
+    }
+    float move_x = (float)movement_x / 80.0f * 4.0f;
+    float move_z = -(float)movement_y / 80.0f * 4.0f;
     if (scene->entry_walk_frames > 0U) {
         const float yaw = scene->player_yaw * (PB_WORLD_PI / 180.0f);
         move_x = sinf(yaw) * 3.0f;

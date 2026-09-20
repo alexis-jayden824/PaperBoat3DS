@@ -188,6 +188,15 @@ static bool test_public_mac_00(PBArchive *archive) {
     CHECK(scene.player_position.x > previous_x);
     CHECK(scene.movement_frames > 0U);
 
+    memset(&input, 0, sizeof(input));
+    input.native_held = KEY_DRIGHT;
+    const float previous_dpad_x = scene.player_position.x;
+    const uint32_t previous_movement_frames = scene.movement_frames;
+    CHECK(pb_world_scene_update(&scene, &input) ==
+          PB_WORLD_SCENE_EVENT_NONE);
+    CHECK(scene.player_position.x > previous_dpad_x);
+    CHECK(scene.movement_frames == previous_movement_frames + 1U);
+
     scene.player_position.x = -420.0f;
     scene.player_position.y = 20.0f;
     scene.player_position.z = 410.0f;

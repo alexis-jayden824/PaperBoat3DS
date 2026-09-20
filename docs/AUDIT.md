@@ -159,6 +159,15 @@ display-list, texture-index, shape-leaf, and visited-node workspaces now live
 in the bounded transient memory class, are released on success and failure,
 and reduce the measured loader frame to 2,416 bytes.
 
+The stack-corrected Folium build then loaded `mac_00` and remained responsive,
+with pause and renderer counters working, but it did not meet visual/gameplay
+acceptance. Mario was occluded by the floor, the visible D-pad supplied mapped
+N64 C-buttons while the slice read only Circle Pad axes, and CPU-projected map
+vertices forced affine texture interpolation. The follow-up keeps camera-space
+distance as homogeneous clip W, renders actor billboards over their contact
+floor, and accepts D-pad directions as a world-movement fallback. This evidence
+keeps the PR open until the corrected native build is exercised in Folium.
+
 This is deliberately representative coverage, not a second implementation of
 the full game. NPC, complete EVT, effect, encounter, item, chapter, and audio
 execution remain attached to later roadmap milestones and must continue to use

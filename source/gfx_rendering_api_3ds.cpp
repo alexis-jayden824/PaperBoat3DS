@@ -369,10 +369,16 @@ void SetProjectedTexturedVertex(float *vertices, size_t index,
                                 float v, uint8_t red, uint8_t green,
                                 uint8_t blue, uint8_t alpha) {
     const size_t offset = index * kFirstFrameVertexStride;
-    vertices[offset + 0U] = point.x;
-    vertices[offset + 1U] = point.y;
-    vertices[offset + 2U] = point.z;
-    vertices[offset + 3U] = 1.0f;
+    /*
+     * Preserve the camera-space distance as clip W.  Feeding homogeneous
+     * screen coordinates through the orthographic shader leaves the final
+     * position unchanged while allowing PICA200 to perspective-correct the
+     * texture coordinates across each projected world triangle.
+     */
+    vertices[offset + 0U] = point.x * point.distance;
+    vertices[offset + 1U] = point.y * point.distance;
+    vertices[offset + 2U] = point.z * point.distance;
+    vertices[offset + 3U] = point.distance;
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = u;
     vertices[offset + 6U] = v;
@@ -387,10 +393,10 @@ void SetProjectedShadeVertex(float *vertices, size_t index,
                              uint8_t red, uint8_t green, uint8_t blue,
                              uint8_t alpha) {
     const size_t offset = index * kShadeVertexStride;
-    vertices[offset + 0U] = point.x;
-    vertices[offset + 1U] = point.y;
-    vertices[offset + 2U] = point.z;
-    vertices[offset + 3U] = 1.0f;
+    vertices[offset + 0U] = point.x * point.distance;
+    vertices[offset + 1U] = point.y * point.distance;
+    vertices[offset + 2U] = point.z * point.distance;
+    vertices[offset + 3U] = point.distance;
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = static_cast<float>(red) / 255.0f;
     vertices[offset + 6U] = static_cast<float>(green) / 255.0f;
@@ -1639,7 +1645,8 @@ bool GfxRenderingAPI3DS::RenderWorldScene(const PBWorldScene *scene,
         }
     }
 
-    SetDepthTestAndMask(true, false);
+    /* Actors must remain readable over their contact floor in this 2D pass. */
+    SetDepthTestAndMask(false, false);
     SetUseAlpha(true);
     LoadShader(mImpl->worldTextureShader);
     if (scene->star_piece_active && mImpl->worldStarTexture.id != 0U) {

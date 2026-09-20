@@ -20,7 +20,7 @@
      GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
 typedef struct {
-    float position[3];
+    float position[4];
     float texcoord[2];
     float color[4];
 } PBRendererVertex;
@@ -200,7 +200,7 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
 
     C3D_AttrInfo *attributes = C3D_GetAttrInfo();
     AttrInfo_Init(attributes);
-    AttrInfo_AddLoader(attributes, 0, GPU_FLOAT, 3);
+    AttrInfo_AddLoader(attributes, 0, GPU_FLOAT, 4);
     AttrInfo_AddLoader(attributes, 1, GPU_FLOAT, 2);
     AttrInfo_AddLoader(attributes, 2, GPU_FLOAT, 4);
 
@@ -501,6 +501,7 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
         destination->position[0] = source[0];
         destination->position[1] = source[1];
         destination->position[2] = source[2];
+        destination->position[3] = source[3];
         destination->texcoord[0] = 0.0f;
         destination->texcoord[1] = 0.0f;
         if (uses_texture0) {

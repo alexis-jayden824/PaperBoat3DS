@@ -182,7 +182,7 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned long)(memory->class_peak[PB_MEMORY_SCENE] / 1024));
         printf("\x1b[26;2HSD log: %s\n",
                pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
-        printf("\x1b[28;2HPad move; A sign; START pause\n");
+        printf("\x1b[28;2HCircle/D-pad move; A sign\n");
         printf("\x1b[30;2HL+R+START exits checkpoint\n");
         return;
     }

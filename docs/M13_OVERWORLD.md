@@ -99,7 +99,7 @@ sh tools/test_world_scene.sh build/m13-scene-private /path/to/pm64.o2r
 The scene suite covers both maps, both directions of entry protection, archive
 formats, textures, collision, sign interaction, Star Piece collection, fades,
 transitions, pixel release, and complete scene release. The private run passes
-839 checks; the focused graphics adapter passes 103 checks. Proprietary input
+845 checks; the focused graphics adapter passes 103 checks. Proprietary input
 never enters CI or source control.
 
 The first completed Folium candidate exposed an ARM11-only stack fault at file
@@ -108,6 +108,18 @@ scene loader placed 138,704 bytes of temporary index/shape state in one frame.
 Those workspaces now use the tracked transient heap and return to zero after
 every load. Host stack-usage output measures the corrected loader frame at
 2,416 bytes. This is a functional correction, not a larger stack reservation.
+
+The next Folium run reached a stable world and confirmed advancing frame/draw
+counters, zero renderer failures, and working pause. It also exposed three
+render/input defects hidden by host-only checks: world vertices discarded
+camera-space homogeneous W, so the GPU interpolated textures affinely; actor
+billboards could lose their complete footprint to the contact floor's depth;
+and only Circle Pad axes drove the slice even though the UI advertised D-pad
+movement. World vertices now retain distance as clip W for perspective-correct
+interpolation, the actor pass draws readably over its contact floor, and a
+neutral Circle Pad falls back to the physical D-pad. Portable coverage includes
+the D-pad movement path; the corrected native presentation remains a Folium
+acceptance gate.
 
 ## Folium acceptance
 
