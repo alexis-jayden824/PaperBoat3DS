@@ -45,26 +45,49 @@ static bool expected_image_size(const PBTextureResourceView *resource,
         return false;
     }
     const size_t texels = (size_t)resource->width * resource->height;
-    size_t bytes_per_texel = 0;
     switch ((PBResourceTextureType)resource->type) {
         case PB_RESOURCE_TEXTURE_RGBA32:
-            bytes_per_texel = 4U;
-            break;
+            if (texels > SIZE_MAX / 4U) {
+                return false;
+            }
+            *expected = texels * 4U;
+            return true;
         case PB_RESOURCE_TEXTURE_RGBA16:
-            bytes_per_texel = 2U;
-            break;
+        case PB_RESOURCE_TEXTURE_IA16:
+            if (texels > SIZE_MAX / 2U) {
+                return false;
+            }
+            *expected = texels * 2U;
+            return true;
+        case PB_RESOURCE_TEXTURE_CI4:
+        case PB_RESOURCE_TEXTURE_I4:
+        case PB_RESOURCE_TEXTURE_IA4:
+            *expected = (texels + 1U) / 2U;
+            return true;
         case PB_RESOURCE_TEXTURE_CI8:
+        case PB_RESOURCE_TEXTURE_I8:
         case PB_RESOURCE_TEXTURE_IA8:
-            bytes_per_texel = 1U;
-            break;
+            *expected = texels;
+            return true;
         default:
             return false;
     }
-    if (texels > SIZE_MAX / bytes_per_texel) {
-        return false;
-    }
-    *expected = texels * bytes_per_texel;
-    return true;
+}
+
+static uint8_t four_bit_texel(const uint8_t *image, size_t texel) {
+    const uint8_t packed = image[texel / 2U];
+    return (texel & 1U) == 0U ? (uint8_t)(packed >> 4U)
+                              : (uint8_t)(packed & 0x0FU);
+}
+
+static void decode_rgba16(uint8_t *rgba, size_t output,
+                          const uint8_t *image, size_t source) {
+    const uint16_t color = ((uint16_t)image[source] << 8U) |
+                           image[source + 1U];
+    rgba[output + 0U] = expand_five_bits((uint16_t)(color >> 11U));
+    rgba[output + 1U] = expand_five_bits((uint16_t)(color >> 6U));
+    rgba[output + 2U] = expand_five_bits((uint16_t)(color >> 1U));
+    rgba[output + 3U] = (color & 1U) != 0U ? 255U : 0U;
 }
 
 bool pb_texture_resource_parse(const uint8_t *data, size_t size,
@@ -113,8 +136,13 @@ PBTextureDecodeResult pb_texture_decode_rgba8(
         switch ((PBResourceTextureType)resource->type) {
             case PB_RESOURCE_TEXTURE_RGBA32:
             case PB_RESOURCE_TEXTURE_RGBA16:
+            case PB_RESOURCE_TEXTURE_CI4:
             case PB_RESOURCE_TEXTURE_CI8:
+            case PB_RESOURCE_TEXTURE_I4:
+            case PB_RESOURCE_TEXTURE_I8:
+            case PB_RESOURCE_TEXTURE_IA4:
             case PB_RESOURCE_TEXTURE_IA8:
+            case PB_RESOURCE_TEXTURE_IA16:
                 return PB_TEXTURE_DECODE_INVALID_RESOURCE;
             default:
                 return PB_TEXTURE_DECODE_UNSUPPORTED_FORMAT;
@@ -123,10 +151,15 @@ PBTextureDecodeResult pb_texture_decode_rgba8(
     if (resource->image_size != expected || resource->image == NULL) {
         return PB_TEXTURE_DECODE_INVALID_RESOURCE;
     }
-    if (resource->type == PB_RESOURCE_TEXTURE_CI8 &&
-        !pb_texture_resource_matches(palette, PB_RESOURCE_TEXTURE_RGBA16,
-                                     256, 1)) {
-        return PB_TEXTURE_DECODE_INVALID_PALETTE;
+    if (resource->type == PB_RESOURCE_TEXTURE_CI4 ||
+        resource->type == PB_RESOURCE_TEXTURE_CI8) {
+        const uint16_t colors = resource->type == PB_RESOURCE_TEXTURE_CI4
+                                    ? 16U
+                                    : 256U;
+        if (!pb_texture_resource_matches(
+                palette, PB_RESOURCE_TEXTURE_RGBA16, colors, 1U)) {
+            return PB_TEXTURE_DECODE_INVALID_PALETTE;
+        }
     }
 
     const uint16_t texture_width = next_texture_dimension(resource->width);
@@ -157,33 +190,48 @@ PBTextureDecodeResult pb_texture_decode_rgba8(
                 }
                 case PB_RESOURCE_TEXTURE_RGBA16: {
                     const size_t source = texel * 2U;
-                    const uint16_t color =
-                        ((uint16_t)resource->image[source] << 8U) |
-                        resource->image[source + 1U];
-                    rgba[output + 0U] =
-                        expand_five_bits((uint16_t)(color >> 11U));
-                    rgba[output + 1U] =
-                        expand_five_bits((uint16_t)(color >> 6U));
-                    rgba[output + 2U] =
-                        expand_five_bits((uint16_t)(color >> 1U));
-                    rgba[output + 3U] =
-                        (color & 1U) != 0 ? 255U : 0U;
+                    decode_rgba16(rgba, output, resource->image, source);
+                    break;
+                }
+                case PB_RESOURCE_TEXTURE_CI4: {
+                    const size_t source =
+                        (size_t)four_bit_texel(resource->image, texel) * 2U;
+                    decode_rgba16(rgba, output, palette->image, source);
                     break;
                 }
                 case PB_RESOURCE_TEXTURE_CI8: {
                     const size_t source =
                         (size_t)resource->image[texel] * 2U;
-                    const uint16_t color =
-                        ((uint16_t)palette->image[source] << 8U) |
-                        palette->image[source + 1U];
-                    rgba[output + 0U] =
-                        expand_five_bits((uint16_t)(color >> 11U));
-                    rgba[output + 1U] =
-                        expand_five_bits((uint16_t)(color >> 6U));
-                    rgba[output + 2U] =
-                        expand_five_bits((uint16_t)(color >> 1U));
+                    decode_rgba16(rgba, output, palette->image, source);
+                    break;
+                }
+                case PB_RESOURCE_TEXTURE_I4: {
+                    const uint8_t intensity = (uint8_t)(
+                        four_bit_texel(resource->image, texel) * 17U);
+                    rgba[output + 0U] = intensity;
+                    rgba[output + 1U] = intensity;
+                    rgba[output + 2U] = intensity;
+                    rgba[output + 3U] = 255U;
+                    break;
+                }
+                case PB_RESOURCE_TEXTURE_I8: {
+                    const uint8_t intensity = resource->image[texel];
+                    rgba[output + 0U] = intensity;
+                    rgba[output + 1U] = intensity;
+                    rgba[output + 2U] = intensity;
+                    rgba[output + 3U] = 255U;
+                    break;
+                }
+                case PB_RESOURCE_TEXTURE_IA4: {
+                    const uint8_t packed =
+                        four_bit_texel(resource->image, texel);
+                    const uint8_t intensity =
+                        (uint8_t)(((packed >> 1U) * 255U + 3U) / 7U);
+                    rgba[output + 0U] = intensity;
+                    rgba[output + 1U] = intensity;
+                    rgba[output + 2U] = intensity;
                     rgba[output + 3U] =
-                        (color & 1U) != 0 ? 255U : 0U;
+                        (packed & 1U) != 0U ? 255U : 0U;
                     break;
                 }
                 case PB_RESOURCE_TEXTURE_IA8: {
@@ -194,6 +242,15 @@ PBTextureDecodeResult pb_texture_decode_rgba8(
                     rgba[output + 1U] = intensity;
                     rgba[output + 2U] = intensity;
                     rgba[output + 3U] = (uint8_t)((packed & 0x0FU) * 17U);
+                    break;
+                }
+                case PB_RESOURCE_TEXTURE_IA16: {
+                    const size_t source = texel * 2U;
+                    const uint8_t intensity = resource->image[source];
+                    rgba[output + 0U] = intensity;
+                    rgba[output + 1U] = intensity;
+                    rgba[output + 2U] = intensity;
+                    rgba[output + 3U] = resource->image[source + 1U];
                     break;
                 }
                 default:

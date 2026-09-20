@@ -225,6 +225,29 @@ static bool cursor_skip(PBZipCursor *cursor, size_t size) {
     return true;
 }
 
+static PBO2RResult fill_entry(PBO2REntry *entry, const char *name,
+                              size_t name_size, const uint8_t *header) {
+    if (entry == NULL || name == NULL || header == NULL ||
+        name_size == 0U || name_size >= PB_O2R_NAME_CAPACITY) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    memset(entry, 0, sizeof(*entry));
+    entry->flags = read_le16(&header[8]);
+    entry->method = read_le16(&header[10]);
+    entry->crc32 = read_le32(&header[16]);
+    entry->compressed_size = read_le32(&header[20]);
+    entry->uncompressed_size = read_le32(&header[24]);
+    entry->local_header_offset = read_le32(&header[42]);
+    if (entry->compressed_size == UINT32_MAX ||
+        entry->uncompressed_size == UINT32_MAX ||
+        entry->local_header_offset == UINT32_MAX) {
+        return PB_O2R_ZIP64_DIRECTORY;
+    }
+    memcpy(entry->name, name, name_size + 1U);
+    entry->found = true;
+    return PB_O2R_OK;
+}
+
 PBO2RResult pb_o2r_find_entries(PBArchive *archive,
                                 PBO2RRequest *requests,
                                 size_t request_count,
@@ -294,19 +317,10 @@ PBO2RResult pb_o2r_find_entries(PBArchive *archive,
                 strcmp(name, requests[request_index].name) != 0) {
                 continue;
             }
-            entry->flags = read_le16(&header[8]);
-            entry->method = read_le16(&header[10]);
-            entry->crc32 = read_le32(&header[16]);
-            entry->compressed_size = read_le32(&header[20]);
-            entry->uncompressed_size = read_le32(&header[24]);
-            entry->local_header_offset = read_le32(&header[42]);
-            if (entry->compressed_size == UINT32_MAX ||
-                entry->uncompressed_size == UINT32_MAX ||
-                entry->local_header_offset == UINT32_MAX) {
-                return PB_O2R_ZIP64_DIRECTORY;
+            result = fill_entry(entry, name, name_size, header);
+            if (result != PB_O2R_OK) {
+                return result;
             }
-            memcpy(entry->name, name, (size_t)name_size + 1U);
-            entry->found = true;
             found_count++;
         }
         if (found_count == request_count) {
@@ -314,6 +328,74 @@ PBO2RResult pb_o2r_find_entries(PBArchive *archive,
         }
     }
     return PB_O2R_ENTRY_NOT_FOUND;
+}
+
+PBO2RResult pb_o2r_find_entries_with_prefix(PBArchive *archive,
+                                             const char *prefix,
+                                             PBO2REntry *entries,
+                                             size_t entry_capacity,
+                                             size_t *entry_count,
+                                             PBO2RStats *stats) {
+    const size_t prefix_size = prefix != NULL ? strlen(prefix) : 0U;
+    if (archive == NULL || prefix_size == 0U ||
+        prefix_size >= PB_O2R_NAME_CAPACITY || entries == NULL ||
+        entry_capacity == 0U || entry_count == NULL) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    *entry_count = 0U;
+    memset(entries, 0, entry_capacity * sizeof(*entries));
+
+    PBZipDirectory directory;
+    PBO2RResult result = find_directory(archive, &directory, stats);
+    if (result != PB_O2R_OK) {
+        return result;
+    }
+
+    PBZipCursor cursor;
+    cursor_init(&cursor, archive, directory.offset, directory.size, stats);
+    for (uint32_t entry_index = 0U; entry_index < directory.entries;
+         entry_index++) {
+        uint8_t header[PB_ZIP_CENTRAL_HEADER_SIZE];
+        if (!cursor_read(&cursor, header, sizeof(header))) {
+            return PB_O2R_IO_ERROR;
+        }
+        if (read_le32(header) != PB_ZIP_CENTRAL_SIGNATURE) {
+            return PB_O2R_INVALID_ZIP;
+        }
+
+        const uint16_t name_size = read_le16(&header[28]);
+        const uint16_t extra_size = read_le16(&header[30]);
+        const uint16_t comment_size = read_le16(&header[32]);
+        char name[PB_O2R_NAME_CAPACITY];
+        const bool name_available = name_size < sizeof(name);
+        if (name_available) {
+            if (!cursor_read(&cursor, name, name_size)) {
+                return PB_O2R_IO_ERROR;
+            }
+            name[name_size] = '\0';
+        } else if (!cursor_skip(&cursor, name_size)) {
+            return PB_O2R_INVALID_ZIP;
+        }
+        if (!cursor_skip(&cursor, (size_t)extra_size + comment_size)) {
+            return PB_O2R_INVALID_ZIP;
+        }
+        if (stats != NULL) {
+            stats->entries_scanned++;
+        }
+        if (!name_available || name_size < prefix_size ||
+            memcmp(name, prefix, prefix_size) != 0) {
+            continue;
+        }
+        if (*entry_count >= entry_capacity) {
+            return PB_O2R_CAPACITY_EXCEEDED;
+        }
+        result = fill_entry(&entries[*entry_count], name, name_size, header);
+        if (result != PB_O2R_OK) {
+            return result;
+        }
+        (*entry_count)++;
+    }
+    return *entry_count > 0U ? PB_O2R_OK : PB_O2R_ENTRY_NOT_FOUND;
 }
 
 static uint32_t calculate_crc32(const uint8_t *data, size_t size) {
@@ -532,6 +614,8 @@ const char *pb_o2r_result_name(PBO2RResult result) {
             return "deflate failed";
         case PB_O2R_CHECKSUM_MISMATCH:
             return "checksum mismatch";
+        case PB_O2R_CAPACITY_EXCEEDED:
+            return "entry capacity";
         default:
             return "unknown";
     }

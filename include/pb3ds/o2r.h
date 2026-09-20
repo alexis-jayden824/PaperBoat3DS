@@ -28,6 +28,7 @@ typedef enum {
     PB_O2R_OUT_OF_MEMORY,
     PB_O2R_DECOMPRESSION_FAILED,
     PB_O2R_CHECKSUM_MISMATCH,
+    PB_O2R_CAPACITY_EXCEEDED,
 } PBO2RResult;
 
 typedef struct {
@@ -58,6 +59,12 @@ PBO2RResult pb_o2r_find_entries(PBArchive *archive,
                                 PBO2RRequest *requests,
                                 size_t request_count,
                                 PBO2RStats *stats);
+PBO2RResult pb_o2r_find_entries_with_prefix(PBArchive *archive,
+                                             const char *prefix,
+                                             PBO2REntry *entries,
+                                             size_t entry_capacity,
+                                             size_t *entry_count,
+                                             PBO2RStats *stats);
 PBO2RResult pb_o2r_extract_entry(PBArchive *archive,
                                  const PBO2REntry *entry,
                                  size_t maximum_size,

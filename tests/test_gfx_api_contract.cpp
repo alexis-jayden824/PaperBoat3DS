@@ -1,5 +1,6 @@
 #include "pb3ds/gfx_rendering_api_3ds.h"
 #include "pb3ds/title_flow.h"
+#include "pb3ds/world_scene.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +12,9 @@ static uint8_t firstFramePixels[512U * 256U * 4U];
 static uint8_t titleLogoPixels[256U * 128U * 4U];
 static uint8_t titlePromptPixels[128U * 32U * 4U];
 static uint8_t titleCopyrightPixels[256U * 32U * 4U];
+static uint8_t worldMapPixels[8U * 8U * 4U];
+static uint8_t worldActorPixels[8U * 8U * 4U];
+static PBWorldTriangle worldTriangle;
 
 #define CHECK(expression)                                                    \
     do {                                                                     \
@@ -44,6 +48,54 @@ static PBTitleAssets makeTitleAssets() {
         PB_RESOURCE_TEXTURE_IA8
     };
     return assets;
+}
+
+static PBWorldScene makeWorldScene() {
+    PBWorldScene scene = {};
+    scene.result = PB_WORLD_SCENE_READY;
+    std::strcpy(scene.map_id, "mac_00");
+    scene.entry_id = 6U;
+    scene.triangles = &worldTriangle;
+    scene.stats.triangles = 1U;
+    scene.stats.textures = 1U;
+    scene.texture_count = 1U;
+    scene.background = { firstFramePixels, sizeof(firstFramePixels),
+                         296U, 200U, 512U, 256U,
+                         PB_RESOURCE_TEXTURE_CI8 };
+    scene.textures[0].decoded = {
+        worldMapPixels, sizeof(worldMapPixels), 8U, 8U, 8U, 8U,
+        PB_RESOURCE_TEXTURE_I8
+    };
+    for (size_t index = 0U; index < PB_WORLD_PLAYER_FRAME_COUNT; index++) {
+        scene.player_frames[index] = {
+            worldActorPixels, sizeof(worldActorPixels), 8U, 8U, 8U, 8U,
+            PB_RESOURCE_TEXTURE_CI4
+        };
+    }
+    scene.star_piece = {
+        worldActorPixels, sizeof(worldActorPixels), 8U, 8U, 8U, 8U,
+        PB_RESOURCE_TEXTURE_CI4
+    };
+    scene.player_position = { 0.0f, 0.0f, 0.0f };
+    scene.camera_target = { 0.0f, 35.0f, 0.0f };
+    scene.star_piece_active = true;
+    scene.transition_state = PB_WORLD_TRANSITION_NONE;
+    worldTriangle = {};
+    worldTriangle.texture_index = 0;
+    worldTriangle.render_class = PB_WORLD_RENDER_OPAQUE;
+    worldTriangle.vertices[0] = {
+        { -100.0f, 0.0f, -100.0f }, 0.0f, 0.0f,
+        255U, 255U, 255U, 255U
+    };
+    worldTriangle.vertices[1] = {
+        { 100.0f, 0.0f, -100.0f }, 1.0f, 0.0f,
+        255U, 255U, 255U, 255U
+    };
+    worldTriangle.vertices[2] = {
+        { 0.0f, 0.0f, 100.0f }, 0.5f, 1.0f,
+        255U, 255U, 255U, 255U
+    };
+    return scene;
 }
 
 static bool testExactInterface() {
@@ -127,11 +179,29 @@ static bool testExactInterface() {
     CHECK(api.RenderTitleFlow(&flow));
     CHECK(stats->frames_presented == 8);
 
+    PBWorldScene scene = makeWorldScene();
+    CHECK(api.PrepareWorldScene(&scene));
+    CHECK(stats->textures_live == 10U);
+    const uint64_t drawsBeforeWorld = stats->draw_calls;
+    const uint64_t trianglesBeforeWorld = stats->triangles;
+    CHECK(api.RenderWorldScene(&scene, false));
+    CHECK(stats->frames_presented == 9U);
+    CHECK(stats->draw_calls == drawsBeforeWorld + 4U);
+    CHECK(stats->triangles == trianglesBeforeWorld + 7U);
+    scene.message_timer = 1U;
+    scene.transition_state = PB_WORLD_TRANSITION_FADE_OUT;
+    scene.transition_frame = 15U;
+    CHECK(api.RenderWorldScene(&scene, true));
+    CHECK(stats->frames_presented == 10U);
+    CHECK(stats->draw_calls == drawsBeforeWorld + 9U);
+    CHECK(stats->triangles == trianglesBeforeWorld + 22U);
+    CHECK(!api.PrepareWorldScene(nullptr));
+
     api.SetActive(false);
     CHECK(!api.RenderDiagnostic());
     api.SetActive(true);
     CHECK(api.RenderDiagnostic());
-    CHECK(stats->frames_presented == 9);
+    CHECK(stats->frames_presented == 11);
 
     CHECK(api.CreateFramebuffer() == -1);
     CHECK(api.GetFramebufferTextureId(0) == nullptr);
@@ -162,15 +232,20 @@ static bool testCBoundary() {
         api, firstFramePixels, 512, 256, 296, 200));
     CHECK(pb_gfx_api_3ds_render_world_background(api, false));
     CHECK(pb_gfx_api_3ds_render_world_background(api, true));
+    PBWorldScene scene = makeWorldScene();
+    CHECK(pb_gfx_api_3ds_prepare_world_scene(api, &scene));
+    CHECK(pb_gfx_api_3ds_render_world_scene(api, &scene, false));
     const PBGfxBridgeStats *stats = pb_gfx_api_3ds_stats(api);
     CHECK(stats != nullptr);
-    CHECK(stats->frames_presented == 6);
-    CHECK(stats->draw_calls == 12);
+    CHECK(stats->frames_presented == 7);
+    CHECK(stats->draw_calls == 16);
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(
         nullptr, firstFramePixels, 512, 256, 296, 200));
     CHECK(!pb_gfx_api_3ds_render_world_background(nullptr, false));
+    CHECK(!pb_gfx_api_3ds_prepare_world_scene(nullptr, &scene));
+    CHECK(!pb_gfx_api_3ds_render_world_scene(api, nullptr, false));
     pb_gfx_api_3ds_set_active(api, false);
     CHECK(!pb_gfx_api_3ds_render_diagnostic(api));
     pb_gfx_api_3ds_destroy(api);

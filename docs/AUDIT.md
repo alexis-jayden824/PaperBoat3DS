@@ -11,7 +11,8 @@
   proprietary assets. CI rejects those extensions.
 - One devkitARM ELF is packaged as canonical `.3dsx`, emulator `.3ds`, and
   optional CFW `.cia` outputs.
-- The application is still a diagnostic shell, not a playable port.
+- The application includes one bounded playable overworld slice; it is not a
+  complete playable port.
 
 ## Evidence through M8
 
@@ -132,32 +133,33 @@ N64 flow as the explicit checkpoint exit chord. Confirmation intentionally
 stops at the M13 handoff. The rendered file panels do not claim save I/O,
 message/font/window display lists, audio, or overworld execution.
 
-## M13 checkpoint audit result
+## M13 candidate audit result
 
-The first M13 slice follows pinned PaperBoat data rather than inventing a new
-game path. PaperBoat's demo table selects `mac_00` entry 6, and its world table
-associates that map with `nok_bg`. The 3DS loader therefore requests only six
-bounded O2R entries: the map-shape blob, collision blob, vertex resource, one
-representative F3DEX2 display list, background, and palette.
+M13 follows pinned PaperBoat data rather than inventing a new game path:
+`mac_00` entry 6 begins over `nok_bg`, and a representative Toad Town
+transition connects `mac_00` and `mac_01`. The loader now scans and validates
+the complete shape namespaces, resolves every required vertex/display-list
+resource and map texture, translates the supported F3DEX2 subset, and uploads
+bounded native geometry. The owner archive yields 2,040/2,210 triangles and
+41/48 textures for the two maps, with zero unsupported commands.
 
-Before entering the world state it validates shape-tree offsets and depth,
-display-list references, vertex payload sizing, collision and zone indices,
-the sampled display-list terminator, exact CI8/RGBA16 background formats, and
-all allocation releases. Synthetic stored/deflate and malformed fixtures pass;
-the private owner archive reports 223 nodes, 223 display-list references,
-3,211 vertices, collision `110/727/873`, zones `18/76/69`, and 19 sampled
-commands. No proprietary bytes enter source control or CI.
+The runtime adds Mario raster frames, movement, floor and wall collision,
+follow camera, a sign interaction, a collectible Star Piece, entry walking,
+fades, bidirectional map loads, and pause that freezes simulation. Public
+stored/deflate fixtures cover the same flow without proprietary content.
+Owner-only tests cover real resource counts, both maps, both return guards,
+pixel release, and complete scene release; the scene peak remains below
+1.4 MiB. No proprietary bytes enter source control or CI.
 
-The world background uses its own GPU texture, so a failed upload cannot erase
-the working title path. Active and paused states are observable and retryable.
-This is preflight and presentation evidence only: full map display-list
-execution, camera, entities, collision response, scripts, and transitions are
-still open M13 gates.
+This is deliberately representative coverage, not a second implementation of
+the full game. NPC, complete EVT, effect, encounter, item, chapter, and audio
+execution remain attached to later roadmap milestones and must continue to use
+the pinned upstream behavior.
 
 ## Open gates
 
 1. Pass the M13 native build/package and public synthetic CI gates.
-2. Validate the prompt correction and overworld checkpoint in Folium.
+2. Validate the complete M13 playable slice in Folium and merge its PR.
 3. Validate renderer lifecycle, input, and memory behavior on real hardware.
 4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.

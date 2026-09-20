@@ -11,10 +11,10 @@ extern "C" {
 #endif
 
 #define PB_GFX_TEXTURE_UNITS 2U
-#define PB_GFX_MAX_TEXTURES 32U
+#define PB_GFX_MAX_TEXTURES 64U
 #define PB_GFX_MAX_SHADERS 64U
-#define PB_GFX_MAX_STREAM_BYTES (64U * 1024U)
-#define PB_GFX_MAX_STREAM_TRIANGLES 384U
+#define PB_GFX_MAX_STREAM_BYTES (576U * 1024U)
+#define PB_GFX_MAX_STREAM_TRIANGLES 4096U
 
 /* Values are fixed by libultraship's pinned Fast3D interpreter contract. */
 typedef enum {

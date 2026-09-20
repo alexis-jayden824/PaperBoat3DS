@@ -152,6 +152,12 @@ static bool test_flow(void) {
     CHECK(flow.pause_count == 1);
     CHECK(pb_world_flow_update(&flow, &input) == PB_WORLD_FLOW_EVENT_RESUMED);
     CHECK(flow.state == PB_WORLD_FLOW_ACTIVE);
+    CHECK(pb_world_flow_begin_transition(&flow) ==
+          PB_WORLD_FLOW_EVENT_LOAD_REQUESTED);
+    CHECK(flow.state == PB_WORLD_FLOW_LOADING);
+    CHECK(pb_world_flow_finish(&flow, true) ==
+          PB_WORLD_FLOW_EVENT_ENTERED_WORLD);
+    CHECK(pb_world_flow_begin_transition(NULL) == PB_WORLD_FLOW_EVENT_NONE);
 
     pb_world_flow_init(&flow);
     CHECK(pb_world_flow_request(&flow, 0) ==

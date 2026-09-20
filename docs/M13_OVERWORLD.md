@@ -1,81 +1,85 @@
-# M13 Overworld Integration
+# M13 Core Overworld Gameplay
 
-M13 is the point where the native 3DS shell begins consuming PaperBoat's real
-overworld contract. This document describes the first integration checkpoint;
-it does not mark the full milestone complete and does not replace PaperBoat's
-game logic with a reimplementation.
+M13 turns the earlier archive preflight into a small playable native-overworld
+slice. It consumes PaperBoat/Torch resources from the owner's legal O2R archive;
+no ROM or extracted asset is embedded in the executable or repository. This is
+still a bounded integration milestone, not a replacement for PaperBoat's full
+game logic or a claim of complete game coverage.
 
-## Pinned upstream anchors
+## Pinned upstream contract
 
 The immutable PaperBoat `1.0.1` source at commit
-`424c220f0863c29b9fe55cc674baceff88e9e14f` provides the choices used here:
+`424c220f0863c29b9fe55cc674baceff88e9e14f` anchors the entry and world-state
+choices:
 
-| Upstream source | Contract used by the checkpoint |
+| Upstream source | M13 contract |
 |---|---|
-| `src/state_demo.c` | A real world demo entry selects `mac_00`, entry 6. |
-| `src/world/world.c` | `mac_00` uses the `nok_bg` background. |
-| `src/state_world.c` | World stepping orders encounters, NPCs, player, items, effects, models, and camera. |
-| `src/state_map_transitions.c` | Map entry returns control to `GAME_MODE_WORLD`. |
-| `src/state_pause.c` | Pause returns to `GAME_MODE_WORLD`. |
+| `src/state_demo.c` | Begin in `mac_00`, entry 6. |
+| `src/world/world.c` | Use `nok_bg` behind the Toad Town maps. |
+| `src/state_world.c` | Keep player, entity/script, collision, camera, and render updates ordered. |
+| `src/state_map_transitions.c` | Fade and return to world state after a map entry. |
+| `src/state_pause.c` | Pause freezes world simulation and resumes in place. |
 
-CI cross-compiles those world/transition/pause sources plus camera math,
-collision, the world table, and pause implementation for ARM11. That gate
-detects target/compiler drift without vendoring thousands of upstream files.
+CI also cross-compiles the pinned world, transition, pause, camera-math, and
+collision sources for ARM11. The playable slice uses a deliberately narrow 3DS
+runtime around those contracts; later content coverage must continue integrating
+upstream behavior rather than growing an independent game implementation.
 
-## Bounded archive preflight
+## Authentic map and texture path
 
-Confirming a file-select slot requests exactly these private O2R entries:
+The loader scans the complete `mac_00` and `mac_01` shape namespaces, validates
+their trees, resolves every referenced display list and vertex resource, and
+translates the required F3DEX2 matrix, geometry, vertex, nested-display-list,
+and triangle commands into bounded native triangles. It discovers the maps'
+`mac_tex` texture set, decodes the used RGBA, CI, intensity, and
+intensity/alpha formats, and uploads all pixels through the existing PICA200
+graphics adapter. Unsupported or malformed data fails closed.
 
-| Entry | Type and validation |
-|---|---|
-| `shapes/mac_00_shape` | Blob; name tables, tree offsets, node types, child/property spans, depth, and display-list references. |
-| `collisions/mac_00_hit` | Blob; collision/zone headers, arrays, bounds, triangle spans, and vertex indices. |
-| `shapes/mac_00_shape/vtx` | Vertex resource; exact 16-byte payload count. |
-| `shapes/mac_00_shape/dlist_20` | F3DEX2 display-list sample; bounded commands and `G_ENDDL`. |
-| `backgrounds/nok_bg` | Exact 296x200 CI8 texture. |
-| `backgrounds/nok_bg_pal0` | Exact 256x1 RGBA16 palette. |
+Owner-only validation reports:
 
-Every extraction has a fixed maximum size and is charged to the M6 scene
-budget. Temporary archive bytes are released on every success/failure path.
-The decoded 512x256 RGBA8 background remains only until synchronous GPU upload
-and is then released. A missing or malformed entry leaves file select intact,
-prints the precise failure, and permits A/START retry.
+| Map | Nodes / leaves / display lists | Source vertices | Native triangles | Textures | Collision groups / vertices / triangles |
+|---|---:|---:|---:|---:|---:|
+| `mac_00` | 223 / 174 / 223 | 3,211 | 2,040 | 41 | 110 / 727 / 873 |
+| `mac_01` | 206 / 148 / 206 | 3,624 | 2,210 | 48 | 98 / 567 / 684 |
 
-The owner-only archive acceptance run reports:
+The decoded background and actor pixels are freed immediately after synchronous
+GPU upload. Geometry and collision remain scene-owned. Measured owner-archive
+scene peaks are about 1,379 KiB for `mac_00` and 1,369 KiB for `mac_01`, within
+the M6 scene policy.
 
-| Measurement | Result |
-|---|---:|
-| Shape nodes | 223 |
-| Shape display-list references | 223 |
-| Vertex resource | 3,211 |
-| Collision groups / vertices / triangles | 110 / 727 / 873 |
-| Zone groups / vertices / triangles | 18 / 76 / 69 |
-| Sampled display-list commands | 19 |
+## Playable slice
 
-These are structural checks over owner-generated resources. The archive and
-its extracted proprietary bytes are never committed or uploaded.
+The milestone candidate provides:
 
-## Native checkpoint flow
+- authentic `mac_00` and `mac_01` geometry, textures, and `nok_bg`;
+- Mario raster frames, Circle Pad/D-pad movement, facing, and collision slide;
+- floor sampling, wall rejection, and a smooth follow camera;
+- the `mac_00` sign interaction on A and a collectible Star Piece;
+- 30-frame fades, automatic entry walking, and bidirectional
+  `mac_00`/`mac_01` loading-zone transitions;
+- START pause/resume with frozen simulation and a visible dim overlay;
+- live map, position, floor, script, transition, renderer, and memory telemetry.
 
-After successful preflight, a separate PICA200 texture receives `nok_bg` and
-the state changes from loading to active. It is placed at LCD rectangle
-`(52,20,296,200)`: the authentic 12-pixel inset inside the centered 320x240
-Paper Mario canvas. Every New 3DS XL/LL still exposes the same 400x240 logical
-top screen, so physical panel size requires no crop or alternate coordinates.
+The sign and Star Piece are representative entity/script coverage. Full NPC,
+EVT, effect, item, encounter, and chapter execution remains M18 content
+coverage, not an M13 claim.
 
-START toggles active/paused. Pause applies a visible translucent black overlay
-without destroying the map texture; START resumes. L+R+START remains the
-explicit checkpoint exit chord. The title and world textures are independent,
-so a failed world allocation cannot invalidate the M12 title resources.
+## Bounded resources and failure behavior
 
-The M12.1 Folium result also exposed a prompt-combiner issue at `A:255`. M13
-bakes PaperBoat's exact `(248,240,152)` RGB tint into a temporary PRESS START
-upload buffer while preserving source alpha, then uses vertex alpha only for
-the blink. This is covered by host tests and should be rechecked visually.
+The world has fixed limits for display lists, source vertices, native triangles,
+textures, colliders, and collision triangles. Archive extraction is bounded and
+charged to the M6 memory monitor. A missing entry, unsupported command, invalid
+index, capacity overflow, allocation failure, or GPU-upload failure reports a
+precise error and remains retryable from file select. The title and world own
+independent GPU resources.
+
+The renderer arena is expanded for this milestone to 4,096 triangles and
+576 KiB of streamed source data per frame. The texture registry is 64 entries.
+Both remain fixed allocations with overflow/rejection telemetry.
 
 ## Validation
 
-Public and cross-compilation gates:
+Public and native gates:
 
 ```sh
 make m12-layout-test
@@ -85,28 +89,40 @@ make m13-core-check
 make packages
 ```
 
-Optional private validation:
+Owner-only archive validation:
 
 ```sh
 sh tools/test_world_boot.sh build/m13-private /path/to/pm64.o2r
+sh tools/test_world_scene.sh build/m13-scene-private /path/to/pm64.o2r
 ```
 
-Folium should show the corrected title prompt, transition from a confirmed
-slot to the centered `nok_bg`, report the exact private counts above, and dim/
-restore the top screen across START pause/resume. Renderer rejects and frame
-failures must remain zero.
+The scene suite covers both maps, both directions of entry protection, archive
+formats, textures, collision, sign interaction, Star Piece collection, fades,
+transitions, pixel release, and complete scene release. The private run passes
+832 checks; the focused graphics adapter passes 103 checks. Proprietary input
+never enters CI or source control.
 
-## Remaining M13 work
+## Folium acceptance
 
-This checkpoint does not yet render the map mesh or run gameplay. M13 remains
-open until the pinned PaperBoat execution path drives:
+With `pm64.o2r` and `paperboat.o2r` installed in Folium's virtual SD:
 
-- the complete map display-list/resource dependency set;
-- camera state and projection;
-- player, NPC, entity, item, and effect updates;
-- collision queries and response;
-- EVT/map scripts;
-- pause UI and representative loading-zone transitions.
+1. Confirm a file slot and verify the view fades into textured `mac_00` with
+   Mario visible, rather than the earlier background-only checkpoint.
+2. Move with the Circle Pad or D-pad. Verify Mario stays on the map, collides
+   with solid geometry, and the camera follows smoothly.
+3. Approach the sign and press A. Verify the interaction panel opens; close it
+   with A or B.
+4. Collect the Star Piece near `(-420, 20, 410)` and verify the bottom-screen
+   `Star` field changes from `live` to `got`.
+5. Reach the east loading zone in `mac_00`. Verify fade-out, `mac_01` entry 0,
+   automatic walk-in, and fade-in. Return through the west loading zone and
+   verify `mac_00` entry 1 without an immediate bounce-back.
+6. Pause and resume with START in each map. Position, collection state, and
+   transition counters must remain stable while paused.
+7. Confirm zero renderer rejects, frame failures, unsupported commands, stream
+   overflows, and memory allocation failures. Preserve both-screen captures and
+   `PaperBoat3DS.log`, then exit with L+R+START.
 
-Until those gates have reproducible evidence, the project remains an
-integration checkpoint rather than a playable native port.
+Passing the host and native build gates makes M13 a software candidate. Folium
+acceptance closes emulator evidence; real-hardware lifecycle, controls, memory,
+and Old 3DS performance remain separate project gates.

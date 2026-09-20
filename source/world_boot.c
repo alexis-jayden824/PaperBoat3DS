@@ -604,6 +604,15 @@ PBWorldFlowEvent pb_world_flow_request(PBWorldFlow *flow,
     return flow->last_event;
 }
 
+PBWorldFlowEvent pb_world_flow_begin_transition(PBWorldFlow *flow) {
+    if (flow == NULL || flow->state != PB_WORLD_FLOW_ACTIVE) {
+        return PB_WORLD_FLOW_EVENT_NONE;
+    }
+    flow->state = PB_WORLD_FLOW_LOADING;
+    flow->last_event = PB_WORLD_FLOW_EVENT_LOAD_REQUESTED;
+    return flow->last_event;
+}
+
 PBWorldFlowEvent pb_world_flow_finish(PBWorldFlow *flow, bool loaded) {
     if (flow == NULL || flow->state != PB_WORLD_FLOW_LOADING) {
         return PB_WORLD_FLOW_EVENT_NONE;

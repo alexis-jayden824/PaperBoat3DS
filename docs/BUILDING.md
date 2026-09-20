@@ -6,10 +6,12 @@ This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
 the host-tested M8 native input layer, the M9 citro3d renderer foundation,
 the M10 pinned-libultraship graphics adapter, the M11 bounded legal-archive
-frame path, and the M12 title/file-select checkpoint. M13 is in progress with
-an authentic `mac_00` resource preflight and native world/pause presentation
-gate. It is not yet a playable PaperBoat port. A successful package build
-proves that one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+frame path, and the M12 title/file-select checkpoint. M13 adds a bounded
+playable overworld slice using authentic `mac_00` and `mac_01` geometry,
+textures, collision, Mario sprites, camera, representative entities/scripts,
+pause, and bidirectional transitions. It is not yet a complete PaperBoat port.
+A successful package build proves that one ARM11 ELF can produce `.3dsx`,
+`.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -101,8 +103,8 @@ The M12.1 layout test is asset-free. It locks the New 3DS XL/LL 400x240
 presentation to a centered 320x240 safe canvas with equal 40-pixel pillars and
 checks every title rectangle against the upstream Paper Mario coordinates.
 
-Run the public M13 O2R fixture, map-structure, collision, display-list,
-background, retry, and pause-flow checks with:
+Run the public M13 O2R fixture, complete map-resource translation, texture,
+collision/gameplay, transition, release, retry, and pause-flow checks with:
 
 ```sh
 make fetch-upstream
@@ -112,17 +114,19 @@ make m13-core-check
 
 `m13-core-check` cross-compiles the pinned PaperBoat world mode, demo entry,
 map transitions, pause mode, camera math, collision, world table, and pause
-implementation for ARM11 without pretending that the full subsystem is linked
-yet. For an owner-only acceptance run, pass the generated private archive as a
-second argument:
+implementation for ARM11. For an owner-only acceptance run, pass the generated
+private archive as a second argument to both structural and playable-scene
+tests:
 
 ```sh
 sh tools/test_world_boot.sh build/m13-private /path/to/pm64.o2r
+sh tools/test_world_scene.sh build/m13-scene-private /path/to/pm64.o2r
 ```
 
-Never commit or upload that private archive. The pinned archive currently
-reports 223 shape nodes, 223 display-list references, 3,211 vertices, 110
-collision groups, and 18 zone groups for `mac_00`.
+Never commit or upload that private archive. The pinned archive reports 2,040
+native triangles and 41 map textures for `mac_00`, and 2,210 triangles and 48
+textures for `mac_01`. The private playable-scene suite covers both maps and
+both return-entry guards.
 
 ## Host-side asset preparation
 

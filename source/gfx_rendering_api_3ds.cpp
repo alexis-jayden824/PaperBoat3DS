@@ -2,12 +2,15 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
+#include <memory>
 #include <new>
 
 #include "pb3ds/renderer.h"
 #include "pb3ds/title_flow.h"
 #include "pb3ds/title_layout.h"
+#include "pb3ds/world_scene.h"
 
 namespace Fast {
 
@@ -42,6 +45,118 @@ constexpr size_t kFirstFrameVertexCount = 6U;
 constexpr size_t kShadeVertexStride = 9U;
 constexpr size_t kFileSelectQuadCount = 9U;
 constexpr size_t kFileSelectVertexCount = kFileSelectQuadCount * 6U;
+constexpr size_t kWorldVertexCapacity = PB_GFX_MAX_STREAM_TRIANGLES * 3U;
+constexpr size_t kWorldFloatCapacity =
+    kWorldVertexCapacity * kFirstFrameVertexStride;
+constexpr float kWorldFovDegrees = 25.0f;
+constexpr float kWorldBoomLength = 500.0f;
+constexpr float kWorldBoomPitchDegrees = 15.0f;
+constexpr float kWorldNearClip = 8.0f;
+constexpr float kWorldFarClip = 4096.0f;
+constexpr float kPi = 3.14159265358979323846f;
+
+struct WorldCamera {
+    PBWorldVec3 eye = {};
+    PBWorldVec3 forward = {};
+    PBWorldVec3 right = {};
+    PBWorldVec3 up = {};
+    float focal = 0.0f;
+};
+
+struct WorldProjectedPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float distance = 0.0f;
+};
+
+struct WorldGpuTexture {
+    uint32_t id = 0U;
+    uint16_t textureWidth = 0U;
+    uint16_t textureHeight = 0U;
+    uint16_t sourceWidth = 0U;
+    uint16_t sourceHeight = 0U;
+};
+
+PBWorldVec3 Subtract(PBWorldVec3 left, PBWorldVec3 right) {
+    return {
+        left.x - right.x,
+        left.y - right.y,
+        left.z - right.z,
+    };
+}
+
+float Dot(PBWorldVec3 left, PBWorldVec3 right) {
+    return left.x * right.x + left.y * right.y + left.z * right.z;
+}
+
+PBWorldVec3 Cross(PBWorldVec3 left, PBWorldVec3 right) {
+    return {
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    };
+}
+
+PBWorldVec3 Normalize(PBWorldVec3 value) {
+    const float length = std::sqrt(Dot(value, value));
+    if (length <= 0.0001f) {
+        return {};
+    }
+    return { value.x / length, value.y / length, value.z / length };
+}
+
+WorldCamera BuildWorldCamera(const PBWorldScene &scene) {
+    const float pitch = kWorldBoomPitchDegrees * (kPi / 180.0f);
+    WorldCamera camera;
+    camera.eye = {
+        scene.camera_target.x,
+        scene.camera_target.y + std::sin(pitch) * kWorldBoomLength,
+        scene.camera_target.z + std::cos(pitch) * kWorldBoomLength,
+    };
+    camera.forward = Normalize(Subtract(scene.camera_target, camera.eye));
+    camera.right = Normalize(Cross(camera.forward, { 0.0f, 1.0f, 0.0f }));
+    camera.up = Normalize(Cross(camera.right, camera.forward));
+    camera.focal =
+        (static_cast<float>(PB_RENDER_TOP_HEIGHT) * 0.5f) /
+        std::tan(kWorldFovDegrees * 0.5f * (kPi / 180.0f));
+    return camera;
+}
+
+bool ProjectWorldPoint(const WorldCamera &camera, PBWorldVec3 position,
+                       WorldProjectedPoint *output) {
+    if (output == nullptr) {
+        return false;
+    }
+    const PBWorldVec3 relative = Subtract(position, camera.eye);
+    const float distance = Dot(relative, camera.forward);
+    if (distance <= kWorldNearClip || distance >= kWorldFarClip) {
+        return false;
+    }
+    output->x = static_cast<float>(PB_RENDER_TOP_WIDTH) * 0.5f +
+                Dot(relative, camera.right) * camera.focal / distance;
+    output->y = static_cast<float>(PB_RENDER_TOP_HEIGHT) * 0.5f +
+                Dot(relative, camera.up) * camera.focal / distance;
+    output->z = 1.0f -
+                (distance - kWorldNearClip) /
+                    (kWorldFarClip - kWorldNearClip);
+    output->z = std::max(0.001f, std::min(0.999f, output->z));
+    output->distance = distance;
+    return true;
+}
+
+float WorldFadeAlpha(const PBWorldScene &scene) {
+    constexpr float kFadeFrames = 30.0f;
+    if (scene.transition_state == PB_WORLD_TRANSITION_FADE_IN) {
+        return 1.0f - static_cast<float>(scene.transition_frame) /
+                          kFadeFrames;
+    }
+    if (scene.transition_state == PB_WORLD_TRANSITION_FADE_OUT) {
+        return static_cast<float>(scene.transition_frame) / kFadeFrames;
+    }
+    return scene.transition_state == PB_WORLD_TRANSITION_WAITING ? 1.0f
+                                                                 : 0.0f;
+}
 
 PBTextureWrap TranslateWrap(uint32_t mode) {
     const bool mirror = (mode & 1U) != 0;
@@ -249,6 +364,123 @@ void AppendShadeQuad(float *vertices, size_t *vertexIndex, float left,
                    alpha);
 }
 
+void SetProjectedTexturedVertex(float *vertices, size_t index,
+                                const WorldProjectedPoint &point, float u,
+                                float v, uint8_t red, uint8_t green,
+                                uint8_t blue, uint8_t alpha) {
+    const size_t offset = index * kFirstFrameVertexStride;
+    vertices[offset + 0U] = point.x;
+    vertices[offset + 1U] = point.y;
+    vertices[offset + 2U] = point.z;
+    vertices[offset + 3U] = 1.0f;
+    vertices[offset + 4U] = 0.0f;
+    vertices[offset + 5U] = u;
+    vertices[offset + 6U] = v;
+    vertices[offset + 7U] = static_cast<float>(red) / 255.0f;
+    vertices[offset + 8U] = static_cast<float>(green) / 255.0f;
+    vertices[offset + 9U] = static_cast<float>(blue) / 255.0f;
+    vertices[offset + 10U] = static_cast<float>(alpha) / 255.0f;
+}
+
+void SetProjectedShadeVertex(float *vertices, size_t index,
+                             const WorldProjectedPoint &point,
+                             uint8_t red, uint8_t green, uint8_t blue,
+                             uint8_t alpha) {
+    const size_t offset = index * kShadeVertexStride;
+    vertices[offset + 0U] = point.x;
+    vertices[offset + 1U] = point.y;
+    vertices[offset + 2U] = point.z;
+    vertices[offset + 3U] = 1.0f;
+    vertices[offset + 4U] = 0.0f;
+    vertices[offset + 5U] = static_cast<float>(red) / 255.0f;
+    vertices[offset + 6U] = static_cast<float>(green) / 255.0f;
+    vertices[offset + 7U] = static_cast<float>(blue) / 255.0f;
+    vertices[offset + 8U] = static_cast<float>(alpha) / 255.0f;
+}
+
+bool AppendProjectedTriangle(float *vertices, size_t *vertexCount,
+                             const PBWorldTriangle &triangle,
+                             const WorldCamera &camera, bool textured) {
+    if (vertices == nullptr || vertexCount == nullptr ||
+        *vertexCount > kWorldVertexCapacity - 3U) {
+        return false;
+    }
+    WorldProjectedPoint projected[3];
+    for (size_t index = 0U; index < 3U; index++) {
+        if (!ProjectWorldPoint(camera, triangle.vertices[index].position,
+                               &projected[index])) {
+            return true;
+        }
+    }
+    for (size_t index = 0U; index < 3U; index++) {
+        const PBWorldVertex &source = triangle.vertices[index];
+        if (textured) {
+            SetProjectedTexturedVertex(vertices, (*vertexCount)++,
+                                       projected[index], source.u, source.v,
+                                       source.red, source.green, source.blue,
+                                       source.alpha);
+        } else {
+            SetProjectedShadeVertex(vertices, (*vertexCount)++,
+                                    projected[index], source.red,
+                                    source.green, source.blue, source.alpha);
+        }
+    }
+    return true;
+}
+
+bool BuildProjectedBillboard(
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        &vertices,
+    const WorldCamera &camera, PBWorldVec3 center, float worldWidth,
+    float worldHeight, const WorldGpuTexture &texture, bool flipHorizontal,
+    float red = 1.0f, float green = 1.0f, float blue = 1.0f,
+    float alpha = 1.0f) {
+    WorldProjectedPoint projected;
+    if (texture.id == 0U || texture.textureWidth == 0U ||
+        texture.textureHeight == 0U || texture.sourceWidth == 0U ||
+        texture.sourceHeight == 0U ||
+        !ProjectWorldPoint(camera, center, &projected)) {
+        return false;
+    }
+    const float height = worldHeight * camera.focal / projected.distance;
+    const float width = worldWidth * camera.focal / projected.distance;
+    const float left = projected.x - width * 0.5f;
+    const float right = projected.x + width * 0.5f;
+    const float bottom = projected.y - height * 0.5f;
+    const float top = projected.y + height * 0.5f;
+    const float minimumU = 0.0f;
+    const float maximumU = static_cast<float>(texture.sourceWidth) /
+                           static_cast<float>(texture.textureWidth);
+    const float minimumV = 0.0f;
+    const float maximumV = static_cast<float>(texture.sourceHeight) /
+                           static_cast<float>(texture.textureHeight);
+    const float leftU = flipHorizontal ? maximumU : minimumU;
+    const float rightU = flipHorizontal ? minimumU : maximumU;
+    projected.z = std::min(0.999f, projected.z + 0.0005f);
+    const uint8_t redByte = static_cast<uint8_t>(
+        std::max(0.0f, std::min(1.0f, red)) * 255.0f);
+    const uint8_t greenByte = static_cast<uint8_t>(
+        std::max(0.0f, std::min(1.0f, green)) * 255.0f);
+    const uint8_t blueByte = static_cast<uint8_t>(
+        std::max(0.0f, std::min(1.0f, blue)) * 255.0f);
+    const uint8_t alphaByte = static_cast<uint8_t>(
+        std::max(0.0f, std::min(1.0f, alpha)) * 255.0f);
+    const auto set = [&](size_t index, float x, float y, float u, float v) {
+        WorldProjectedPoint point = projected;
+        point.x = x;
+        point.y = y;
+        SetProjectedTexturedVertex(vertices.data(), index, point, u, v,
+                                   redByte, greenByte, blueByte, alphaByte);
+    };
+    set(0U, left, bottom, leftU, minimumV);
+    set(1U, right, bottom, rightU, minimumV);
+    set(2U, right, top, rightU, maximumV);
+    set(3U, right, top, rightU, maximumV);
+    set(4U, left, top, leftU, maximumV);
+    set(5U, left, bottom, leftU, minimumV);
+    return true;
+}
+
 } // namespace
 
 namespace PB3DS {
@@ -267,6 +499,8 @@ struct GfxRenderingAPI3DS::Impl {
     Fast::ShaderProgram *firstFrameShader = nullptr;
     Fast::ShaderProgram *titleTextureShader = nullptr;
     Fast::ShaderProgram *titleShadeShader = nullptr;
+    Fast::ShaderProgram *worldTextureShader = nullptr;
+    Fast::ShaderProgram *worldShadeShader = nullptr;
     Fast::FilteringMode filterMode = Fast::FILTER_THREE_POINT;
     PBRenderPipeline pipeline = {
         PB_CULL_NONE, false, false, PB_COMPARE_GREATER_EQUAL,
@@ -279,6 +513,10 @@ struct GfxRenderingAPI3DS::Impl {
     uint32_t titlePromptTexture = 0;
     uint32_t titleCopyrightTexture = 0;
     uint32_t worldBackgroundTexture = 0;
+    std::array<WorldGpuTexture, PB_WORLD_MAX_TEXTURES> worldMapTextures = {};
+    size_t worldMapTextureCount = 0U;
+    WorldGpuTexture worldPlayerTextures[PB_WORLD_PLAYER_FRAME_COUNT] = {};
+    WorldGpuTexture worldStarTexture = {};
     std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
         firstFrameVertices = {};
     std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
@@ -293,6 +531,10 @@ struct GfxRenderingAPI3DS::Impl {
         worldBackgroundVertices = {};
     std::array<float, kShadeVertexStride * kFirstFrameVertexCount>
         worldPauseVertices = {};
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        worldSpriteVertices = {};
+    std::array<float, kShadeVertexStride * 24U> worldOverlayVertices = {};
+    std::unique_ptr<float[]> worldVertices;
     PBTitleLayout titleLayout = {};
     int currentTile = 0;
     bool zmodeDecal = false;
@@ -368,6 +610,8 @@ void GfxRenderingAPI3DS::ClearShaderCache() {
     mImpl->firstFrameShader = nullptr;
     mImpl->titleTextureShader = nullptr;
     mImpl->titleShadeShader = nullptr;
+    mImpl->worldTextureShader = nullptr;
+    mImpl->worldShadeShader = nullptr;
     for (Fast::ShaderProgram &shader : mImpl->shaders) {
         shader = {};
     }
@@ -1179,6 +1423,293 @@ bool GfxRenderingAPI3DS::RenderWorldBackground(bool paused) {
     return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
 }
 
+bool GfxRenderingAPI3DS::PrepareWorldScene(const PBWorldScene *scene) {
+    if (mImpl == nullptr || scene == nullptr ||
+        scene->result != PB_WORLD_SCENE_READY || scene->pixels_released ||
+        scene->triangles == nullptr || scene->stats.triangles == 0U ||
+        scene->texture_count == 0U ||
+        scene->texture_count > PB_WORLD_MAX_TEXTURES ||
+        scene->background.rgba == nullptr ||
+        scene->player_frames[0].rgba == nullptr ||
+        scene->player_frames[1].rgba == nullptr) {
+        return false;
+    }
+
+    Init();
+    mImpl->worldTextureShader =
+        CreateAndLoadNewShader(kTextureShadeShader, kAlphaOption);
+    mImpl->worldShadeShader =
+        CreateAndLoadNewShader(kShadeShader, kAlphaOption);
+    if (mImpl->worldTextureShader == nullptr ||
+        mImpl->worldShadeShader == nullptr ||
+        !mImpl->worldTextureShader->plan.supported ||
+        !mImpl->worldShadeShader->plan.supported) {
+        return false;
+    }
+    if (!mImpl->worldVertices) {
+        mImpl->worldVertices.reset(
+            new (std::nothrow) float[kWorldFloatCapacity]);
+        if (!mImpl->worldVertices) {
+            return false;
+        }
+    }
+
+    const auto discardWorldTextures = [this]() {
+        if (mImpl->worldBackgroundTexture != 0U) {
+            DeleteTexture(mImpl->worldBackgroundTexture);
+            mImpl->worldBackgroundTexture = 0U;
+        }
+        for (WorldGpuTexture &texture : mImpl->worldMapTextures) {
+            if (texture.id != 0U) {
+                DeleteTexture(texture.id);
+            }
+            texture = {};
+        }
+        mImpl->worldMapTextureCount = 0U;
+        for (WorldGpuTexture &texture : mImpl->worldPlayerTextures) {
+            if (texture.id != 0U) {
+                DeleteTexture(texture.id);
+            }
+            texture = {};
+        }
+        if (mImpl->worldStarTexture.id != 0U) {
+            DeleteTexture(mImpl->worldStarTexture.id);
+        }
+        mImpl->worldStarTexture = {};
+    };
+    discardWorldTextures();
+
+    const auto upload = [this](const PBDecodedTexture &decoded,
+                               bool clamp,
+                               WorldGpuTexture *destination) {
+        if (destination == nullptr || decoded.rgba == nullptr ||
+            decoded.texture_width == 0U || decoded.texture_height == 0U ||
+            decoded.source_width == 0U || decoded.source_height == 0U ||
+            decoded.rgba_size != static_cast<size_t>(decoded.texture_width) *
+                                     decoded.texture_height * 4U) {
+            return false;
+        }
+        WorldGpuTexture candidate = {};
+        candidate.id = NewTexture();
+        if (candidate.id == 0U) {
+            return false;
+        }
+        SelectTexture(0, candidate.id);
+        UploadTexture(decoded.rgba, decoded.texture_width,
+                      decoded.texture_height);
+        SetTextureFilter(Fast::FILTER_LINEAR);
+        SetSamplerParameters(0, true, clamp ? 2U : 0U,
+                             clamp ? 2U : 0U);
+        const PBGfxTextureRecord *record = pb_gfx_bridge_find_texture(
+            &mImpl->bridge, candidate.id);
+        if (record == nullptr || !record->uploaded) {
+            DeleteTexture(candidate.id);
+            return false;
+        }
+        candidate.textureWidth = decoded.texture_width;
+        candidate.textureHeight = decoded.texture_height;
+        candidate.sourceWidth = decoded.source_width;
+        candidate.sourceHeight = decoded.source_height;
+        *destination = candidate;
+        return true;
+    };
+
+    WorldGpuTexture background = {};
+    if (!upload(scene->background, true, &background)) {
+        discardWorldTextures();
+        return false;
+    }
+    mImpl->worldBackgroundTexture = background.id;
+    if (!pb_title_layout_compute(&mImpl->titleLayout, PB_RENDER_TOP_WIDTH,
+                                 PB_RENDER_TOP_HEIGHT) ||
+        !BuildTexturedQuad(
+            mImpl->worldBackgroundVertices,
+            mImpl->titleLayout.background.left,
+            mImpl->titleLayout.background.bottom,
+            mImpl->titleLayout.background.width,
+            mImpl->titleLayout.background.height,
+            background.textureWidth, background.textureHeight,
+            background.sourceWidth, background.sourceHeight)) {
+        discardWorldTextures();
+        return false;
+    }
+
+    for (uint16_t index = 0U; index < scene->texture_count; index++) {
+        if (!upload(scene->textures[index].decoded, false,
+                    &mImpl->worldMapTextures[index])) {
+            discardWorldTextures();
+            return false;
+        }
+        mImpl->worldMapTextureCount++;
+    }
+    for (size_t index = 0U; index < PB_WORLD_PLAYER_FRAME_COUNT; index++) {
+        if (!upload(scene->player_frames[index], true,
+                    &mImpl->worldPlayerTextures[index])) {
+            discardWorldTextures();
+            return false;
+        }
+    }
+    if (scene->star_piece.rgba != nullptr &&
+        !upload(scene->star_piece, true, &mImpl->worldStarTexture)) {
+        discardWorldTextures();
+        return false;
+    }
+
+    size_t pauseVertex = 0U;
+    AppendShadeQuad(mImpl->worldPauseVertices.data(), &pauseVertex,
+                    0.0f, 0.0f,
+                    static_cast<float>(PB_RENDER_TOP_WIDTH),
+                    static_cast<float>(PB_RENDER_TOP_HEIGHT),
+                    0.0f, 0.0f, 0.0f, 0.48f);
+    return true;
+}
+
+bool GfxRenderingAPI3DS::RenderWorldScene(const PBWorldScene *scene,
+                                          bool paused) {
+    if (mImpl == nullptr || scene == nullptr ||
+        scene->result != PB_WORLD_SCENE_READY ||
+        scene->triangles == nullptr || mImpl->worldTextureShader == nullptr ||
+        mImpl->worldShadeShader == nullptr ||
+        mImpl->worldBackgroundTexture == 0U ||
+        mImpl->worldMapTextureCount != scene->texture_count ||
+        !mImpl->worldVertices) {
+        return false;
+    }
+
+    const uint64_t previousFrames = mImpl->bridge.stats.frames_presented;
+    StartFrame();
+    if (!mImpl->bridge.frame_open) {
+        return false;
+    }
+    SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetDepthTestAndMask(false, false);
+    SetCullMode(0);
+
+    LoadShader(mImpl->worldTextureShader);
+    SelectTexture(0, mImpl->worldBackgroundTexture);
+    SetUseAlpha(false);
+    DrawTriangles(mImpl->worldBackgroundVertices.data(),
+                  mImpl->worldBackgroundVertices.size(), 2U);
+
+    const WorldCamera camera = BuildWorldCamera(*scene);
+    for (uint8_t renderClass = PB_WORLD_RENDER_OPAQUE;
+         renderClass <= PB_WORLD_RENDER_TRANSLUCENT; renderClass++) {
+        const bool opaque = renderClass == PB_WORLD_RENDER_OPAQUE;
+        SetDepthTestAndMask(true, opaque);
+        SetUseAlpha(!opaque);
+        for (int textureIndex = -1;
+             textureIndex < static_cast<int>(scene->texture_count);
+             textureIndex++) {
+            size_t vertexCount = 0U;
+            for (uint32_t triangleIndex = 0U;
+                 triangleIndex < scene->stats.triangles; triangleIndex++) {
+                const PBWorldTriangle &triangle =
+                    scene->triangles[triangleIndex];
+                if (triangle.render_class != renderClass ||
+                    triangle.texture_index != textureIndex) {
+                    continue;
+                }
+                if (!AppendProjectedTriangle(
+                        mImpl->worldVertices.get(), &vertexCount, triangle,
+                        camera, textureIndex >= 0)) {
+                    EndFrame();
+                    return false;
+                }
+            }
+            if (vertexCount == 0U) {
+                continue;
+            }
+            if (textureIndex >= 0) {
+                LoadShader(mImpl->worldTextureShader);
+                SelectTexture(
+                    0, mImpl->worldMapTextures
+                           [static_cast<size_t>(textureIndex)]
+                               .id);
+                DrawTriangles(
+                    mImpl->worldVertices.get(),
+                    vertexCount * kFirstFrameVertexStride,
+                    vertexCount / 3U);
+            } else {
+                LoadShader(mImpl->worldShadeShader);
+                DrawTriangles(mImpl->worldVertices.get(),
+                              vertexCount * kShadeVertexStride,
+                              vertexCount / 3U);
+            }
+        }
+    }
+
+    SetDepthTestAndMask(true, false);
+    SetUseAlpha(true);
+    LoadShader(mImpl->worldTextureShader);
+    if (scene->star_piece_active && mImpl->worldStarTexture.id != 0U) {
+        PBWorldVec3 center = {
+            -420.0f,
+            36.0f + std::sin(static_cast<float>(scene->frames) * 0.12f) *
+                        5.0f,
+            410.0f,
+        };
+        if (BuildProjectedBillboard(mImpl->worldSpriteVertices, camera,
+                                    center, 32.0f, 32.0f,
+                                    mImpl->worldStarTexture, false)) {
+            SelectTexture(0, mImpl->worldStarTexture.id);
+            DrawTriangles(mImpl->worldSpriteVertices.data(),
+                          mImpl->worldSpriteVertices.size(), 2U);
+        }
+    }
+
+    const size_t playerFrame =
+        scene->player_frame < PB_WORLD_PLAYER_FRAME_COUNT
+            ? scene->player_frame
+            : 0U;
+    PBWorldVec3 playerCenter = scene->player_position;
+    playerCenter.y += 28.0f;
+    if (BuildProjectedBillboard(
+            mImpl->worldSpriteVertices, camera, playerCenter, 32.0f, 56.0f,
+            mImpl->worldPlayerTextures[playerFrame],
+            scene->player_facing_left)) {
+        SelectTexture(0, mImpl->worldPlayerTextures[playerFrame].id);
+        DrawTriangles(mImpl->worldSpriteVertices.data(),
+                      mImpl->worldSpriteVertices.size(), 2U);
+    }
+
+    size_t overlayVertex = 0U;
+    if (scene->message_timer != 0U) {
+        AppendShadeQuad(mImpl->worldOverlayVertices.data(), &overlayVertex,
+                        35.0f, 18.0f, 330.0f, 58.0f,
+                        0.95f, 0.82f, 0.45f, 0.98f);
+        AppendShadeQuad(mImpl->worldOverlayVertices.data(), &overlayVertex,
+                        39.0f, 22.0f, 322.0f, 50.0f,
+                        0.03f, 0.05f, 0.12f, 0.96f);
+    }
+    if (paused) {
+        AppendShadeQuad(mImpl->worldOverlayVertices.data(), &overlayVertex,
+                        0.0f, 0.0f,
+                        static_cast<float>(PB_RENDER_TOP_WIDTH),
+                        static_cast<float>(PB_RENDER_TOP_HEIGHT),
+                        0.0f, 0.0f, 0.0f, 0.48f);
+    }
+    const float fade = WorldFadeAlpha(*scene);
+    if (fade > 0.001f) {
+        AppendShadeQuad(mImpl->worldOverlayVertices.data(), &overlayVertex,
+                        0.0f, 0.0f,
+                        static_cast<float>(PB_RENDER_TOP_WIDTH),
+                        static_cast<float>(PB_RENDER_TOP_HEIGHT),
+                        0.0f, 0.0f, 0.0f, std::min(1.0f, fade));
+    }
+    if (overlayVertex != 0U) {
+        SetDepthTestAndMask(false, false);
+        SetUseAlpha(true);
+        LoadShader(mImpl->worldShadeShader);
+        DrawTriangles(mImpl->worldOverlayVertices.data(),
+                      overlayVertex * kShadeVertexStride,
+                      overlayVertex / 3U);
+    }
+
+    EndFrame();
+    return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
+}
+
 void GfxRenderingAPI3DS::SetActive(bool active) {
     if (mImpl == nullptr) {
         return;
@@ -1290,6 +1821,18 @@ extern "C" bool pb_gfx_api_3ds_render_world_background(
     PBGfxApi3DS *api, bool paused) {
     return api != nullptr && api->implementation != nullptr &&
            api->implementation->RenderWorldBackground(paused);
+}
+
+extern "C" bool pb_gfx_api_3ds_prepare_world_scene(
+    PBGfxApi3DS *api, const PBWorldScene *scene) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->PrepareWorldScene(scene);
+}
+
+extern "C" bool pb_gfx_api_3ds_render_world_scene(
+    PBGfxApi3DS *api, const PBWorldScene *scene, bool paused) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->RenderWorldScene(scene, paused);
 }
 
 extern "C" void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active) {

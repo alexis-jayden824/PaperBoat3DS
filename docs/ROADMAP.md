@@ -145,16 +145,15 @@ title art. See `docs/M12_1_PRESENTATION.md`.
 ### M13 - Core overworld gameplay
 Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.
 
-Status: **in progress; first authentic overworld integration checkpoint
-implemented**. Confirming a file slot now preflights the pinned PaperBoat
-`mac_00`/entry 6 contract against the private O2R, validates its real shape,
-vertex, representative F3DEX2 display list, collision, zone, and `nok_bg`
-resources, uploads the background without replacing the title texture, and
-enters an observable active/paused world state. The pinned upstream world,
-transition, pause, camera-math, and collision sources are cross-compiled in CI.
-Live map display-list execution, camera control, entities, collision response,
-scripts, and representative map transitions remain required before M13 can be
-closed. See `docs/M13_OVERWORLD.md`.
+Status: **software candidate; native package and emulator acceptance
+pending**. The bounded 3DS runtime now consumes every required display list,
+vertex resource, collision group, and map texture for authentic `mac_00` and
+`mac_01`; renders Mario and a Star Piece; drives movement, collision response,
+follow camera, sign interaction, pause, fades, automatic entry walking, and
+bidirectional representative transitions. Synthetic and owner-only host tests
+cover both maps and release paths. CI cross-compiles the pinned upstream world,
+transition, pause, camera-math, and collision sources. Full NPC/EVT/effect and
+chapter coverage remains M18 work. See `docs/M13_OVERWORLD.md`.
 
 ### M14 - ndsp audio backend
 Implement initialization, mixing, streaming, buffering, sample conversion, latency control, suspend/resume, and clean shutdown. Validate Folium with its required DSP firmware as a secondary check, while treating real-hardware ndsp results as authoritative.

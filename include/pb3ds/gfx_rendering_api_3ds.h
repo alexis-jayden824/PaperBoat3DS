@@ -4,6 +4,7 @@
 
 typedef struct PBTitleAssets PBTitleAssets;
 typedef struct PBTitleFlow PBTitleFlow;
+typedef struct PBWorldScene PBWorldScene;
 
 #ifdef __cplusplus
 
@@ -97,6 +98,8 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
                                 uint16_t sourceWidth,
                                 uint16_t sourceHeight);
     bool RenderWorldBackground(bool paused);
+    bool PrepareWorldScene(const PBWorldScene *scene);
+    bool RenderWorldScene(const PBWorldScene *scene, bool paused);
     void SetActive(bool active);
     const void *GetBridgeStats() const;
 
@@ -139,6 +142,11 @@ bool pb_gfx_api_3ds_prepare_world_background(
     PBGfxApi3DS *api, const uint8_t *rgba, uint16_t texture_width,
     uint16_t texture_height, uint16_t source_width, uint16_t source_height);
 bool pb_gfx_api_3ds_render_world_background(PBGfxApi3DS *api, bool paused);
+bool pb_gfx_api_3ds_prepare_world_scene(PBGfxApi3DS *api,
+                                        const PBWorldScene *scene);
+bool pb_gfx_api_3ds_render_world_scene(PBGfxApi3DS *api,
+                                       const PBWorldScene *scene,
+                                       bool paused);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
 void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api);

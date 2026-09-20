@@ -229,7 +229,7 @@ audio, and an overworld transition are documented milestone boundaries rather
 than emulator failures. Folium still cannot establish physical lifecycle,
 input, or Old 3DS performance behavior.
 
-## M13 overworld integration checkpoint
+## M13 core overworld gameplay
 
 Use the private bundle marked `0.13.0-m13` with the same owner-generated O2R
 files installed in Folium's virtual SD.
@@ -238,19 +238,20 @@ files installed in Folium's virtual SD.
    verify the pale-yellow PRESS START prompt is now visible. The fixed title
    canvas remains 320x240 with equal 40-pixel pillars; New 3DS XL emulation
    changes physical scale, not the 400x240 logical framebuffer.
-2. Enter file select and confirm any slot. The application must validate the
-   authentic `mac_00` entry-6 resources and change the top screen to the
-   centered 296x200 `nok_bg` Toad Town background.
-3. Confirm the bottom screen reports `mac_00`, entry 6, `world active`,
-   `mac_00 ready`, 223 nodes, 223 display-list references, 3,211 vertices,
-   collision `110/727/873`, zones `18/76/69`, and a 19-command sampled display
-   list. Zero rejected commands and frame failures are required.
-4. Press START once. The top screen must dim and the state must become
-   `paused`. Press START again; the background must brighten and state return
-   to `world active` with the pause counter retained.
-5. Exit with L+R+START and preserve the build SHA, captures, and log.
+2. Enter file select and confirm any slot. The application must fade into the
+   authentic textured `mac_00` geometry with Mario visible over `nok_bg`.
+3. Confirm the bottom screen reports 2,040 triangles, 41 textures, 223 display
+   lists, collision `110/727/873`, and zero rejects/failures.
+4. Exercise movement and collision, open/close the sign with A/B, and collect
+   the Star Piece. Verify the camera follows and `Star:got` is retained.
+5. Reach the east exit, verify `mac_01` entry 0 and its automatic walk-in,
+   then return through the west exit to `mac_00` entry 1 without bouncing.
+   `mac_01` should report 2,210 triangles, 48 textures, and collision
+   `98/567/684`.
+6. Pause and resume with START in each map. The top screen must dim and
+   simulation counters/position must remain frozen until resume.
+7. Exit with L+R+START and preserve the build SHA, both-screen captures, and
+   log.
 
-This checkpoint deliberately displays the authentic map background only. It
-does not yet execute the full PaperBoat map display-list tree, camera, entity,
-collision response, scripts, or transitions; their absence is remaining M13
-work, not a claim that the game has been recreated.
+This covers a representative playable slice. Full NPC/EVT/effect and chapter
+execution remains outside M13.

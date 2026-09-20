@@ -152,6 +152,8 @@ m12-layout-test:
 m13-world-test: fetch-upstream
 	@HOST_CC="$(HOST_CC)" sh tools/test_world_boot.sh \
 		"$(BUILD)/m13-tests"
+	@HOST_CC="$(HOST_CC)" sh tools/test_world_scene.sh \
+		"$(BUILD)/m13-scene-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }

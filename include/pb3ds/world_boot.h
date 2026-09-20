@@ -86,6 +86,7 @@ const char *pb_world_boot_result_name(PBWorldBootResult result);
 void pb_world_flow_init(PBWorldFlow *flow);
 PBWorldFlowEvent pb_world_flow_request(PBWorldFlow *flow,
                                        uint8_t selected_slot);
+PBWorldFlowEvent pb_world_flow_begin_transition(PBWorldFlow *flow);
 PBWorldFlowEvent pb_world_flow_finish(PBWorldFlow *flow, bool loaded);
 PBWorldFlowEvent pb_world_flow_update(PBWorldFlow *flow,
                                       const PBInputState *input);
