@@ -65,6 +65,9 @@ PBO2RResult pb_o2r_find_entries_with_prefix(PBArchive *archive,
                                              size_t entry_capacity,
                                              size_t *entry_count,
                                              PBO2RStats *stats);
+PBO2RResult pb_o2r_find_entry_by_hash(PBArchive *archive, uint64_t hash,
+                                      PBO2REntry *entry,
+                                      PBO2RStats *stats);
 PBO2RResult pb_o2r_extract_entry(PBArchive *archive,
                                  const PBO2REntry *entry,
                                  size_t maximum_size,

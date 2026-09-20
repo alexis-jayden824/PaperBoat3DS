@@ -231,27 +231,28 @@ input, or Old 3DS performance behavior.
 
 ## M13 core overworld gameplay
 
-Use the private bundle marked `0.13.0-m13` with the same owner-generated O2R
+Use the private bundle marked `0.13.2-m13r2` with the same owner-generated O2R
 files installed in Folium's virtual SD.
 
-1. On the title, capture a frame where the bottom screen reports `A:255` and
-   verify the pale-yellow PRESS START prompt is now visible. The fixed title
-   canvas remains 320x240 with equal 40-pixel pillars; New 3DS XL emulation
-   changes physical scale, not the 400x240 logical framebuffer.
-2. Enter file select and confirm any slot. The application must fade into the
-   authentic textured `mac_00` geometry with Mario visible over `nok_bg`.
-3. Confirm the bottom screen reports 2,040 triangles, 41 textures, 223 display
-   lists, collision `110/727/873`, and zero rejects/failures.
-4. Exercise movement and collision, open/close the sign with A/B, and collect
-   the Star Piece. Verify the camera follows and `Star:got` is retained.
-5. Reach the east exit, verify `mac_01` entry 0 and its automatic walk-in,
-   then return through the west exit to `mac_00` entry 1 without bouncing.
-   `mac_01` should report 2,210 triangles, 48 textures, and collision
-   `98/567/684`.
-6. Pause and resume with START in each map. The top screen must dim and
-   simulation counters/position must remain frozen until resume.
-7. Exit with L+R+START and preserve the build SHA, both-screen captures, and
-   log.
+1. Enter file select and confirm a slot. The bottom screen must change from the
+   title checkpoint to `Upstream: active`; the top screen must reach authentic
+   `mac_00` through PaperBoat's transition frames without freezing.
+2. Wait for `Mode:5`, then move in several directions. Verify Mario is visible,
+   acceleration/deceleration and facing resemble the PaperBoat/N64 reference,
+   collision stops him at the same boundaries, the camera follows, and the
+   live position/speed/action values change coherently.
+3. Press START. Verify the upstream pause UI appears and the bottom screen
+   reports `Mode:10`; player position must remain fixed. Resume and repeat this
+   at least ten times.
+4. Inspect the top screen beside matching PaperBoat/N64 footage. Record any
+   difference in framing, layer order, texture or palette selection,
+   transparency, fog, sprites, UI, or fades.
+5. Confirm the bottom screen keeps `unk:0`, `miss:0`, `Fall:0`, `bad:0`, and
+   `Reject:0` while moving and pausing. Treat any nonzero value or magenta
+   checker texture as a failure and photograph both screens immediately.
+6. Exercise the `mac_00`/`mac_01` exits if reachable in the candidate, then
+   exit with L+R+START and preserve the SHA, captures, and log.
 
-This covers a representative playable slice. Full NPC/EVT/effect and chapter
-execution remains outside M13.
+M13 stays open after a successful boot. Acceptance requires this upstream path
+to look and feel correct side by side; audio, saves, battles, and later chapter
+coverage remain blocked.

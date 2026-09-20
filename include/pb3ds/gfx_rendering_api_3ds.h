@@ -1,10 +1,24 @@
 #pragma once
 
 #include "pb3ds/gfx_bridge.h"
+#include "pb3ds/runtime_resource_types.h"
 
 typedef struct PBTitleAssets PBTitleAssets;
 typedef struct PBTitleFlow PBTitleFlow;
 typedef struct PBWorldScene PBWorldScene;
+
+typedef struct {
+    uint64_t frames_started;
+    uint64_t frames_rendered;
+    uint64_t commands;
+    uint64_t display_lists;
+    uint64_t texture_fallbacks;
+    uint32_t unknown_commands;
+    uint32_t missing_resources;
+    uint32_t malformed_lists;
+    uint32_t max_call_depth;
+    uint8_t last_unknown_opcode;
+} PBRuntimeGfxStats;
 
 #ifdef __cplusplus
 
@@ -17,6 +31,8 @@ typedef struct PBWorldScene PBWorldScene;
 #include <fast/backends/gfx_rendering_api.h>
 
 namespace PB3DS {
+
+class RuntimeDisplayListRenderer;
 
 class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
   public:
@@ -100,12 +116,18 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     bool RenderWorldBackground(bool paused);
     bool PrepareWorldScene(const PBWorldScene *scene);
     bool RenderWorldScene(const PBWorldScene *scene, bool paused);
+    bool RenderDisplayList(const PBRuntimeGfx *displayList);
+    void InvalidateRuntimeTexture(const void *address);
+    void ClearRuntimeDepth();
     void SetActive(bool active);
     const void *GetBridgeStats() const;
+    const PBRuntimeGfxStats *GetRuntimeStats() const;
 
   private:
+    void DestroyRuntimeRenderer();
     struct Impl;
     Impl *mImpl;
+    RuntimeDisplayListRenderer *mRuntimeRenderer = nullptr;
 };
 
 } // namespace PB3DS
@@ -147,8 +169,15 @@ bool pb_gfx_api_3ds_prepare_world_scene(PBGfxApi3DS *api,
 bool pb_gfx_api_3ds_render_world_scene(PBGfxApi3DS *api,
                                        const PBWorldScene *scene,
                                        bool paused);
+bool pb_gfx_api_3ds_render_display_list(PBGfxApi3DS *api,
+                                        const PBRuntimeGfx *display_list);
+void pb_gfx_api_3ds_invalidate_texture(PBGfxApi3DS *api,
+                                       const void *address);
+void pb_gfx_api_3ds_clear_depth(PBGfxApi3DS *api);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
+const PBRuntimeGfxStats *pb_gfx_api_3ds_runtime_stats(
+    const PBGfxApi3DS *api);
 void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api);
 
 #ifdef __cplusplus

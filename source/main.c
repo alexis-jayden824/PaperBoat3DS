@@ -9,10 +9,9 @@
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
 #include "pb3ds/renderer.h"
+#include "pb3ds/runtime.h"
 #include "pb3ds/title_flow.h"
 #include "pb3ds/version.h"
-#include "pb3ds/world_boot.h"
-#include "pb3ds/world_scene.h"
 
 typedef enum {
     LIFECYCLE_ACTIVE,
@@ -91,14 +90,13 @@ static void print_bottom_screen(PrintConsole *console,
                                 const PBRendererStats *renderer_stats,
                                 PBGfxApiInitResult graphics_result,
                                 const PBGfxBridgeStats *graphics_stats,
+                                const PBRuntimeGfxStats *runtime_gfx_stats,
                                 const PBFirstFrame *first_frame,
                                 bool first_frame_ready,
                                 const PBTitleAssets *title_assets,
                                 bool title_flow_ready,
                                 const PBTitleFlow *title_flow,
-                                const PBWorldScene *world_scene,
-                                const PBWorldFlow *world_flow,
-                                bool world_frame_ready) {
+                                const PBRuntime *runtime) {
     const bool renderer_ready =
         renderer_result == PB_RENDERER_INIT_OK && renderer_stats != NULL;
     const bool graphics_ready =
@@ -113,53 +111,60 @@ static void print_bottom_screen(PrintConsole *console,
     printf("\x1b[1;2HM13 Runtime Recovery\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
-    if (world_flow->state == PB_WORLD_FLOW_ACTIVE ||
-        world_flow->state == PB_WORLD_FLOW_PAUSED) {
-        printf("\x1b[6;2HMap: %s  entry:%u  slot:%u\n",
-               world_scene->map_id, (unsigned int)world_scene->entry_id,
-               (unsigned int)world_flow->selected_slot + 1U);
-        printf("\x1b[7;2HState: %s\n",
-               pb_world_flow_state_name(world_flow->state));
-        printf("\x1b[8;2HDiag scene: %s floor:%d\n",
-               pb_world_scene_result_name(world_scene->result),
-               world_scene->current_floor);
-        printf("\x1b[9;2HMesh:%lu tri %lu tex %lu DL\n",
-               (unsigned long)world_scene->stats.triangles,
-               (unsigned long)world_scene->stats.textures,
-               (unsigned long)world_scene->stats.display_lists);
-        printf("\x1b[10;2HShape:%lu node %lu leaf %lu vtx\n",
-               (unsigned long)world_scene->stats.shape_nodes,
-               (unsigned long)world_scene->stats.leaf_models,
-               (unsigned long)world_scene->stats.source_vertices);
-        printf("\x1b[11;2HHit: %lu col %lu vtx %lu tri\n",
-               (unsigned long)world_scene->stats.colliders,
-               (unsigned long)world_scene->stats.collision_vertices,
-               (unsigned long)world_scene->stats.collision_triangles);
-        printf("\x1b[12;2HPos:%5.0f,%4.0f,%5.0f move:%lu\n",
-               (double)world_scene->player_position.x,
-               (double)world_scene->player_position.y,
-               (double)world_scene->player_position.z,
-               (unsigned long)world_scene->movement_frames);
-        printf("\x1b[13;2HScripts:%lu trans:%lu star:%s\n",
-               (unsigned long)world_scene->script_events,
-               (unsigned long)world_scene->transition_count,
-               world_scene->star_piece_collected ? "GOT" : "ready");
-        printf("\x1b[14;2HRuntime: DIAG ONLY %s\n",
-               world_frame_ready ? "ready" : "FAILED");
+    if (runtime->state != PB_RUNTIME_INACTIVE) {
+        printf("\x1b[6;2HMap: mac_%02ld entry:%ld slot:%u\n",
+               (long)runtime->stats.map_id,
+               (long)runtime->stats.entry_id,
+               (unsigned int)title_flow->selected_slot + 1U);
+        printf("\x1b[7;2HUpstream: %s\n",
+               pb_runtime_state_name(runtime->state));
+        printf("\x1b[8;2Hboot_main linked; game loop active\n");
+        printf("\x1b[9;2HResources:%lu hits:%lu\n",
+               (unsigned long)runtime->resources.count,
+               (unsigned long)runtime->resources.hits);
+        printf("\x1b[10;2HUpdates:%llu frames:%llu held:%llu\n",
+               (unsigned long long)runtime->stats.updates,
+               (unsigned long long)runtime->stats.frames_submitted,
+               (unsigned long long)runtime->stats.held_frames);
+        printf("\x1b[11;2HMode:%ld block:%lu warnings:%lu\n",
+               (long)runtime->stats.game_mode,
+               (unsigned long)runtime->stats.unsupported_mode,
+               (unsigned long)runtime->stats.platform_warnings);
+        printf("\x1b[12;2HPos:%5.0f,%4.0f,%5.0f spd:%3.1f\n",
+               (double)runtime->stats.player_x,
+               (double)runtime->stats.player_y,
+               (double)runtime->stats.player_z,
+               (double)runtime->stats.player_speed);
+        printf("\x1b[13;2HPlayer action:%d\n",
+               (int)runtime->stats.player_action);
+        if (runtime->state == PB_RUNTIME_FAILED) {
+            printf("\x1b[12;2HError: %.30s\n",
+                   runtime->error != NULL ? runtime->error : "unknown");
+            printf("\x1b[13;2HResource: %.27s\n",
+                   runtime->resources.error != NULL
+                       ? runtime->resources.error : "none");
+        }
         if (graphics_ready) {
-            printf("\x1b[15;2HFrames:%llu Draws:%llu Tris:%llu\n",
+            printf("\x1b[15;2HGPU:%llu Draws:%llu Tris:%llu\n",
                    (unsigned long long)graphics_stats->frames_presented,
                    (unsigned long long)graphics_stats->draw_calls,
                    (unsigned long long)graphics_stats->triangles);
-            printf("\x1b[16;2HReject:%lu fail:%lu unsupported:%lu\n",
-                   (unsigned long)graphics_stats->rejected_commands,
-                   (unsigned long)graphics_stats->frame_failures,
-                   (unsigned long)graphics_stats->unsupported_shaders);
+            printf("\x1b[16;2HTex:%lu Fall:%llu Reject:%lu\n",
+                   (unsigned long)graphics_stats->textures_live,
+                   (unsigned long long)(runtime_gfx_stats != NULL
+                       ? runtime_gfx_stats->texture_fallbacks : 0U),
+                   (unsigned long)graphics_stats->rejected_commands);
         }
-        printf("\x1b[18;2HInteract:%s  fade:%u\n",
-               pb_world_scene_message_visible(world_scene) ? "SIGN" : "ready",
-               (unsigned int)(pb_world_scene_fade_alpha(world_scene) *
-                              100.0f));
+        if (runtime_gfx_stats != NULL) {
+            printf("\x1b[17;2HDL cmd:%llu unk:%lu miss:%lu\n",
+                   (unsigned long long)runtime_gfx_stats->commands,
+                   (unsigned long)runtime_gfx_stats->unknown_commands,
+                   (unsigned long)runtime_gfx_stats->missing_resources);
+            printf("\x1b[18;2HLists:%llu depth:%lu bad:%lu\n",
+                   (unsigned long long)runtime_gfx_stats->display_lists,
+                   (unsigned long)runtime_gfx_stats->max_call_depth,
+                   (unsigned long)runtime_gfx_stats->malformed_lists);
+        }
         printf("\x1b[19;2HSystem: %s  %s\n",
                state->model_query_ok
                    ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
@@ -170,9 +175,8 @@ static void print_bottom_screen(PrintConsole *console,
         printf("\x1b[21;2HInput: %s N64:%04X\n",
                input->waiting_for_neutral ? "WAIT" : "active",
                (unsigned int)input->n64_held);
-        printf("\x1b[22;2HStick:%4d,%4d  pauses:%lu\n",
-               input->stick_x, input->stick_y,
-               (unsigned long)world_flow->pause_count);
+        printf("\x1b[22;2HStick:%4d,%4d\n",
+               input->stick_x, input->stick_y);
         printf("\x1b[23;2HBudgets: %s fail:%lu\n",
                memory->pressure ? "PRESSURE" : "OK",
                (unsigned long)memory->allocation_failures);
@@ -182,7 +186,7 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned long)(memory->class_peak[PB_MEMORY_SCENE] / 1024));
         printf("\x1b[26;2HSD log: %s\n",
                pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
-        printf("\x1b[28;2HCircle/D-pad move; A sign\n");
+        printf("\x1b[28;2HUpstream controls and pause active\n");
         printf("\x1b[30;2HL+R+START exits checkpoint\n");
         return;
     }
@@ -237,13 +241,6 @@ static void print_bottom_screen(PrintConsole *console,
                command_permille / 10U, command_permille % 10U,
                (unsigned long)(renderer_stats->vertex_buffer_bytes / 1024U));
     }
-    if (world_flow->state == PB_WORLD_FLOW_FAILED) {
-        printf("\x1b[22;2HWorld: %s%s\n",
-               pb_world_scene_result_name(world_scene->result),
-               world_scene->result == PB_WORLD_SCENE_READY
-                   ? " (GPU failed)" : "");
-    }
-
     printf("\x1b[17;2HSystem: %s\n",
            state->model_query_ok
                ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
@@ -276,9 +273,7 @@ static void print_bottom_screen(PrintConsole *console,
            engine_archive_available ? "OK" : "--",
            game_archive_available ? "OK" : "--");
     if (title_flow_ready && title_flow->screen == PB_TITLE_FLOW_FILE_SELECT) {
-        printf("\x1b[29;2HMove: Pad  A %s  B title\n",
-               world_flow->state == PB_WORLD_FLOW_FAILED
-                   ? "retry" : "select");
+        printf("\x1b[29;2HMove: Pad  A launch  B title\n");
     } else {
         printf("\x1b[29;2HA/START opens file select\n");
     }
@@ -288,26 +283,6 @@ static void print_bottom_screen(PrintConsole *console,
 static void sample_memory(PBMemoryMonitor *monitor) {
     const uintptr_t stack_marker = (uintptr_t)&monitor;
     pb_memory_monitor_sample(monitor, stack_marker);
-}
-
-static bool load_world_scene(PBWorldScene *scene, PBArchive *archive,
-                             const char *map_id, uint8_t entry_id,
-                             PBMemoryMonitor *memory,
-                             PBGfxApi3DS *graphics) {
-    if (scene == NULL || archive == NULL || map_id == NULL ||
-        memory == NULL || graphics == NULL) {
-        return false;
-    }
-    pb_world_scene_release(scene, memory);
-    if (pb_world_scene_load(scene, archive, map_id, entry_id, memory) !=
-        PB_WORLD_SCENE_READY) {
-        return false;
-    }
-    if (!pb_gfx_api_3ds_prepare_world_scene(graphics, scene)) {
-        return false;
-    }
-    pb_world_scene_release_pixels(scene, memory);
-    return true;
 }
 
 int main(int argc, char **argv) {
@@ -342,11 +317,7 @@ int main(int argc, char **argv) {
     PBTitleFlow title_flow;
     pb_title_flow_init(&title_flow);
     bool title_flow_ready = false;
-    PBWorldScene world_scene;
-    pb_world_scene_init(&world_scene);
-    PBWorldFlow world_flow;
-    pb_world_flow_init(&world_flow);
-    bool world_frame_ready = false;
+    PBRuntime runtime;
     const uintptr_t stack_anchor = (uintptr_t)&memory_monitor;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
@@ -396,6 +367,8 @@ int main(int argc, char **argv) {
         first_frame.result = PB_FIRST_FRAME_ARCHIVE_MISSING;
     }
     state.graphics = graphics;
+    pb_runtime_init(&runtime, &game_archive, &memory_monitor, &input,
+                    graphics, &log);
 
     sample_memory(&memory_monitor);
     const PBMemorySnapshot *memory =
@@ -473,87 +446,39 @@ int main(int argc, char **argv) {
                         engine_archive_available, game_archive_available,
                         memory, &input, false, renderer_result,
                         pb_renderer_3ds_stats(renderer), graphics_result,
-                        pb_gfx_api_3ds_stats(graphics), &first_frame,
+                        pb_gfx_api_3ds_stats(graphics),
+                        pb_gfx_api_3ds_runtime_stats(graphics), &first_frame,
                         first_frame_ready, &title_assets, title_flow_ready,
-                        &title_flow, &world_scene, &world_flow,
-                        world_frame_ready);
+                        &title_flow, &runtime);
 
     u32 memory_sample_frames = 0;
     u32 diagnostics_refresh_frames = 0;
     u32 active_input_refresh_frames = 0;
     bool menu_request_seen = false;
     bool renderer_frame_failed = false;
+    bool runtime_failure_logged = false;
     while (aptMainLoop()) {
         pb_input_poll(&input);
         if ((input.native_pressed & KEY_START) != 0 &&
             (input.native_held & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) {
             break;
         }
-        if ((world_flow.state == PB_WORLD_FLOW_ACTIVE ||
-             world_flow.state == PB_WORLD_FLOW_PAUSED) &&
+        if (runtime.state == PB_RUNTIME_ACTIVE &&
             state.lifecycle == LIFECYCLE_ACTIVE) {
-            const PBWorldFlowEvent event =
-                pb_world_flow_update(&world_flow, &input);
-            if (event != PB_WORLD_FLOW_EVENT_NONE) {
+            if (!pb_runtime_update(&runtime)) {
                 state.redraw_bottom = true;
-                pb_log_write(&log, PB_LOG_INFO, "world-flow",
-                             "event=\"%s\" state=\"%s\" map=%s entry=%u",
-                             pb_world_flow_event_name(event),
-                             pb_world_flow_state_name(world_flow.state),
-                             world_scene.map_id,
-                             (unsigned int)world_scene.entry_id);
-            } else if (world_flow.state == PB_WORLD_FLOW_ACTIVE) {
-                const PBWorldSceneEvent scene_event =
-                    pb_world_scene_update(&world_scene, &input);
-                if (scene_event != PB_WORLD_SCENE_EVENT_NONE) {
-                    state.redraw_bottom = true;
-                    pb_log_write(
-                        &log, PB_LOG_INFO, "world-scene",
-                        "event=\"%s\" map=%s entry=%u pos=%.1f,%.1f,%.1f "
-                        "floor=%d scripts=%lu transitions=%lu",
-                        pb_world_scene_event_name(scene_event),
-                        world_scene.map_id,
-                        (unsigned int)world_scene.entry_id,
-                        (double)world_scene.player_position.x,
-                        (double)world_scene.player_position.y,
-                        (double)world_scene.player_position.z,
-                        world_scene.current_floor,
-                        (unsigned long)world_scene.script_events,
-                        (unsigned long)world_scene.transition_count);
-                }
-                if (scene_event ==
-                    PB_WORLD_SCENE_EVENT_TRANSITION_REQUESTED) {
-                    char requested_map[PB_WORLD_MAP_ID_CAPACITY];
-                    snprintf(requested_map, sizeof(requested_map), "%s",
-                             world_scene.requested_map);
-                    const uint8_t requested_entry =
-                        world_scene.requested_entry;
-                    (void)pb_world_flow_begin_transition(&world_flow);
-                    world_frame_ready = load_world_scene(
-                        &world_scene, &game_archive, requested_map,
-                        requested_entry, &memory_monitor, graphics);
-                    const PBWorldFlowEvent load_event =
-                        pb_world_flow_finish(&world_flow,
-                                             world_frame_ready);
-                    pb_log_write(
-                        &log,
-                        world_frame_ready ? PB_LOG_INFO : PB_LOG_ERROR,
-                        "world-transition",
-                        "event=\"%s\" result=\"%s\" archive=\"%s\" "
-                        "map=%s entry=%u tris=%lu textures=%lu "
-                        "hit=%lu/%lu/%lu",
-                        pb_world_flow_event_name(load_event),
-                        pb_world_scene_result_name(world_scene.result),
-                        pb_o2r_result_name(world_scene.archive_result),
-                        requested_map, (unsigned int)requested_entry,
-                        (unsigned long)world_scene.stats.triangles,
-                        (unsigned long)world_scene.stats.textures,
-                        (unsigned long)world_scene.stats.colliders,
-                        (unsigned long)world_scene.stats.collision_vertices,
-                        (unsigned long)world_scene.stats.collision_triangles);
+                if (!runtime_failure_logged) {
+                    runtime_failure_logged = true;
+                    pb_log_write(&log, PB_LOG_ERROR, "runtime",
+                                 "update failed: %s resource=%s",
+                                 runtime.error != NULL
+                                     ? runtime.error : "unknown",
+                                 runtime.resources.error != NULL
+                                     ? runtime.resources.error : "none");
                 }
             }
         } else if (title_flow_ready &&
+                   runtime.state == PB_RUNTIME_INACTIVE &&
                    state.lifecycle == LIFECYCLE_ACTIVE) {
             const PBTitleFlowEvent event =
                 pb_title_flow_update(&title_flow, &input);
@@ -564,40 +489,18 @@ int main(int argc, char **argv) {
                              pb_title_flow_event_name(event),
                              pb_title_flow_screen_name(title_flow.screen),
                              (unsigned int)title_flow.selected_slot + 1U);
-                if (event == PB_TITLE_FLOW_EVENT_CONFIRM_SLOT &&
-                    pb_world_flow_request(&world_flow,
-                                          title_flow.selected_slot) ==
-                        PB_WORLD_FLOW_EVENT_LOAD_REQUESTED) {
+                if (event == PB_TITLE_FLOW_EVENT_CONFIRM_SLOT) {
                     state.redraw_bottom = true;
-                    world_frame_ready = load_world_scene(
-                        &world_scene, &game_archive, "mac_00", 6U,
-                        &memory_monitor, graphics);
-                    const PBWorldFlowEvent world_event =
-                        pb_world_flow_finish(&world_flow,
-                                             world_frame_ready);
-                    pb_log_write(
-                        &log,
-                        world_frame_ready ? PB_LOG_INFO : PB_LOG_ERROR,
-                        "world-scene",
-                        "event=\"%s\" result=\"%s\" map=%s entry=%u "
-                        "slot=%u nodes=%lu leaves=%lu dl=%lu vertices=%lu "
-                        "triangles=%lu textures=%lu hit=%lu/%lu/%lu "
-                        "scene_uploaded=%s",
-                        pb_world_flow_event_name(world_event),
-                        pb_world_scene_result_name(world_scene.result),
-                        world_scene.map_id,
-                        (unsigned int)world_scene.entry_id,
-                        (unsigned int)world_flow.selected_slot + 1U,
-                        (unsigned long)world_scene.stats.shape_nodes,
-                        (unsigned long)world_scene.stats.leaf_models,
-                        (unsigned long)world_scene.stats.display_lists,
-                        (unsigned long)world_scene.stats.source_vertices,
-                        (unsigned long)world_scene.stats.triangles,
-                        (unsigned long)world_scene.stats.textures,
-                        (unsigned long)world_scene.stats.colliders,
-                        (unsigned long)world_scene.stats.collision_vertices,
-                        (unsigned long)world_scene.stats.collision_triangles,
-                        world_frame_ready ? "yes" : "no");
+                    const bool started =
+                        pb_runtime_start_toad_town(&runtime);
+                    pb_log_write(&log,
+                                 started ? PB_LOG_INFO : PB_LOG_ERROR,
+                                 "runtime-launch",
+                                 "slot=%u state=%s error=%s",
+                                 (unsigned int)title_flow.selected_slot + 1U,
+                                 pb_runtime_state_name(runtime.state),
+                                 runtime.error != NULL
+                                     ? runtime.error : "none");
                 }
             }
         }
@@ -646,22 +549,25 @@ int main(int argc, char **argv) {
                                 menu_request_seen, renderer_result,
                                 pb_renderer_3ds_stats(renderer),
                                 graphics_result,
-                                pb_gfx_api_3ds_stats(graphics), &first_frame,
+                                pb_gfx_api_3ds_stats(graphics),
+                                pb_gfx_api_3ds_runtime_stats(graphics),
+                                &first_frame,
                                 first_frame_ready, &title_assets,
-                                title_flow_ready, &title_flow, &world_scene,
-                                &world_flow, world_frame_ready);
+                                title_flow_ready, &title_flow, &runtime);
         }
 
         if (graphics != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
-            const bool rendered = world_frame_ready
-                ? pb_gfx_api_3ds_render_world_scene(
-                      graphics, &world_scene,
-                      world_flow.state == PB_WORLD_FLOW_PAUSED)
-                : (title_flow_ready
+            if (runtime.state != PB_RUNTIME_INACTIVE) {
+                if (!runtime.frame_submitted) {
+                    gspWaitForVBlank();
+                }
+                continue;
+            }
+            const bool rendered = title_flow_ready
                 ? pb_gfx_api_3ds_render_title_flow(graphics, &title_flow)
                 : (first_frame_ready
                        ? pb_gfx_api_3ds_render_first_frame(graphics)
-                       : pb_gfx_api_3ds_render_diagnostic(graphics)));
+                       : pb_gfx_api_3ds_render_diagnostic(graphics));
             if (!rendered &&
                 !renderer_frame_failed) {
                 renderer_frame_failed = true;
@@ -734,9 +640,9 @@ int main(int argc, char **argv) {
                  (unsigned long long)input.frame_index,
                  menu_request_seen ? "yes" : "no");
 
+    pb_runtime_shutdown(&runtime);
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
-    pb_world_scene_release(&world_scene, &memory_monitor);
     pb_title_assets_release_pixels(&title_assets, &memory_monitor);
     pb_first_frame_release_pixels(&first_frame, &memory_monitor);
     pb_gfx_api_3ds_destroy(graphics);

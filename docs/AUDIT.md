@@ -11,8 +11,8 @@
   proprietary assets. CI rejects those extensions.
 - One devkitARM ELF is packaged as canonical `.3dsx`, emulator `.3ds`, and
   optional CFW `.cia` outputs.
-- The application includes one bounded playable overworld slice; it is not a
-  complete playable port.
+- The application is being recovered onto PaperBoat's upstream world loop; M13
+  remains an unaccepted test candidate.
 
 ## Evidence through M8
 
@@ -135,43 +135,31 @@ message/font/window display lists, audio, or overworld execution.
 
 ## M13 candidate audit result
 
-M13 follows pinned PaperBoat data rather than inventing a new game path:
-`mac_00` entry 6 begins over `nok_bg`, and a representative Toad Town
-transition connects `mac_00` and `mac_01`. The loader now scans and validates
-the complete shape namespaces, resolves every required vertex/display-list
-resource and map texture, translates the supported F3DEX2 subset, and uploads
-bounded native geometry. The owner archive yields 2,040/2,210 triangles and
-41/48 textures for the two maps, with zero unsupported commands.
+Folium proved that the custom `PBWorldScene` could load assets and submit a
+scene, but its hand-written movement and partial rendering did not reproduce
+Paper Mario. It is retained only as diagnostic scaffolding and no longer runs
+after file confirmation.
 
-The runtime adds Mario raster frames, movement, floor and wall collision,
-follow camera, a sign interaction, a collectible Star Piece, entry walking,
-fades, bidirectional map loads, and pause that freezes simulation. Public
-stored/deflate fixtures cover the same flow without proprietary content.
-Owner-only tests cover real resource counts, both maps, both return guards,
-pixel release, and complete scene release; the scene peak remains below
-1.4 MiB. No proprietary bytes enter source control or CI.
+The recovery candidate builds the pinned PaperBoat closure, initializes the
+upstream engine, enters `mac_00` entry 6, and advances the real
+`step_game_loop`, `gfx_task_background`, and `gfx_draw_frame` path. Controller
+input reaches upstream player acceleration, collision, action, and camera
+state. PaperBoat's display lists reach a bounded 3DS interpreter with resource
+path/hash lookup, matrices, vertices, nested lists, tiles, texture loads,
+palettes, combine/other modes, alpha and blend state, fog, scissor, rectangles,
+and depth state.
 
-Folium then found a target-specific loader failure that host execution could
-not reproduce. The first candidate's scene loader required a 138,704-byte stack
-frame, but the linked 3DS executable's weak `__stacksize__` value was 32 KiB.
-Confirming a slot therefore overflowed before the world could redraw. Large
-display-list, texture-index, shape-leaf, and visited-node workspaces now live
-in the bounded transient memory class, are released on success and failure,
-and reduce the measured loader frame to 2,416 bytes.
+An owner-only 400-update host trace submitted 379 real frames, moved the
+upstream player, and entered/exited the upstream pause mode. Across 2,647,677
+commands and 1,306 loaded resources it reported zero unknown opcodes, missing
+resources, texture fallbacks, malformed lists, or renderer rejects. Public
+synthetic tests still cover archive parsing and the diagnostic scaffold without
+proprietary data; the private archive remains local.
 
-The stack-corrected Folium build then loaded `mac_00` and remained responsive,
-with pause and renderer counters working, but it did not meet visual/gameplay
-acceptance. Mario was occluded by the floor, the visible D-pad supplied mapped
-N64 C-buttons while the slice read only Circle Pad axes, and CPU-projected map
-vertices forced affine texture interpolation. The follow-up keeps camera-space
-distance as homogeneous clip W, renders actor billboards over their contact
-floor, and accepts D-pad directions as a world-movement fallback. This evidence
-keeps the PR open until the corrected native build is exercised in Folium.
-
-This is deliberately representative coverage, not a second implementation of
-the full game. NPC, complete EVT, effect, encounter, item, chapter, and audio
-execution remain attached to later roadmap milestones and must continue to use
-the pinned upstream behavior.
+This host evidence does not establish the native ARM11 link, performance, or
+visual fidelity. The PR stays open until CI produces the native candidate and
+side-by-side Folium/hardware captures establish Toad Town presentation and
+movement. Audio, saves, battles, and chapter coverage remain blocked.
 
 ## Open gates
 

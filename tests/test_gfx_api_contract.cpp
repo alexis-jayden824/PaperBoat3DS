@@ -1,4 +1,5 @@
 #include "pb3ds/gfx_rendering_api_3ds.h"
+#include "pb3ds/runtime_resources.h"
 #include "pb3ds/title_flow.h"
 #include "pb3ds/world_scene.h"
 
@@ -15,6 +16,17 @@ static uint8_t titleCopyrightPixels[256U * 32U * 4U];
 static uint8_t worldMapPixels[8U * 8U * 4U];
 static uint8_t worldActorPixels[8U * 8U * 4U];
 static PBWorldTriangle worldTriangle;
+
+extern "C" void *ResourceGetDataByName(const char *) { return nullptr; }
+extern "C" void *ResourceGetDataByCrc(uint64_t) { return nullptr; }
+extern "C" const char *ResourceGetNameByCrc(uint64_t) { return nullptr; }
+extern "C" size_t pb_runtime_resource_payload_size(const char *) { return 0U; }
+extern "C" uint32_t pb_runtime_resource_texture_type(const char *) {
+    return PB_RESOURCE_TEXTURE_ERROR;
+}
+extern "C" uint16_t ResourceGetTexWidthByName(const char *) { return 0U; }
+extern "C" uint16_t ResourceGetTexHeightByName(const char *) { return 0U; }
+extern "C" uint8_t GameEngine_OTRSigCheck(const char *) { return 0U; }
 
 #define CHECK(expression)                                                    \
     do {                                                                     \
@@ -96,6 +108,43 @@ static PBWorldScene makeWorldScene() {
         255U, 255U, 255U, 255U
     };
     return scene;
+}
+
+static bool testRuntimeDisplayList(PBGfxApi3DS *api) {
+    struct TestVertex {
+        int16_t position[3];
+        uint16_t flag;
+        int16_t texture[2];
+        uint8_t color[4];
+    };
+    static_assert(sizeof(TestVertex) == 16U, "test vertex ABI changed");
+    TestVertex vertices[3] = {
+        { { -1, -1, 0 }, 0U, { 0, 0 }, { 255U, 0U, 0U, 255U } },
+        { { 1, -1, 0 }, 0U, { 0, 0 }, { 0U, 255U, 0U, 255U } },
+        { { 0, 1, 0 }, 0U, { 0, 0 }, { 0U, 0U, 255U, 255U } },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0x01003006),
+                     reinterpret_cast<uintptr_t>(vertices) } },
+        { .words = { UINT32_C(0x05000204), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats before = *pb_gfx_api_3ds_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *after = pb_gfx_api_3ds_stats(api);
+    CHECK(after->frames_presented == before.frames_presented + 1U);
+    CHECK(after->draw_calls == before.draw_calls + 1U);
+    CHECK(after->triangles == before.triangles + 1U);
+    CHECK(after->rejected_commands == before.rejected_commands);
+    const PBRuntimeGfxStats *runtimeStats =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(runtimeStats != nullptr);
+    CHECK(runtimeStats->frames_rendered == 1U);
+    CHECK(runtimeStats->commands == 3U);
+    CHECK(runtimeStats->unknown_commands == 0U);
+    CHECK(runtimeStats->missing_resources == 0U);
+    CHECK(runtimeStats->malformed_lists == 0U);
+    return true;
 }
 
 static bool testExactInterface() {
@@ -239,6 +288,7 @@ static bool testCBoundary() {
     CHECK(stats != nullptr);
     CHECK(stats->frames_presented == 7);
     CHECK(stats->draw_calls == 16);
+    CHECK(testRuntimeDisplayList(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

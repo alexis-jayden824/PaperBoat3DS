@@ -36,7 +36,7 @@ void linearFree(void *memory) {
     free(memory);
 }
 
-u64 osGetTime(void) {
+uint64_t osGetTime(void) {
     return 1234U;
 }
 

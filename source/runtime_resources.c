@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-#define RESOURCE_LIMIT 1024U
+#define RESOURCE_LIMIT 4096U
 #define ENTRY_LIMIT PB_MIB(2)
 #define TYPE_BLOB 0x4F424C42U
 #define TYPE_VERTEX 0x4F565458U
@@ -14,7 +14,8 @@ struct PBRuntimeResource {
     PBRuntimeResource *next;
     char name[PB_O2R_NAME_CAPACITY];
     void *data;
-    size_t size, allocation;
+    size_t size, payload_size, allocation;
+    uint32_t type, texture_type;
     uint16_t width, height;
 };
 
@@ -69,6 +70,7 @@ static bool decode(PBRuntimeResources *r, PBRuntimeResource *entry,
         return false;
     }
     const uint32_t type = word(raw + 4, big);
+    entry->type = type;
     const uint8_t *payload = raw + 64;
     size_t bytes = size - 64;
     size_t allocation = 0;
@@ -83,6 +85,7 @@ static bool decode(PBRuntimeResources *r, PBRuntimeResource *entry,
         bytes = view.image_size;
         entry->width = (uint16_t)view.width;
         entry->height = (uint16_t)view.height;
+        entry->texture_type = view.type;
         allocation = bytes;
     } else if (type == TYPE_BLOB || type == TYPE_VERTEX) {
         if (bytes < 4) return false;
@@ -124,6 +127,7 @@ static bool decode(PBRuntimeResources *r, PBRuntimeResource *entry,
     entry->data = pb_memory_alloc(r->memory, PB_MEMORY_SCENE, allocation);
     if (entry->data == NULL) { r->error = "resource memory budget"; return false; }
     entry->allocation = allocation;
+    entry->payload_size = bytes;
     entry->size = (type == TYPE_DL || type == TYPE_BLOB) ? allocation : bytes;
     memset(entry->data, 0, allocation);
     if (type == TYPE_DL) {
@@ -193,7 +197,37 @@ static PBRuntimeResource *get(const char *name) {
 }
 
 void *ResourceGetDataByName(const char *name) { PBRuntimeResource *e = get(name); return e ? e->data : NULL; }
+static PBRuntimeResource *get_by_crc(uint64_t crc) {
+    PBRuntimeResources *r = bound_resources;
+    if (r == NULL || r->archive == NULL) return NULL;
+    for (PBRuntimeResource *e = r->head; e != NULL; e = e->next) {
+        uint64_t hash = UINT64_MAX;
+        for (const uint8_t *p = (const uint8_t *)e->name; *p != 0; p++) {
+            hash ^= (uint64_t)*p << 56U;
+            for (unsigned int bit = 0U; bit < 8U; bit++) {
+                hash = (hash & (UINT64_C(1) << 63U)) != 0U
+                           ? (hash << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
+                           : hash << 1U;
+            }
+        }
+        if (hash == crc) return e;
+    }
+    PBO2REntry archive_entry;
+    r->archive_error = pb_o2r_find_entry_by_hash(r->archive, crc,
+                                                  &archive_entry, NULL);
+    if (r->archive_error != PB_O2R_OK) {
+        r->error = "resource hash lookup failed";
+        return NULL;
+    }
+    return get(archive_entry.name);
+}
+void *ResourceGetDataByCrc(uint64_t crc) { PBRuntimeResource *e = get_by_crc(crc); return e ? e->data : NULL; }
+const char *ResourceGetNameByCrc(uint64_t crc) { PBRuntimeResource *e = get_by_crc(crc); return e ? e->name : NULL; }
 size_t ResourceGetSizeByName(const char *name) { PBRuntimeResource *e = get(name); return e ? e->size : 0; }
+size_t pb_runtime_resource_payload_size(const char *name) { PBRuntimeResource *e = get(name); return e ? e->payload_size : 0; }
+uint32_t pb_runtime_resource_type(const char *name) { PBRuntimeResource *e = get(name); return e ? e->type : 0; }
+uint32_t pb_runtime_resource_texture_type(const char *name) { PBRuntimeResource *e = get(name); return e ? e->texture_type : 0; }
+bool pb_runtime_resource_exists(const char *name) { return get(name) != NULL; }
 uint16_t ResourceGetTexWidthByName(const char *name) { PBRuntimeResource *e = get(name); return e ? e->width : 0; }
 uint16_t ResourceGetTexHeightByName(const char *name) { PBRuntimeResource *e = get(name); return e ? e->height : 0; }
 void *GameEngine_GetDataExact(const char *name) { return ResourceGetDataByName(name); }

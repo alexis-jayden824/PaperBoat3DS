@@ -153,9 +153,12 @@ its partial display-list translation produces incorrect presentation.
 `PBWorldScene` is now diagnostic scaffolding only. M13 cannot close until the
 pinned PaperBoat `boot_main` boundary, `step_game_loop`, and `gfx_draw_frame`
 path drive the 3DS build, including upstream player physics, collision, camera,
-entities, EVT scripts, and transitions. CI now links the real upstream entry,
-player, and camera units into one ARM11 object and verifies those symbols rather
-than merely compiling and discarding a few subsystem files. See
+entities, EVT scripts, and transitions. The recovery candidate builds the
+required 379-source runtime archive, activates it from file select, feeds its
+real display lists into the renderer, and checks the authoritative symbols in
+the final ELF. Host execution reaches `mac_00`, movement, and pause/resume with
+zero unknown commands or texture fallbacks. Native build and visual/movement
+acceptance remain open. See
 `docs/M13_RUNTIME_RECOVERY.md` and `docs/M13_OVERWORLD.md`.
 
 ### M14 - ndsp audio backend

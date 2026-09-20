@@ -6,10 +6,11 @@ This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
 the host-tested M8 native input layer, the M9 citro3d renderer foundation,
 the M10 pinned-libultraship graphics adapter, the M11 bounded legal-archive
-frame path, and the M12 title/file-select checkpoint. M13 adds a bounded
-playable overworld slice using authentic `mac_00` and `mac_01` geometry,
-textures, collision, Mario sprites, camera, representative entities/scripts,
-pause, and bidirectional transitions. It is not yet a complete PaperBoat port.
+frame path, and the M12 title/file-select checkpoint. M13 now links the pinned
+PaperBoat runtime closure into the application and hands its authentic frame
+display lists to the 3DS renderer. The older `PBWorldScene` remains a host-
+tested diagnostic scaffold and is no longer the default gameplay path. M13 is
+still open until the native build and Toad Town side-by-side acceptance pass.
 A successful package build proves that one ARM11 ELF can produce `.3dsx`,
 `.3ds`, and `.cia` artifacts.
 
@@ -112,11 +113,12 @@ make m13-world-test
 make m13-core-check
 ```
 
-`m13-core-check` cross-compiles the pinned PaperBoat world mode, demo entry,
-map transitions, pause mode, camera math, collision, world table, and pause
-implementation for ARM11. For an owner-only acceptance run, pass the generated
-private archive as a second argument to both structural and playable-scene
-tests:
+`m13-core-check` cross-compiles the 379-source PaperBoat closure needed by the
+Toad Town route and verifies the real entry, frame-loop, player, collision, and
+camera symbols in the resulting archive. The normal application build links
+that archive into the final ELF and repeats symbol checks there. For an owner-
+only diagnostic-scaffold run, pass the generated private archive as a second
+argument to both older structural and scene tests:
 
 ```sh
 sh tools/test_world_boot.sh build/m13-private /path/to/pm64.o2r
@@ -125,8 +127,8 @@ sh tools/test_world_scene.sh build/m13-scene-private /path/to/pm64.o2r
 
 Never commit or upload that private archive. The pinned archive reports 2,040
 native triangles and 41 map textures for `mac_00`, and 2,210 triangles and 48
-textures for `mac_01`. The private playable-scene suite covers both maps and
-both return-entry guards.
+textures for `mac_01`. The private diagnostic-scene suite covers both maps and
+both return-entry guards; it does not establish upstream-runtime acceptance.
 
 ## Host-side asset preparation
 

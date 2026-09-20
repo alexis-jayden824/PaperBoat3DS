@@ -27,6 +27,10 @@ typedef struct {
     size_t size;
 } PBArchive;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void pb_config_init(PBConfig *config);
 bool pb_config_load(PBConfig *config, const char *path);
 const char *pb_config_get(const PBConfig *config, const char *key,
@@ -38,3 +42,7 @@ size_t pb_archive_read(PBArchive *archive, size_t offset, void *buffer,
 void pb_archive_close(PBArchive *archive);
 
 u64 pb_platform_time_ms(void);
+
+#ifdef __cplusplus
+}
+#endif

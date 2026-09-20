@@ -398,6 +398,71 @@ PBO2RResult pb_o2r_find_entries_with_prefix(PBArchive *archive,
     return *entry_count > 0U ? PB_O2R_OK : PB_O2R_ENTRY_NOT_FOUND;
 }
 
+static uint64_t path_crc64(const char *text) {
+    uint64_t crc = UINT64_MAX;
+    while (*text != '\0') {
+        crc ^= (uint64_t)(uint8_t)*text++ << 56U;
+        for (unsigned int bit = 0U; bit < 8U; bit++) {
+            crc = (crc & (UINT64_C(1) << 63U)) != 0U
+                      ? (crc << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
+                      : crc << 1U;
+        }
+    }
+    return crc;
+}
+
+PBO2RResult pb_o2r_find_entry_by_hash(PBArchive *archive, uint64_t hash,
+                                      PBO2REntry *entry,
+                                      PBO2RStats *stats) {
+    if (archive == NULL || entry == NULL) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    memset(entry, 0, sizeof(*entry));
+
+    PBZipDirectory directory;
+    PBO2RResult result = find_directory(archive, &directory, stats);
+    if (result != PB_O2R_OK) {
+        return result;
+    }
+
+    PBZipCursor cursor;
+    cursor_init(&cursor, archive, directory.offset, directory.size, stats);
+    for (uint32_t entry_index = 0U; entry_index < directory.entries;
+         entry_index++) {
+        uint8_t header[PB_ZIP_CENTRAL_HEADER_SIZE];
+        if (!cursor_read(&cursor, header, sizeof(header))) {
+            return PB_O2R_IO_ERROR;
+        }
+        if (read_le32(header) != PB_ZIP_CENTRAL_SIGNATURE) {
+            return PB_O2R_INVALID_ZIP;
+        }
+
+        const uint16_t name_size = read_le16(&header[28]);
+        const uint16_t extra_size = read_le16(&header[30]);
+        const uint16_t comment_size = read_le16(&header[32]);
+        char name[PB_O2R_NAME_CAPACITY];
+        const bool name_available = name_size < sizeof(name);
+        if (name_available) {
+            if (!cursor_read(&cursor, name, name_size)) {
+                return PB_O2R_IO_ERROR;
+            }
+            name[name_size] = '\0';
+        } else if (!cursor_skip(&cursor, name_size)) {
+            return PB_O2R_INVALID_ZIP;
+        }
+        if (!cursor_skip(&cursor, (size_t)extra_size + comment_size)) {
+            return PB_O2R_INVALID_ZIP;
+        }
+        if (stats != NULL) {
+            stats->entries_scanned++;
+        }
+        if (name_available && path_crc64(name) == hash) {
+            return fill_entry(entry, name, name_size, header);
+        }
+    }
+    return PB_O2R_ENTRY_NOT_FOUND;
+}
+
 static uint32_t calculate_crc32(const uint8_t *data, size_t size) {
     uint32_t crc = UINT32_MAX;
     for (size_t index = 0; index < size; index++) {

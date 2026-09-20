@@ -27,7 +27,14 @@ void pb_runtime_resources_clear(PBRuntimeResources *resources);
 void pb_runtime_resources_bind(PBRuntimeResources *resources);
 
 void *ResourceGetDataByName(const char *name);
+void *ResourceGetDataByCrc(uint64_t crc);
+const char *ResourceGetNameByCrc(uint64_t crc);
 size_t ResourceGetSizeByName(const char *name);
+/* Exact serialized payload size, excluding BlobFactory's safety padding. */
+size_t pb_runtime_resource_payload_size(const char *name);
+uint32_t pb_runtime_resource_type(const char *name);
+uint32_t pb_runtime_resource_texture_type(const char *name);
+bool pb_runtime_resource_exists(const char *name);
 uint16_t ResourceGetTexWidthByName(const char *name);
 uint16_t ResourceGetTexHeightByName(const char *name);
 void *GameEngine_GetDataExact(const char *name);

@@ -31,6 +31,7 @@ mkdir -p "$build_directory"
     -I"$project_root/tests/mocks" -I"$project_root/include" \
     -I"$upstream_include" \
     "$project_root/source/gfx_rendering_api_3ds.cpp" \
+    "$project_root/source/runtime_gfx.cpp" \
     "$project_root/tests/test_gfx_api_contract.cpp" \
     "$build_directory/renderer.o" "$build_directory/gfx_bridge.o" \
     "$build_directory/title_layout.o" \

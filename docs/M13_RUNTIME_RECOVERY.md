@@ -73,13 +73,20 @@ until Toad Town genuinely looks and feels correct on this upstream-driven path.
 
 ## Current evidence
 
-The previous M13 check compiled nine upstream files independently and discarded
-their objects. It did not prove runtime integration. The recovery check now
-links the real entry loop, initialization, frame builder, world state,
-player-input/physics, collision, EVT, and camera units into a single ARM11
-relocatable object and verifies the authoritative symbols. This is the first
-integration gate, not completion: the next gate is resolving the platform
-closure and placing that object in the final ELF.
+The recovery candidate now builds a 379-source archive from the pinned
+PaperBoat revision. The application activates it after file confirmation,
+initializes the real game globals and engine data, enters `mac_00` entry 6
+through `GAME_MODE_ENTER_DEMO_WORLD`, and advances frames through upstream
+`Graphics_ThreadUpdate`. That path calls `step_game_loop`,
+`gfx_task_background`, and `gfx_draw_frame`; `Graphics_PushFrame` sends their
+display list to the 3DS interpreter. `PBWorldScene` is absent from the default
+application loop.
+
+The desktop port also avoids calling `boot_main` directly because it installs
+NuSystem callbacks and never returns. The 3DS adapter preserves that boundary's
+initialization and frame behavior without entering the original scheduler.
+The build forces `boot_main` into the executable and checks the final ELF for
+the entry, frame, player, camera, and 3DS handoff symbols.
 
 ### Native resource adapter
 
@@ -92,12 +99,11 @@ native pointer-width `Gfx` packets. Texture/palette bytes retain their original
 byte order. Blob storage includes upstream's 16-byte zero padding.
 
 The cache never evicts behind live game pointers. Its owner must stop all game
-and GPU users before clearing it. It is limited to 1,024 resources, a 2 MiB
-serialized-entry limit, and the existing scene memory budget. Archive lookup is
-currently name-based and scans the directory on cache misses; CRC-name indexing,
-engine/game archive routing, and an explicit map-lifetime policy remain needed
-before full-runtime activation. Unsupported versions/types fail rather than
-returning serialized bytes as if they were native objects.
+and GPU users before clearing it. It is limited to 4,096 resources, a 2 MiB
+serialized-entry limit, and the existing scene memory budget. Name and CRC
+lookups both resolve against the archive and return the same stable cached
+objects. Unsupported versions and types fail rather than returning serialized
+bytes as if they were native objects.
 
 `sh tools/test_runtime_resources.sh` links and executes the pinned upstream
 `Shape_LoadFromRawData` against synthetic O2R data supplied by this adapter.
@@ -107,6 +113,26 @@ stable mutable pointers, malformed inputs, memory rejection/retry, and teardown.
 `SANITIZE=1` adds ASan/UBSan to that same integration test. The ARM11 check also
 compiles the consumer's ABI assertions against the real pinned `Gfx` type.
 
-This adapter is not yet bound by the default application loop. The shipped
-application still uses the diagnostic scene; the new resource tests do not
-establish a running world, renderer fidelity, or completion of M13.
+### Host runtime trace
+
+An owner-only host run against the generated `pm64.o2r` exercised 400 updates,
+including directional input and pause/resume. After 21 transition-held updates,
+379 frames were submitted from the real game loop. The trace recorded 54,093
+draws, 344,591 triangles, 1,033,773 vertices, 1,306 runtime resources,
+2,647,677 display-list commands, 151,115 nested lists, and a maximum call depth
+of five. Player position, speed, and action changed under input and remained
+fixed during pause.
+
+The captured `mac_00` and pause stream has zero unknown opcodes, missing
+resources, texture decode fallbacks, malformed lists, renderer rejects, or
+frame failures. It covers matrices, geometry modes, vertices, triangles,
+nested lists, texture images/tiles/sizes/loads, TLUT palettes, combine and
+other modes, colors, alpha/blending state, fog, rectangles, scissor, depth,
+and PaperBoat's resource-path/hash commands. The interpreter exposes these
+counters on the bottom screen so the native run can detect a route-specific
+gap immediately.
+
+This evidence proves the host runtime and resource/display-list closure. It
+does not prove the ARM11 link, 3DS performance, or presentation fidelity. M13
+remains open until the native build passes and side-by-side captures establish
+Toad Town framing, layers, textures, transparency, fog, and movement feel.

@@ -192,22 +192,23 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.0-m13` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.2-m13r2` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
-1. Verify authentic textured `mac_00`, Mario, and the 296x200 `nok_bg`
-   viewport appear after file confirmation.
-2. Exercise movement, wall collision, follow camera, the sign, and Star Piece.
-3. Traverse `mac_00` to `mac_01` and back, checking fades, automatic entry
-   walking, and no immediate loading-zone bounce.
-4. Pause and resume at least ten times and verify position, counters, dim
-   overlay, and the input neutral gate remain stable.
+1. Verify file confirmation reaches upstream `mac_00` without a freeze and the
+   bottom screen reports `Upstream: active`, then `Mode:5`.
+2. Compare Mario movement, collision, camera, sprites, textures, palettes,
+   transparency, fog, UI, fades, and framing with the same PaperBoat/N64 route.
+3. Pause and resume at least ten times and verify upstream `Mode:10`, fixed
+   player position while paused, and clean return to `Mode:5`.
+4. Traverse `mac_00` to `mac_01` and back if reachable, checking upstream
+   scripts, fades, entry motion, and loading-zone guards.
 5. Close the lid while active and once while paused. On wake, release all
    controls and verify rendering resumes in the prior world state.
-6. Confirm zero renderer rejects, frame failures, stream overflows, unsupported
-   map commands, and memory budget failures, then preserve
-   `PaperBoat3DS.log`.
+6. Confirm `unk`, `miss`, `Fall`, `bad`, renderer rejects, frame failures,
+   stream overflows, and memory failures remain zero, then preserve the exact
+   build SHA, both-screen captures, and `PaperBoat3DS.log`.
 
-This validates the representative playable slice only. Full NPC/EVT/effect and
-chapter coverage remains a later milestone.
+This validates only the M13 Toad Town route. Audio, saves, battles, and later
+chapter coverage remain blocked until its presentation and movement pass.

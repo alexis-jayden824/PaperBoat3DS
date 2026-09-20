@@ -7,12 +7,12 @@ An experimental native Nintendo 3DS port of PaperBoat.
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
 on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
 real-ROM acceptance run, and M8-M12.1 have package plus Folium evidence. M13
-is a software candidate: the native runtime now renders the authentic
-`mac_00` and `mac_01` map resources, moves Mario with collision and a follow
-camera, supports a sign and Star Piece, pauses, and transitions bidirectionally
-with fades. Final native-package and Folium acceptance are still required.
-Real-hardware validation remains pending; the project owner is the hardware
-tester.
+is in upstream-runtime recovery: the application is now wired to PaperBoat's
+real world loop and display lists instead of the custom diagnostic scene. A
+private host trace enters `mac_00`, moves the upstream player, pauses/resumes,
+and renders 379 frames without an unknown command, missing resource, texture
+fallback, malformed list, or renderer rejection. Native ARM11 build and
+side-by-side Folium/hardware presentation acceptance are still required.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.
@@ -41,8 +41,10 @@ The M12 resource contract, input transitions, orientation fix, and explicit
 graphical boundary are in [docs/M12_TITLE_FLOW.md](docs/M12_TITLE_FLOW.md).
 The M12.1 screen geometry and New 3DS XL/LL validation contract are in
 [docs/M12_1_PRESENTATION.md](docs/M12_1_PRESENTATION.md).
-The M13 playable-slice contract, upstream anchors, test procedure, and explicit
-content boundary are in [docs/M13_OVERWORLD.md](docs/M13_OVERWORLD.md).
+The recovered upstream-runtime boundary and acceptance gates are in
+[docs/M13_RUNTIME_RECOVERY.md](docs/M13_RUNTIME_RECOVERY.md). The older custom
+scene is documented as diagnostic scaffolding in
+[docs/M13_OVERWORLD.md](docs/M13_OVERWORLD.md).
 
 ## Legal asset policy
 

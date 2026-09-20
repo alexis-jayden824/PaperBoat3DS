@@ -8,7 +8,7 @@ u32 osGetMemRegionFree(int region) { (void)region; return PB_MIB(32); }
 u32 linearSpaceFree(void) { return PB_MIB(16); }
 void *linearAlloc(size_t size) { return malloc(size); }
 void linearFree(void *p) { free(p); }
-u64 osGetTime(void) { return 0; }
+uint64_t osGetTime(void) { return 0; }
 extern int test_upstream_resource_consumer(void);
 
 int main(int argc, char **argv) {

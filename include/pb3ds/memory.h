@@ -49,6 +49,10 @@ typedef struct {
     uintptr_t stack_anchor;
 } PBMemoryMonitor;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void pb_memory_monitor_init(PBMemoryMonitor *monitor, uintptr_t stack_anchor);
 void pb_memory_monitor_sample(PBMemoryMonitor *monitor, uintptr_t stack_pointer);
 const PBMemorySnapshot *pb_memory_monitor_snapshot(const PBMemoryMonitor *monitor);
@@ -62,3 +66,7 @@ void pb_memory_free(PBMemoryMonitor *monitor, PBMemoryClass memory_class,
                     void *memory, size_t size);
 
 const char *pb_memory_class_name(PBMemoryClass memory_class);
+
+#ifdef __cplusplus
+}
+#endif

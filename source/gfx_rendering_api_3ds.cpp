@@ -565,6 +565,7 @@ GfxRenderingAPI3DS::GfxRenderingAPI3DS(PBRenderer3DS *renderer)
     : mImpl(new (std::nothrow) Impl(renderer)) {}
 
 GfxRenderingAPI3DS::~GfxRenderingAPI3DS() {
+    DestroyRuntimeRenderer();
     if (mImpl != nullptr) {
         for (const PBGfxTextureRecord &texture : mImpl->bridge.textures) {
             if (texture.allocated) {
@@ -1842,6 +1843,25 @@ extern "C" bool pb_gfx_api_3ds_render_world_scene(
            api->implementation->RenderWorldScene(scene, paused);
 }
 
+extern "C" bool pb_gfx_api_3ds_render_display_list(
+    PBGfxApi3DS *api, const PBRuntimeGfx *displayList) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->RenderDisplayList(displayList);
+}
+
+extern "C" void pb_gfx_api_3ds_invalidate_texture(
+    PBGfxApi3DS *api, const void *address) {
+    if (api != nullptr && api->implementation != nullptr) {
+        api->implementation->InvalidateRuntimeTexture(address);
+    }
+}
+
+extern "C" void pb_gfx_api_3ds_clear_depth(PBGfxApi3DS *api) {
+    if (api != nullptr && api->implementation != nullptr) {
+        api->implementation->ClearRuntimeDepth();
+    }
+}
+
 extern "C" void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active) {
     if (api != nullptr && api->implementation != nullptr) {
         api->implementation->SetActive(active);
@@ -1855,6 +1875,13 @@ extern "C" const PBGfxBridgeStats *pb_gfx_api_3ds_stats(
     }
     return static_cast<const PBGfxBridgeStats *>(
         api->implementation->GetBridgeStats());
+}
+
+extern "C" const PBRuntimeGfxStats *pb_gfx_api_3ds_runtime_stats(
+    const PBGfxApi3DS *api) {
+    return api != nullptr && api->implementation != nullptr
+               ? api->implementation->GetRuntimeStats()
+               : nullptr;
 }
 
 extern "C" void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api) {
