@@ -205,6 +205,31 @@ static bool test_buffer_contract_and_status(void) {
     CHECK(!pb_renderer_vertex_buffer_size(SIZE_MAX, 2, &bytes));
     CHECK(!pb_renderer_vertex_buffer_size(36, 9, NULL));
 
+    size_t first_vertex = SIZE_MAX;
+    size_t next_used_vertices = SIZE_MAX;
+    CHECK(pb_renderer_stream_reserve(1152, 0, 6, &first_vertex,
+                                     &next_used_vertices));
+    CHECK(first_vertex == 0);
+    CHECK(next_used_vertices == 6);
+    CHECK(pb_renderer_stream_reserve(1152, next_used_vertices, 3,
+                                     &first_vertex,
+                                     &next_used_vertices));
+    CHECK(first_vertex == 6);
+    CHECK(next_used_vertices == 9);
+    CHECK(pb_renderer_stream_reserve(1152, 1151, 1, &first_vertex,
+                                     &next_used_vertices));
+    CHECK(first_vertex == 1151);
+    CHECK(next_used_vertices == 1152);
+    CHECK(!pb_renderer_stream_reserve(1152, 1152, 1, &first_vertex,
+                                      &next_used_vertices));
+    CHECK(!pb_renderer_stream_reserve(1152, 1153, 1, &first_vertex,
+                                      &next_used_vertices));
+    CHECK(!pb_renderer_stream_reserve(1152, 0, 0, &first_vertex,
+                                      &next_used_vertices));
+    CHECK(!pb_renderer_stream_reserve(1152, 0, 1, NULL,
+                                      &next_used_vertices));
+    CHECK(!pb_renderer_stream_reserve(1152, 0, 1, &first_vertex, NULL));
+
     CHECK(strcmp(pb_renderer_init_result_name(PB_RENDERER_INIT_OK),
                  "ready") == 0);
     CHECK(strcmp(pb_renderer_init_result_name(PB_RENDERER_INIT_SHADER),

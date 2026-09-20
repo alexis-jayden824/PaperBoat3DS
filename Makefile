@@ -29,6 +29,9 @@ HOST_CXX        ?= c++
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 UPSTREAM_ROOT   ?= $(CURDIR)/.cache/upstream
 PAPERBOAT_ROOT  := $(UPSTREAM_ROOT)/PaperBoat
+TORCH_ZLIB_ROOT := $(PAPERBOAT_ROOT)/external/torch/lib/StormLib/src/zlib
+ZLIB_CFILES     := adler32.c inffast.c inflate.c inftrees.c zutil.c
+ZLIB_OFILES     := $(ZLIB_CFILES:.c=.o)
 M5_BUILD        := $(CURDIR)/build/m5-core
 M5_GAME_SOURCES := \
 	src/main_pre.c \
@@ -66,10 +69,12 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT  := $(CURDIR)/$(TARGET)
 export TOPDIR  := $(CURDIR)
 export VPATH   := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-                  $(foreach dir,$(DATA),$(CURDIR)/$(dir))
+                  $(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
+                  $(TORCH_ZLIB_ROOT)
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
-CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))) \
+            $(ZLIB_CFILES)
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 PICAFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.v.pica)))
@@ -89,6 +94,7 @@ export HFILES         := $(addsuffix .h,$(subst .,_,$(BINFILES))) \
                          $(PICAFILES:.v.pica=_shbin.h)
 export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                          -I$(PAPERBOAT_ROOT)/external/libultraship/include \
+                         -I$(TORCH_ZLIB_ROOT) \
                          $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                          -I$(CURDIR)/$(BUILD)
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
@@ -96,7 +102,8 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m6-policy-test \
-	m6-budget-check m8-input-test m9-renderer-test m10-graphics-test clean
+	m6-budget-check m8-input-test m9-renderer-test m10-graphics-test \
+	m11-frame-test clean
 
 all: fetch-upstream $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -119,6 +126,9 @@ m10-graphics-test: fetch-upstream
 	@HOST_CC="$(HOST_CC)" sh tools/test_gfx_bridge.sh "$(BUILD)/m10-tests"
 	@HOST_CC="$(HOST_CC)" HOST_CXX="$(HOST_CXX)" \
 		sh tools/test_gfx_api_contract.sh "$(BUILD)/m10-api-tests"
+
+m11-frame-test: fetch-upstream
+	@HOST_CC="$(HOST_CC)" sh tools/test_first_frame.sh "$(BUILD)/m11-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
@@ -168,6 +178,9 @@ clean:
 		$(TARGET)-stripped.elf $(TARGET).smdh $(TARGET).elf $(TARGET).map
 
 else
+
+$(ZLIB_OFILES): CFLAGS += -DNO_GZIP -Wno-endif-labels \
+	-Wno-shift-negative-value -Wno-implicit-fallthrough
 
 $(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS)
 $(OFILES_SOURCES): $(HFILES)

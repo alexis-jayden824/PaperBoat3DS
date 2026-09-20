@@ -35,6 +35,8 @@ constexpr uint64_t kTextureShadeShader =
     PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 0) |
     PackFormula(PB_GFX_SHADER_TEXEL0_ALPHA, 0, PB_GFX_SHADER_SHADE, 0, 16);
 constexpr uint64_t kAlphaOption = uint64_t{1} << PB_GFX_OPT_ALPHA;
+constexpr size_t kFirstFrameVertexStride = 11U;
+constexpr size_t kFirstFrameVertexCount = 6U;
 
 PBTextureWrap TranslateWrap(uint32_t mode) {
     const bool mirror = (mode & 1U) != 0;
@@ -163,6 +165,23 @@ float kSailVertices[] = {
     202.0f, 196.0f, 0.70f, 1.0f, 0.0f, 0.16f, 0.95f, 0.78f, 0.88f,
 };
 
+void SetFirstFrameVertex(
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount> &vertices,
+    size_t index, float x, float y, float u, float v) {
+    const size_t offset = index * kFirstFrameVertexStride;
+    vertices[offset + 0U] = x;
+    vertices[offset + 1U] = y;
+    vertices[offset + 2U] = 0.45f;
+    vertices[offset + 3U] = 1.0f;
+    vertices[offset + 4U] = 0.0f;
+    vertices[offset + 5U] = u;
+    vertices[offset + 6U] = v;
+    vertices[offset + 7U] = 1.0f;
+    vertices[offset + 8U] = 1.0f;
+    vertices[offset + 9U] = 1.0f;
+    vertices[offset + 10U] = 1.0f;
+}
+
 } // namespace
 
 namespace PB3DS {
@@ -178,6 +197,7 @@ struct GfxRenderingAPI3DS::Impl {
     Fast::ShaderProgram *currentShader = nullptr;
     Fast::ShaderProgram *diagnosticTextureShader = nullptr;
     Fast::ShaderProgram *diagnosticShadeShader = nullptr;
+    Fast::ShaderProgram *firstFrameShader = nullptr;
     Fast::FilteringMode filterMode = Fast::FILTER_THREE_POINT;
     PBRenderPipeline pipeline = {
         PB_CULL_NONE, false, false, PB_COMPARE_GREATER_EQUAL,
@@ -185,6 +205,9 @@ struct GfxRenderingAPI3DS::Impl {
         PB_WRAP_REPEAT, PB_WRAP_REPEAT,
     };
     uint32_t diagnosticTexture = 0;
+    uint32_t firstFrameTexture = 0;
+    std::array<float, kFirstFrameVertexStride * kFirstFrameVertexCount>
+        firstFrameVertices = {};
     int currentTile = 0;
     bool zmodeDecal = false;
     bool strictDecal = false;
@@ -256,6 +279,7 @@ void GfxRenderingAPI3DS::ClearShaderCache() {
     mImpl->currentShader = nullptr;
     mImpl->diagnosticTextureShader = nullptr;
     mImpl->diagnosticShadeShader = nullptr;
+    mImpl->firstFrameShader = nullptr;
     for (Fast::ShaderProgram &shader : mImpl->shaders) {
         shader = {};
     }
@@ -704,6 +728,94 @@ bool GfxRenderingAPI3DS::RenderDiagnostic() {
     return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
 }
 
+bool GfxRenderingAPI3DS::PrepareFirstFrame(
+    const uint8_t *rgba, uint16_t textureWidth, uint16_t textureHeight,
+    uint16_t sourceWidth, uint16_t sourceHeight) {
+    if (mImpl == nullptr || rgba == nullptr || sourceWidth == 0 ||
+        sourceHeight == 0 || sourceWidth > textureWidth ||
+        sourceHeight > textureHeight || sourceWidth > PB_RENDER_TOP_WIDTH ||
+        sourceHeight > PB_RENDER_TOP_HEIGHT) {
+        return false;
+    }
+    Init();
+    mImpl->firstFrameShader =
+        CreateAndLoadNewShader(kTextureShadeShader, kAlphaOption);
+    if (mImpl->firstFrameShader == nullptr ||
+        !mImpl->firstFrameShader->plan.supported) {
+        return false;
+    }
+    if (mImpl->firstFrameTexture != 0) {
+        DeleteTexture(mImpl->firstFrameTexture);
+        mImpl->firstFrameTexture = 0;
+    }
+    mImpl->firstFrameTexture = NewTexture();
+    if (mImpl->firstFrameTexture == 0) {
+        return false;
+    }
+    SelectTexture(0, mImpl->firstFrameTexture);
+    UploadTexture(rgba, textureWidth, textureHeight);
+    SetTextureFilter(Fast::FILTER_LINEAR);
+    SetSamplerParameters(0, true, 2U, 2U);
+    const PBGfxTextureRecord *record = pb_gfx_bridge_find_texture(
+        &mImpl->bridge, mImpl->firstFrameTexture);
+    if (record == nullptr || !record->uploaded) {
+        DeleteTexture(mImpl->firstFrameTexture);
+        mImpl->firstFrameTexture = 0;
+        return false;
+    }
+
+    const float left =
+        (static_cast<float>(PB_RENDER_TOP_WIDTH) - sourceWidth) * 0.5f;
+    const float bottom =
+        (static_cast<float>(PB_RENDER_TOP_HEIGHT) - sourceHeight) * 0.5f;
+    const float right = left + sourceWidth;
+    const float top = bottom + sourceHeight;
+    const float minimumU = 0.5f / static_cast<float>(textureWidth);
+    const float minimumV = 0.5f / static_cast<float>(textureHeight);
+    const float maximumU =
+        (static_cast<float>(sourceWidth) - 0.5f) /
+        static_cast<float>(textureWidth);
+    const float maximumV =
+        (static_cast<float>(sourceHeight) - 0.5f) /
+        static_cast<float>(textureHeight);
+    SetFirstFrameVertex(mImpl->firstFrameVertices, 0, left, bottom, minimumU,
+                        maximumV);
+    SetFirstFrameVertex(mImpl->firstFrameVertices, 1, right, bottom,
+                        maximumU, maximumV);
+    SetFirstFrameVertex(mImpl->firstFrameVertices, 2, right, top, maximumU,
+                        minimumV);
+    SetFirstFrameVertex(mImpl->firstFrameVertices, 3, right, top, maximumU,
+                        minimumV);
+    SetFirstFrameVertex(mImpl->firstFrameVertices, 4, left, top, minimumU,
+                        minimumV);
+    SetFirstFrameVertex(mImpl->firstFrameVertices, 5, left, bottom, minimumU,
+                        maximumV);
+    return true;
+}
+
+bool GfxRenderingAPI3DS::RenderFirstFrame() {
+    if (mImpl == nullptr || mImpl->firstFrameShader == nullptr ||
+        mImpl->firstFrameTexture == 0) {
+        return false;
+    }
+    const uint64_t previousFrames = mImpl->bridge.stats.frames_presented;
+    StartFrame();
+    if (!mImpl->bridge.frame_open) {
+        return false;
+    }
+    SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+    SetDepthTestAndMask(false, false);
+    SetCullMode(0);
+    LoadShader(mImpl->firstFrameShader);
+    SelectTexture(0, mImpl->firstFrameTexture);
+    SetUseAlpha(false);
+    DrawTriangles(mImpl->firstFrameVertices.data(),
+                  mImpl->firstFrameVertices.size(), 2);
+    EndFrame();
+    return mImpl->bridge.stats.frames_presented == previousFrames + 1U;
+}
+
 void GfxRenderingAPI3DS::SetActive(bool active) {
     if (mImpl == nullptr) {
         return;
@@ -776,6 +888,19 @@ extern "C" bool pb_gfx_api_3ds_prepare_diagnostic(PBGfxApi3DS *api) {
 extern "C" bool pb_gfx_api_3ds_render_diagnostic(PBGfxApi3DS *api) {
     return api != nullptr && api->implementation != nullptr &&
            api->implementation->RenderDiagnostic();
+}
+
+extern "C" bool pb_gfx_api_3ds_prepare_first_frame(
+    PBGfxApi3DS *api, const uint8_t *rgba, uint16_t textureWidth,
+    uint16_t textureHeight, uint16_t sourceWidth, uint16_t sourceHeight) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->PrepareFirstFrame(
+               rgba, textureWidth, textureHeight, sourceWidth, sourceHeight);
+}
+
+extern "C" bool pb_gfx_api_3ds_render_first_frame(PBGfxApi3DS *api) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->RenderFirstFrame();
 }
 
 extern "C" void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active) {

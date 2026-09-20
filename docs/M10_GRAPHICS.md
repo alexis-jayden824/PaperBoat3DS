@@ -37,7 +37,9 @@ rotated to the native 240x400 PICA target.
   source compilation for a combiner.
 - Each draw is limited to 384 triangles and 64 KiB of source vertex data. The
   native conversion buffer is one fixed linear allocation sized for 1,152
-  vertices and reused on every draw.
+  vertices. M11 resets it once per frame and gives each draw a non-overlapping
+  span; the earlier per-draw overwrite was unsafe while PICA consumed queued
+  commands asynchronously.
 - Draws are rejected unless their float count exactly matches libultraship's
   active layout: `position4 + matrix-slot1`, optional UV pairs, and optional
   RGB/RGBA shade.
@@ -78,9 +80,10 @@ not represented as successful no-ops.
 
 The pinned base class accepts and retains transform, lighting, combiner, and
 custom uniform blocks. M10's diagnostic supplies already projected screen
-coordinates; applying the matrix palette and expanding the combiner subset for
-the first real display list is the M11 integration task. This limitation is
-recorded rather than hidden behind a gameplay claim.
+coordinates. M11 establishes the first legal archive-backed image through the
+same texture/draw path; applying the game matrix palette and expanding the
+combiner subset for live title/file-select display lists remains M12 work. This
+limitation is recorded rather than hidden behind a gameplay claim.
 
 ## Validation
 
@@ -105,7 +108,10 @@ non-empty `.3dsx`, `.3ds`, and `.cia` packages from the same ELF. The archived
 build has SHA-256
 `c378d54cb66bddd0c00676843b316e87c8e172fe9a127e1b3e2a38b0713c5517`.
 
-Emulator acceptance still requires Folium to show the checker plus clearly
-visible sail while frames/draws advance with zero failures and zero unsupported
-shaders. Real hardware remains authoritative for APT lifecycle recovery, PICA
-behavior, memory headroom, and Old 3DS performance.
+Folium build `bc0139a2f292` showed the clearly visible sail, exact two-draw and
+three-triangle ratios, zero failures, zero rejects, and zero unsupported
+shaders. It also showed only half of the checker rectangle. That evidence
+identified a native streaming lifetime defect rather than an adapter-contract
+failure; M11 fixes it with non-overlapping same-frame spans and adds overflow
+telemetry. Real hardware remains authoritative for APT lifecycle recovery,
+PICA behavior, memory headroom, and Old 3DS performance.

@@ -135,3 +135,28 @@ Use the newest passing `port/3ds` `.3dsx` artifact marked `0.10.0-m10`.
 Report the build SHA, model, firmware, launch environment, photos, lifecycle
 result, and complete log. The New 3DS XL/LL result validates the owner's target
 console. Old 3DS data remains required for the performance and memory baseline.
+
+## M11 first archive-frame checkpoint
+
+Use the newest private `port/3ds` `.3dsx` bundle marked `0.11.0-m11`. Copy its
+two O2R files beside the executable under `/3ds/PaperBoat3DS/`; do not share or
+upload those user-generated archives.
+
+1. Cold-boot and confirm the top screen shows the centered 296x200 title
+   background with correct orientation, colors, and both triangles intact.
+2. Confirm the bottom screen reports `Frame: title_bg`, `O2R: ready`, one draw
+   and two triangles per frame, zero rejects/failures, and zero stream
+   overflows.
+3. Leave it active for 60 seconds and check for corruption, flicker, memory
+   pressure, or counter stalls.
+4. Close the lid for at least five seconds, reopen it, and confirm rendering
+   and the input neutral gate recover.
+5. Exit with START and preserve `PaperBoat3DS.log`.
+6. As a separate negative test, rename `pm64.o2r`, relaunch, and confirm the
+   complete checker rectangle plus sail appears with an explicit missing-
+   archive fallback; restore the filename afterward.
+
+Report the exact build SHA, New 3DS XL/LL model, firmware, launch environment,
+success/fallback photos, lifecycle result, and log. This checkpoint validates a
+legal archive-backed static frame, not title input, game-state execution, audio,
+or playability. Old 3DS measurements remain part of the performance baseline.

@@ -88,17 +88,31 @@ shade-only TEV draw. Physical PICA and lifecycle evidence remains; see
 ### M10 - libultraship graphics integration
 Connect the renderer to libultraship's graphics contract and replace desktop window/context behavior with 3DS lifecycle handling.
 
-Status: **software complete; emulator/hardware pending**. A concrete adapter
+Status: **software and emulator complete; hardware pending**. A concrete adapter
 implements the exact pinned `Fast::GfxRenderingAPI` vtable with bounded shader,
 texture, streaming, state, frame, and APT-lifecycle behavior. The supported
 one-cycle TEV baseline and all rejected features are explicit. Post-merge CI
 run 114 built `.3dsx`, `.3ds`, and `.cia` from merge
-`4b5e6faef11ef469953a86d1ca84ecde32844d3a`. Folium must still confirm the
-distinct checker/sail draws and live adapter counters; physical lifecycle and
-PICA validation remain authoritative. See `docs/M10_GRAPHICS.md`.
+`4b5e6faef11ef469953a86d1ca84ecde32844d3a`. Folium build
+`bc0139a2f292` confirmed the two TEV programs, advancing two-draw/three-triangle
+counters, visible sail, zero rejects, and zero frame failures. The capture also
+exposed same-frame VBO reuse in the native layer: the sail overwrote one checker
+triangle before GPU consumption. M11 replaces per-draw overwrite with a bounded
+per-frame streaming arena. Physical lifecycle and PICA validation remain
+authoritative. See `docs/M10_GRAPHICS.md`.
 
 ### M11 - First rendered game frame
 Load legal archives and display a deterministic Paper Mario frame on the top screen with diagnostic fallback on failure.
+
+Status: **implementation in validation**. A bounded O2R reader locates and
+CRC-checks the legal `backgrounds/title_bg` CI8 image and RGBA16 palette,
+inflates only those fixed entries, decodes them into a 512x256 RGBA8 GPU
+texture, and renders the 296x200 frame centered on the top screen through the
+M10 adapter. Missing, malformed, unsupported, oversized, or memory-rejected
+inputs retain the checker/sail fallback with an explicit reason. Synthetic
+ZIP64-local-header tests and a private local test against the project owner's
+generated archive pass; native CI and Folium evidence are the remaining gates.
+See `docs/M11_FIRST_FRAME.md`.
 
 ### M12 - Title and file-select flow
 Reach title/file-select, validate transitions and input, and document remaining graphical defects.

@@ -40,6 +40,9 @@ jobs:
       - name: Test M10 libultraship graphics contract
         run: make m10-graphics-test
 
+      - name: Test M11 archive-backed frame
+        run: make m11-frame-test
+
       - name: Cross-compile M5 upstream core slice
         run: make m5-core-check
 
