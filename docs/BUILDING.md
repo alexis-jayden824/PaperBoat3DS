@@ -4,9 +4,9 @@
 
 This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
-and the host-tested M8 native input layer; it is not yet a playable PaperBoat
-port. A successful package build proves that one ARM11 ELF can produce `.3dsx`,
-`.3ds`, and `.cia` artifacts.
+the host-tested M8 native input layer, and the M9 citro3d renderer foundation;
+it is not yet a playable PaperBoat port. A successful package build proves that
+one ARM11 ELF can produce `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -46,6 +46,17 @@ sh tools/test_input_backend.sh
 ```
 
 The 3DS build job also exposes the same check as `make m8-input-test`.
+
+Run the portable renderer contract tests with:
+
+```sh
+sh tools/test_renderer_contract.sh
+```
+
+The 3DS build job exposes the same check as `make m9-renderer-test`. The normal
+build discovers `source/*.v.pica`, assembles it with Picasso, converts the
+resulting `.shbin` into a linked object/header pair, and then compiles the
+citro3d backend. Generated shader files stay under `build/`.
 
 ## Host-side asset preparation
 
