@@ -1,9 +1,6 @@
 # devkitPro / Nintendo 3DS outputs
 build/
 .cache/
-*.3dsx# devkitPro / Nintendo 3DS outputs
-build/
-.cache/
 *.3dsx
 *.elf
 *.smdh
@@ -16,24 +13,6 @@ build/
 *.v64
 *.o2r
 assets-manifest.json
-romfs/assets/
-sdmc/
-
-# Local editor and OS files
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.elf
-*.smdh
-*.cia
-*.map
-
-# Generated or proprietary assets
-*.z64
-*.n64
-*.v64
-*.o2r
 romfs/assets/
 sdmc/
 
