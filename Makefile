@@ -180,7 +180,8 @@ clean:
 else
 
 $(ZLIB_OFILES): CFLAGS += -DNO_GZIP -Wno-endif-labels \
-	-Wno-shift-negative-value -Wno-implicit-fallthrough
+	-Wno-shift-negative-value -Wno-implicit-fallthrough \
+	-Wno-old-style-definition
 
 $(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS)
 $(OFILES_SOURCES): $(HFILES)
