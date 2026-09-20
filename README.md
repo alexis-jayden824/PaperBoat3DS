@@ -6,10 +6,10 @@ An experimental native Nintendo 3DS port of PaperBoat.
 
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
 on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
-real-ROM acceptance run, and M8 has package plus partial Folium input evidence.
-The current software checkpoint is M9: a host-tested PICA200 contract and a
-native citro3d diagnostic renderer. M6/M8/M9 hardware validation remains
-pending; the project owner is the real-hardware tester.
+real-ROM acceptance run, and M8/M9 have package plus partial Folium evidence.
+The current software checkpoint is M10: an exact pinned-libultraship graphics
+adapter over the native citro3d renderer. M6/M8/M9/M10 hardware validation
+remains pending; the project owner is the real-hardware tester.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.
@@ -30,6 +30,8 @@ workflow is documented in
 The M8 mapping and conflict audit are in [docs/M8_INPUT.md](docs/M8_INPUT.md).
 The M9 renderer contract and M10 handoff are in
 [docs/M9_RENDERER.md](docs/M9_RENDERER.md).
+The implemented libultraship graphics boundary, supported TEV subset, and
+explicit fallbacks are in [docs/M10_GRAPHICS.md](docs/M10_GRAPHICS.md).
 
 ## Legal asset policy
 
