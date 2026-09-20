@@ -168,7 +168,7 @@ bool pb_renderer_pipeline_is_valid(const PBRenderPipeline *pipeline) {
         (unsigned int)pipeline->wrap_t >= (unsigned int)PB_WRAP_COUNT) {
         return false;
     }
-    return pipeline->depth_test_enabled || !pipeline->depth_write_enabled;
+    return true;
 }
 
 void pb_renderer_state_cache_init(PBRenderStateCache *cache) {

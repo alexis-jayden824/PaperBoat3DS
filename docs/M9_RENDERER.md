@@ -32,12 +32,14 @@ is the only layer that includes citro3d.
   hits, rejected commands, resource sizes, frame failures, and peak citro3d
   command-buffer utilization.
 
-The diagnostic top screen clears to dark navy, draws a repeated teal/light
-checker panel, and overlays a translucent three-color sail. This intentionally
+The diagnostic top screen clears to dark navy and draws a repeated teal/light
+checker panel plus a second translucent sail submission. This intentionally
 exercises texture coordinates, repeat sampling, vertex color modulation,
-depth, alpha blending, and two draw submissions. The bottom screen must report
-`C3D: ready`; frame/draw/vertex counters must advance and `fail` must remain
-zero.
+depth, alpha blending, and two draws. Folium build `3c98a1458c01` confirmed the
+checker, compiled shader, exactly two draws and nine vertices per frame, stable
+command use, and zero failures. The intended sail was not visually distinct in
+that capture even though its draw counter advanced. M10 resolves that ambiguity
+by binding a shade-only TEV program and disabling depth for the overlay.
 
 ## Pinned libultraship handoff
 
@@ -81,7 +83,8 @@ Software acceptance requires:
 2. Picasso assembles `renderer.v.pica` and devkitARM links the backend with
    warnings treated as errors;
 3. `.3dsx`, `.3ds`, and `.cia` packages are produced from the same ELF;
-4. the M9 scene renders in Folium with advancing counters and no frame failure.
+4. the M9 target, checker, and two submissions render in Folium with advancing
+   counters and no frame failure.
 
 Real hardware remains authoritative for PICA behavior, lifecycle recovery,
 command-buffer headroom, linear-memory impact, and Old 3DS performance. Those

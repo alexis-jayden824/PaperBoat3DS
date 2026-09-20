@@ -1,4 +1,4 @@
-; PaperBoat3DS M9 diagnostic vertex shader.
+; PaperBoat3DS M10 streamed graphics-contract vertex shader.
 
 .fvec projection[4]
 

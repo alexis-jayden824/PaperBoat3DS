@@ -5,17 +5,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pb3ds/gfx_bridge.h"
 #include "renderer_shbin.h"
 
 #define PB_RENDER_CLEAR_COLOR 0x10243BFFU
 #define PB_RENDER_CLEAR_DEPTH 0U
-#define PB_RENDER_CHECKER_SIZE 8U
 
-#define PB_DISPLAY_TRANSFER_FLAGS                                             \
+#define PB_DISPLAY_TRANSFER_FLAGS                                           \
     (GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |                  \
-     GX_TRANSFER_RAW_COPY(0) |                                               \
-     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |                          \
-     GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |                          \
+     GX_TRANSFER_RAW_COPY(0) |                                             \
+     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |                        \
+     GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |                        \
      GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
 typedef struct {
@@ -24,40 +24,27 @@ typedef struct {
     float color[4];
 } PBRendererVertex;
 
-static const PBRendererVertex diagnostic_vertices[] = {
-    /* Textured foundation panel. */
-    { { 34.0f, 30.0f, 0.45f }, { 0.0f, 0.0f }, { 0.95f, 0.98f, 1.0f, 0.96f } },
-    { { 366.0f, 30.0f, 0.45f }, { 6.0f, 0.0f }, { 0.95f, 0.98f, 1.0f, 0.96f } },
-    { { 366.0f, 210.0f, 0.45f }, { 6.0f, 4.0f }, { 0.95f, 0.98f, 1.0f, 0.96f } },
-    { { 366.0f, 210.0f, 0.45f }, { 6.0f, 4.0f }, { 0.95f, 0.98f, 1.0f, 0.96f } },
-    { { 34.0f, 210.0f, 0.45f }, { 0.0f, 4.0f }, { 0.95f, 0.98f, 1.0f, 0.96f } },
-    { { 34.0f, 30.0f, 0.45f }, { 0.0f, 0.0f }, { 0.95f, 0.98f, 1.0f, 0.96f } },
-
-    /* A translucent sail confirms vertex color, depth, and alpha blending. */
-    { { 118.0f, 66.0f, 0.70f }, { 0.0f, 0.0f }, { 1.0f, 0.48f, 0.20f, 0.72f } },
-    { { 286.0f, 66.0f, 0.70f }, { 3.0f, 0.0f }, { 0.98f, 0.78f, 0.25f, 0.72f } },
-    { { 202.0f, 190.0f, 0.70f }, { 1.5f, 3.0f }, { 0.35f, 0.90f, 0.82f, 0.72f } },
-};
-
-#define PB_DIAGNOSTIC_VERTEX_COUNT                                           \
-    (sizeof(diagnostic_vertices) / sizeof(diagnostic_vertices[0]))
-#define PB_PANEL_VERTEX_COUNT 6U
-#define PB_SAIL_VERTEX_COUNT 3U
+typedef struct {
+    uint32_t id;
+    C3D_Tex texture;
+    bool allocated;
+} PBRendererTexture;
 
 struct PBRenderer3DS {
     C3D_RenderTarget *target;
     DVLB_s *shader_dvlb;
     shaderProgram_s program;
     C3D_Mtx projection;
-    C3D_Tex checker_texture;
-    void *vertex_buffer;
-    int projection_uniform;
-    PBTextureLayout texture_layout;
+    PBRendererTexture textures[PB_GFX_MAX_TEXTURES];
     PBRenderStateCache state_cache;
+    PBViewport scissor;
     PBRendererStats stats;
+    PBRendererVertex *stream_buffer;
+    size_t stream_capacity_vertices;
+    int projection_uniform;
     bool c3d_ready;
     bool program_ready;
-    bool texture_ready;
+    bool frame_open;
 };
 
 _Static_assert((int)PB_TEXTURE_RGBA8 == (int)GPU_RGBA8,
@@ -71,29 +58,42 @@ _Static_assert((int)PB_WRAP_REPEAT == (int)GPU_REPEAT,
 _Static_assert((int)PB_COMPARE_GREATER == (int)GPU_GREATER,
                "depth contract must match PICA200");
 
-static bool make_checker_texture(uint8_t *swizzled, size_t swizzled_size) {
-    uint8_t linear[PB_RENDER_CHECKER_SIZE * PB_RENDER_CHECKER_SIZE * 4U];
-    for (uint16_t y = 0; y < PB_RENDER_CHECKER_SIZE; y++) {
-        for (uint16_t x = 0; x < PB_RENDER_CHECKER_SIZE; x++) {
-            const size_t offset = ((size_t)y * PB_RENDER_CHECKER_SIZE + x) * 4U;
-            const bool alternate = (((x / 2U) ^ (y / 2U)) & 1U) != 0;
-            linear[offset + 0U] = alternate ? 232U : 28U;
-            linear[offset + 1U] = alternate ? 245U : 107U;
-            linear[offset + 2U] = alternate ? 244U : 117U;
-            linear[offset + 3U] = 255U;
+static PBRendererTexture *find_texture(PBRenderer3DS *renderer,
+                                       uint32_t texture_id) {
+    if (renderer == NULL || texture_id == 0) {
+        return NULL;
+    }
+    for (size_t index = 0; index < PB_GFX_MAX_TEXTURES; index++) {
+        PBRendererTexture *entry = &renderer->textures[index];
+        if (entry->allocated && entry->id == texture_id) {
+            return entry;
         }
     }
-    return pb_renderer_swizzle_rgba8(
-        swizzled, swizzled_size, linear, sizeof(linear),
-        PB_RENDER_CHECKER_SIZE, PB_RENDER_CHECKER_SIZE);
+    return NULL;
+}
+
+static PBRendererTexture *find_free_texture(PBRenderer3DS *renderer) {
+    if (renderer == NULL) {
+        return NULL;
+    }
+    for (size_t index = 0; index < PB_GFX_MAX_TEXTURES; index++) {
+        if (!renderer->textures[index].allocated) {
+            return &renderer->textures[index];
+        }
+    }
+    return NULL;
 }
 
 static void apply_pipeline(PBRenderer3DS *renderer) {
     const PBRenderPipeline *pipeline = &renderer->state_cache.pipeline;
+    const bool depth_enabled = pipeline->depth_test_enabled ||
+                               pipeline->depth_write_enabled;
+    const GPU_TESTFUNC depth_function = pipeline->depth_test_enabled
+                                            ? (GPU_TESTFUNC)pipeline->depth_function
+                                            : GPU_ALWAYS;
 
     C3D_CullFace((GPU_CULLMODE)pipeline->cull_mode);
-    C3D_DepthTest(pipeline->depth_test_enabled,
-                  (GPU_TESTFUNC)pipeline->depth_function,
+    C3D_DepthTest(depth_enabled, depth_function,
                   pipeline->depth_write_enabled ? GPU_WRITE_ALL
                                                 : GPU_WRITE_COLOR);
 
@@ -113,13 +113,36 @@ static void apply_pipeline(PBRenderer3DS *renderer) {
                            GPU_ONE, GPU_ZERO);
             break;
     }
+}
 
-    C3D_TexSetFilter(&renderer->checker_texture,
-                     (GPU_TEXTURE_FILTER_PARAM)pipeline->mag_filter,
-                     (GPU_TEXTURE_FILTER_PARAM)pipeline->min_filter);
-    C3D_TexSetWrap(&renderer->checker_texture,
-                   (GPU_TEXTURE_WRAP_PARAM)pipeline->wrap_s,
-                   (GPU_TEXTURE_WRAP_PARAM)pipeline->wrap_t);
+static void apply_combiner(int combiner_mode) {
+    C3D_TexEnv *environment = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(environment);
+
+    switch ((PBGfxCombinerMode)combiner_mode) {
+        case PB_GFX_COMBINER_SHADE:
+            C3D_TexEnvSrc(environment, C3D_Both, GPU_PRIMARY_COLOR,
+                          GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+            C3D_TexEnvFunc(environment, C3D_Both, GPU_REPLACE);
+            break;
+        case PB_GFX_COMBINER_TEXTURE0:
+            C3D_TexEnvSrc(environment, C3D_Both, GPU_TEXTURE0,
+                          GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+            C3D_TexEnvFunc(environment, C3D_Both, GPU_REPLACE);
+            break;
+        case PB_GFX_COMBINER_TEXTURE0_SHADE:
+            C3D_TexEnvSrc(environment, C3D_Both, GPU_TEXTURE0,
+                          GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+            C3D_TexEnvFunc(environment, C3D_Both, GPU_MODULATE);
+            break;
+        case PB_GFX_COMBINER_FALLBACK:
+        default:
+            C3D_TexEnvColor(environment, 0xFF00FFFFU);
+            C3D_TexEnvSrc(environment, C3D_Both, GPU_CONSTANT,
+                          GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+            C3D_TexEnvFunc(environment, C3D_Both, GPU_REPLACE);
+            break;
+    }
 }
 
 static void sync_stats(PBRenderer3DS *renderer) {
@@ -183,48 +206,16 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
                   0.0f, (float)PB_RENDER_TOP_HEIGHT, 0.0f, 1.0f, true);
 
     result = PB_RENDERER_INIT_VERTEX_BUFFER;
-    if (!pb_renderer_vertex_buffer_size(sizeof(PBRendererVertex),
-                                        PB_DIAGNOSTIC_VERTEX_COUNT,
-                                        &renderer->stats.vertex_buffer_bytes)) {
+    renderer->stream_capacity_vertices = PB_GFX_MAX_STREAM_TRIANGLES * 3U;
+    if (!pb_renderer_vertex_buffer_size(
+            sizeof(PBRendererVertex), renderer->stream_capacity_vertices,
+            &renderer->stats.vertex_buffer_bytes)) {
         goto fail;
     }
-    renderer->vertex_buffer =
-        linearAlloc(renderer->stats.vertex_buffer_bytes);
-    if (renderer->vertex_buffer == NULL) {
+    renderer->stream_buffer = linearAlloc(renderer->stats.vertex_buffer_bytes);
+    if (renderer->stream_buffer == NULL) {
         goto fail;
     }
-    memcpy(renderer->vertex_buffer, diagnostic_vertices,
-           renderer->stats.vertex_buffer_bytes);
-
-    C3D_BufInfo *buffers = C3D_GetBufInfo();
-    BufInfo_Init(buffers);
-    BufInfo_Add(buffers, renderer->vertex_buffer, sizeof(PBRendererVertex), 3,
-                0x210);
-
-    result = PB_RENDERER_INIT_TEXTURE;
-    if (!pb_renderer_texture_layout(&renderer->texture_layout,
-                                    PB_RENDER_CHECKER_SIZE,
-                                    PB_RENDER_CHECKER_SIZE,
-                                    PB_TEXTURE_RGBA8) ||
-        !C3D_TexInit(&renderer->checker_texture, PB_RENDER_CHECKER_SIZE,
-                     PB_RENDER_CHECKER_SIZE, GPU_RGBA8)) {
-        goto fail;
-    }
-    renderer->texture_ready = true;
-    renderer->stats.texture_bytes = renderer->texture_layout.bytes;
-
-    uint8_t checker_texels[PB_RENDER_CHECKER_SIZE * PB_RENDER_CHECKER_SIZE * 4U];
-    if (!make_checker_texture(checker_texels, sizeof(checker_texels))) {
-        goto fail;
-    }
-    C3D_TexUpload(&renderer->checker_texture, checker_texels);
-    C3D_TexBind(0, &renderer->checker_texture);
-
-    C3D_TexEnv *environment = C3D_GetTexEnv(0);
-    C3D_TexEnvInit(environment);
-    C3D_TexEnvSrc(environment, C3D_Both, GPU_TEXTURE0,
-                  GPU_PRIMARY_COLOR, 0);
-    C3D_TexEnvFunc(environment, C3D_Both, GPU_MODULATE);
 
     pb_renderer_state_cache_init(&renderer->state_cache);
     const PBViewport viewport = {
@@ -235,10 +226,10 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     };
     const PBRenderPipeline pipeline = {
         .cull_mode = PB_CULL_NONE,
-        .depth_test_enabled = true,
-        .depth_write_enabled = true,
-        .depth_function = PB_COMPARE_GREATER,
-        .blend_mode = PB_BLEND_ALPHA,
+        .depth_test_enabled = false,
+        .depth_write_enabled = false,
+        .depth_function = PB_COMPARE_GREATER_EQUAL,
+        .blend_mode = PB_BLEND_DISABLED,
         .min_filter = PB_FILTER_NEAREST,
         .mag_filter = PB_FILTER_NEAREST,
         .wrap_s = PB_WRAP_REPEAT,
@@ -251,7 +242,9 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
         result = PB_RENDERER_INIT_INVALID_ARGUMENT;
         goto fail;
     }
+    renderer->scissor = viewport;
     apply_pipeline(renderer);
+    apply_combiner(PB_GFX_COMBINER_FALLBACK);
     sync_stats(renderer);
 
     *renderer_out = renderer;
@@ -262,67 +255,274 @@ fail:
     return result;
 }
 
-bool pb_renderer_3ds_render(PBRenderer3DS *renderer) {
+bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer) {
     if (renderer == NULL || !renderer->c3d_ready || renderer->target == NULL ||
-        !renderer->program_ready || !renderer->texture_ready ||
-        renderer->vertex_buffer == NULL) {
+        !renderer->program_ready || renderer->stream_buffer == NULL ||
+        renderer->frame_open) {
         return false;
     }
-
     if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) {
         renderer->stats.frame_failures++;
-        renderer->state_cache.rejected++;
-        sync_stats(renderer);
         return false;
     }
-
+    renderer->frame_open = true;
     C3D_RenderTargetClear(renderer->target, C3D_CLEAR_ALL,
                           PB_RENDER_CLEAR_COLOR, PB_RENDER_CLEAR_DEPTH);
     if (!C3D_FrameDrawOn(renderer->target)) {
         C3D_FrameEnd(0);
+        renderer->frame_open = false;
         renderer->stats.frame_failures++;
-        renderer->state_cache.rejected++;
-        sync_stats(renderer);
         return false;
     }
-
-    PBTargetViewport target_viewport;
-    if (!pb_renderer_viewport_to_target(&renderer->state_cache.viewport,
-                                        &target_viewport)) {
-        C3D_FrameEnd(0);
-        renderer->stats.frame_failures++;
-        renderer->state_cache.rejected++;
-        sync_stats(renderer);
-        return false;
-    }
-
-    (void)pb_renderer_bind_viewport(&renderer->state_cache,
-                                    &renderer->state_cache.viewport);
-    (void)pb_renderer_bind_pipeline(&renderer->state_cache,
-                                    &renderer->state_cache.pipeline);
-    C3D_SetViewport(target_viewport.x, target_viewport.y,
-                    target_viewport.width, target_viewport.height);
     C3D_BindProgram(&renderer->program);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, renderer->projection_uniform,
                      &renderer->projection);
-    C3D_TexBind(0, &renderer->checker_texture);
-    apply_pipeline(renderer);
+    return true;
+}
 
-    C3D_DrawArrays(GPU_TRIANGLES, 0, PB_PANEL_VERTEX_COUNT);
-    C3D_DrawArrays(GPU_TRIANGLES, PB_PANEL_VERTEX_COUNT,
-                   PB_SAIL_VERTEX_COUNT);
-
+bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer) {
+    if (renderer == NULL || !renderer->frame_open) {
+        return false;
+    }
     const float command_usage = C3D_GetCmdBufUsage();
     if (command_usage > renderer->stats.command_buffer_peak) {
         renderer->stats.command_buffer_peak = command_usage;
     }
     C3D_FrameEnd(0);
-
+    renderer->frame_open = false;
     renderer->stats.frames++;
-    renderer->stats.draw_calls += 2;
-    renderer->stats.vertices += PB_DIAGNOSTIC_VERTEX_COUNT;
+    return true;
+}
+
+void pb_renderer_3ds_finish(PBRenderer3DS *renderer) {
+    if (renderer != NULL && renderer->c3d_ready) {
+        C3D_FrameSync();
+    }
+}
+
+bool pb_renderer_3ds_clear(PBRenderer3DS *renderer, bool color, bool depth) {
+    if (renderer == NULL || renderer->target == NULL ||
+        (!color && !depth)) {
+        return false;
+    }
+    C3D_ClearBits bits = color && depth
+                              ? C3D_CLEAR_ALL
+                              : (color ? C3D_CLEAR_COLOR : C3D_CLEAR_DEPTH);
+    C3D_RenderTargetClear(renderer->target, bits, PB_RENDER_CLEAR_COLOR,
+                          PB_RENDER_CLEAR_DEPTH);
+    return true;
+}
+
+bool pb_renderer_3ds_set_viewport(PBRenderer3DS *renderer,
+                                  const PBViewport *viewport) {
+    if (renderer == NULL ||
+        pb_renderer_bind_viewport(&renderer->state_cache, viewport) ==
+            PB_BIND_REJECTED) {
+        return false;
+    }
+    PBTargetViewport target;
+    if (!pb_renderer_viewport_to_target(viewport, &target)) {
+        renderer->state_cache.rejected++;
+        return false;
+    }
+    C3D_SetViewport(target.x, target.y, target.width, target.height);
     sync_stats(renderer);
     return true;
+}
+
+bool pb_renderer_3ds_set_scissor(PBRenderer3DS *renderer,
+                                 const PBViewport *scissor) {
+    PBTargetViewport target;
+    if (renderer == NULL ||
+        !pb_renderer_viewport_to_target(scissor, &target)) {
+        if (renderer != NULL) {
+            renderer->state_cache.rejected++;
+            sync_stats(renderer);
+        }
+        return false;
+    }
+    renderer->scissor = *scissor;
+    C3D_SetScissor(GPU_SCISSOR_NORMAL, target.x, target.y,
+                   target.x + target.width, target.y + target.height);
+    return true;
+}
+
+bool pb_renderer_3ds_set_pipeline(PBRenderer3DS *renderer,
+                                  const PBRenderPipeline *pipeline) {
+    if (renderer == NULL ||
+        pb_renderer_bind_pipeline(&renderer->state_cache, pipeline) ==
+            PB_BIND_REJECTED) {
+        return false;
+    }
+    apply_pipeline(renderer);
+    sync_stats(renderer);
+    return true;
+}
+
+bool pb_renderer_3ds_upload_texture(PBRenderer3DS *renderer,
+                                    uint32_t texture_id,
+                                    const uint8_t *rgba32,
+                                    uint16_t width, uint16_t height) {
+    PBTextureLayout layout;
+    if (renderer == NULL || texture_id == 0 || rgba32 == NULL ||
+        !pb_renderer_texture_layout(&layout, width, height,
+                                    PB_TEXTURE_RGBA8)) {
+        return false;
+    }
+
+    PBRendererTexture *entry = find_texture(renderer, texture_id);
+    if (entry == NULL) {
+        entry = find_free_texture(renderer);
+    }
+    if (entry == NULL) {
+        return false;
+    }
+
+    C3D_Tex new_texture;
+    memset(&new_texture, 0, sizeof(new_texture));
+    if (!C3D_TexInit(&new_texture, width, height, GPU_RGBA8)) {
+        return false;
+    }
+    u32 native_size = 0;
+    uint8_t *native_pixels =
+        C3D_Tex2DGetImagePtr(&new_texture, 0, &native_size);
+    if (native_pixels == NULL || native_size < layout.bytes ||
+        !pb_renderer_swizzle_rgba8(native_pixels, native_size, rgba32,
+                                   layout.bytes, width, height)) {
+        C3D_TexDelete(&new_texture);
+        return false;
+    }
+    C3D_TexFlush(&new_texture);
+
+    if (entry->allocated) {
+        renderer->stats.texture_bytes -= entry->texture.size;
+        C3D_TexDelete(&entry->texture);
+    }
+    entry->id = texture_id;
+    entry->texture = new_texture;
+    entry->allocated = true;
+    renderer->stats.texture_bytes += layout.bytes;
+    return true;
+}
+
+bool pb_renderer_3ds_bind_texture(PBRenderer3DS *renderer, int tile,
+                                  uint32_t texture_id) {
+    PBRendererTexture *entry = find_texture(renderer, texture_id);
+    if (entry == NULL || tile < 0 || tile >= (int)PB_GFX_TEXTURE_UNITS) {
+        return false;
+    }
+    C3D_TexBind(tile, &entry->texture);
+    return true;
+}
+
+bool pb_renderer_3ds_set_sampler(PBRenderer3DS *renderer,
+                                 uint32_t texture_id,
+                                 PBTextureFilter filter,
+                                 PBTextureWrap wrap_s,
+                                 PBTextureWrap wrap_t) {
+    PBRendererTexture *entry = find_texture(renderer, texture_id);
+    if (entry == NULL || (unsigned int)filter >= PB_FILTER_COUNT ||
+        (unsigned int)wrap_s >= PB_WRAP_COUNT ||
+        (unsigned int)wrap_t >= PB_WRAP_COUNT) {
+        return false;
+    }
+    C3D_TexSetFilter(&entry->texture, (GPU_TEXTURE_FILTER_PARAM)filter,
+                     (GPU_TEXTURE_FILTER_PARAM)filter);
+    C3D_TexSetWrap(&entry->texture, (GPU_TEXTURE_WRAP_PARAM)wrap_s,
+                   (GPU_TEXTURE_WRAP_PARAM)wrap_t);
+    return true;
+}
+
+void pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
+                                    uint32_t texture_id) {
+    PBRendererTexture *entry = find_texture(renderer, texture_id);
+    if (entry == NULL) {
+        return;
+    }
+    renderer->stats.texture_bytes -= entry->texture.size;
+    C3D_TexDelete(&entry->texture);
+    memset(entry, 0, sizeof(*entry));
+}
+
+bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
+                                  int combiner_mode) {
+    if (renderer == NULL || combiner_mode < PB_GFX_COMBINER_SHADE ||
+        combiner_mode > PB_GFX_COMBINER_FALLBACK) {
+        return false;
+    }
+    apply_combiner(combiner_mode);
+    return true;
+}
+
+bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
+                                 const float *vertices,
+                                 size_t float_count,
+                                 size_t triangle_count,
+                                 size_t vertex_stride_floats,
+                                 bool uses_texture0,
+                                 bool uses_texture1,
+                                 bool uses_shade,
+                                 bool uses_alpha) {
+    if (renderer == NULL || !renderer->frame_open || vertices == NULL ||
+        triangle_count == 0 ||
+        triangle_count > PB_GFX_MAX_STREAM_TRIANGLES || uses_texture1 ||
+        triangle_count > SIZE_MAX / 3U) {
+        return false;
+    }
+    const size_t vertex_count = triangle_count * 3U;
+    if (vertex_count > renderer->stream_capacity_vertices ||
+        vertex_stride_floats == 0 ||
+        vertex_count > SIZE_MAX / vertex_stride_floats ||
+        float_count != vertex_count * vertex_stride_floats) {
+        return false;
+    }
+
+    for (size_t vertex_index = 0; vertex_index < vertex_count;
+         vertex_index++) {
+        const float *source =
+            &vertices[vertex_index * vertex_stride_floats];
+        PBRendererVertex *destination =
+            &renderer->stream_buffer[vertex_index];
+        size_t offset = 5U;
+
+        destination->position[0] = source[0];
+        destination->position[1] = source[1];
+        destination->position[2] = source[2];
+        destination->texcoord[0] = 0.0f;
+        destination->texcoord[1] = 0.0f;
+        if (uses_texture0) {
+            destination->texcoord[0] = source[offset + 0U];
+            destination->texcoord[1] = source[offset + 1U];
+            offset += 2U;
+        }
+        if (uses_shade) {
+            destination->color[0] = source[offset + 0U];
+            destination->color[1] = source[offset + 1U];
+            destination->color[2] = source[offset + 2U];
+            destination->color[3] = uses_alpha ? source[offset + 3U] : 1.0f;
+        } else {
+            destination->color[0] = 1.0f;
+            destination->color[1] = 1.0f;
+            destination->color[2] = 1.0f;
+            destination->color[3] = 1.0f;
+        }
+    }
+
+    C3D_BufInfo *buffers = C3D_GetBufInfo();
+    BufInfo_Init(buffers);
+    BufInfo_Add(buffers, renderer->stream_buffer, sizeof(PBRendererVertex), 3,
+                0x210);
+    C3D_DrawArrays(GPU_TRIANGLES, 0, (int)vertex_count);
+    renderer->stats.draw_calls++;
+    renderer->stats.vertices += vertex_count;
+    return true;
+}
+
+bool pb_renderer_3ds_render(PBRenderer3DS *renderer) {
+    if (!pb_renderer_3ds_begin_frame(renderer)) {
+        return false;
+    }
+    return pb_renderer_3ds_end_frame(renderer);
 }
 
 const PBRendererStats *pb_renderer_3ds_stats(const PBRenderer3DS *renderer) {
@@ -333,15 +533,20 @@ void pb_renderer_3ds_destroy(PBRenderer3DS *renderer) {
     if (renderer == NULL) {
         return;
     }
-
+    if (renderer->frame_open) {
+        C3D_FrameEnd(0);
+        renderer->frame_open = false;
+    }
     if (renderer->c3d_ready) {
         C3D_FrameSync();
     }
-    if (renderer->texture_ready) {
-        C3D_TexDelete(&renderer->checker_texture);
+    for (size_t index = 0; index < PB_GFX_MAX_TEXTURES; index++) {
+        if (renderer->textures[index].allocated) {
+            C3D_TexDelete(&renderer->textures[index].texture);
+        }
     }
-    if (renderer->vertex_buffer != NULL) {
-        linearFree(renderer->vertex_buffer);
+    if (renderer->stream_buffer != NULL) {
+        linearFree(renderer->stream_buffer);
     }
     if (renderer->program_ready) {
         shaderProgramFree(&renderer->program);

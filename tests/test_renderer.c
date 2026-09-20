@@ -158,7 +158,7 @@ static bool test_pipeline_and_cache(void) {
     PBRenderPipeline pipeline = valid_pipeline();
     CHECK(pb_renderer_pipeline_is_valid(&pipeline));
     pipeline.depth_test_enabled = false;
-    CHECK(!pb_renderer_pipeline_is_valid(&pipeline));
+    CHECK(pb_renderer_pipeline_is_valid(&pipeline));
     pipeline.depth_write_enabled = false;
     CHECK(pb_renderer_pipeline_is_valid(&pipeline));
     pipeline = valid_pipeline();
@@ -187,7 +187,7 @@ static bool test_pipeline_and_cache(void) {
     CHECK(pb_renderer_bind_pipeline(&cache, &pipeline) == PB_BIND_UNCHANGED);
     CHECK(cache.pipeline_bound);
 
-    pipeline.depth_test_enabled = false;
+    pipeline.wrap_t = (PBTextureWrap)PB_WRAP_COUNT;
     CHECK(pb_renderer_bind_pipeline(&cache, &pipeline) == PB_BIND_REJECTED);
     CHECK(cache.changes == 2);
     CHECK(cache.deduplicated == 2);

@@ -100,6 +100,21 @@ not proof of heap exhaustion; real-hardware logging remains authoritative.
 - Not established by this result: the complete button map, Circle Pad range,
   touch coordinates, lid lifecycle, clean START exit, or hardware behavior
 
+### 2026-09-20 - M9 PICA200 renderer
+
+- Runtime build: `3c98a1458c01` (`0.9.0-m9`)
+- Artifact: `PaperBoat3DS.3ds`
+- Environment: Folium Nintendo 3DS core on iOS
+- Result: initialized citro3d and the compiled PICA shader, displayed the
+  repeated RGBA8 checker, advanced at exactly two draws and nine vertices per
+  frame, held command-buffer use near 0.4%, and reported zero frame failures
+- Visual qualification: the second sail draw was counted but was not visibly
+  distinguishable in the supplied capture; M10 changes that draw to a
+  shade-only TEV program with depth disabled
+- Evidence: project-owner screenshot supplied in the development conversation
+- Not established by this result: scissor behavior, lifecycle restoration,
+  physical PICA correctness, or Old 3DS performance
+
 ## M8 input check
 
 Use the newest build marked `0.8.0-m8`. Exercise A, B, X, Y, L, R, D-Pad,
@@ -118,3 +133,15 @@ sail. The bottom display must report `C3D: ready`, `Shader: PICA shbin OK`, an
 counters must increase; `fail` must remain zero. Capture both displays and the
 exact build SHA. A Folium pass establishes an emulator rendering smoke test,
 not physical PICA correctness or Old 3DS performance.
+
+## M10 graphics-adapter check
+
+Use the newest build marked `0.10.0-m10`. The top display should retain the
+navy checker scene and show a clearly visible bright translucent triangular
+sail. The bottom display must report `API: ready`, the exact
+`Fast::GfxRenderingAPI` contract, two live TEV shaders, one texture, advancing
+frames, two draws and three triangles per frame, zero unsupported shaders, and
+zero frame failures. `Reject` must remain zero during the normal diagnostic.
+Capture both displays and the exact build SHA. This verifies the bounded M10
+adapter path in Folium; APT suspend/resume and hardware behavior remain real-
+console gates.

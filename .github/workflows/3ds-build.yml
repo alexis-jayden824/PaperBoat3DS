@@ -37,6 +37,9 @@ jobs:
       - name: Fetch pinned upstream sources
         run: sh tools/fetch_upstream.sh
 
+      - name: Test M10 libultraship graphics contract
+        run: make m10-graphics-test
+
       - name: Cross-compile M5 upstream core slice
         run: make m5-core-check
 

@@ -25,6 +25,7 @@ PB3DS_BUILD_UTC ?= unknown
 PACKAGING_RSF   := packaging/PaperBoat3DS.rsf
 MAKEROM         ?= makerom
 HOST_CC         ?= cc
+HOST_CXX        ?= c++
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 UPSTREAM_ROOT   ?= $(CURDIR)/.cache/upstream
 PAPERBOAT_ROOT  := $(UPSTREAM_ROOT)/PaperBoat
@@ -53,7 +54,8 @@ CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
             -DPB3DS_BUILD_SHA=\"$(PB3DS_BUILD_SHA)\" \
             -DPB3DS_BUILD_UTC=\"$(PB3DS_BUILD_UTC)\"
-CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
+CXXFLAGS := $(CFLAGS) -Wno-unused-parameter -fno-rtti -fno-exceptions \
+            -std=gnu++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 LIBS     := -lcitro2d -lcitro3d -lctru -lm
@@ -86,6 +88,7 @@ export OFILES         := $(OFILES_BIN) $(OFILES_SOURCES)
 export HFILES         := $(addsuffix .h,$(subst .,_,$(BINFILES))) \
                          $(PICAFILES:.v.pica=_shbin.h)
 export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+                         -I$(PAPERBOAT_ROOT)/external/libultraship/include \
                          $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                          -I$(CURDIR)/$(BUILD)
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
@@ -93,9 +96,9 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m6-policy-test \
-	m6-budget-check m8-input-test m9-renderer-test clean
+	m6-budget-check m8-input-test m9-renderer-test m10-graphics-test clean
 
-all: $(BUILD)
+all: fetch-upstream $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 m6-policy-test:
@@ -111,6 +114,11 @@ m8-input-test:
 
 m9-renderer-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_renderer_contract.sh "$(BUILD)/m9-tests"
+
+m10-graphics-test: fetch-upstream
+	@HOST_CC="$(HOST_CC)" sh tools/test_gfx_bridge.sh "$(BUILD)/m10-tests"
+	@HOST_CC="$(HOST_CC)" HOST_CXX="$(HOST_CXX)" \
+		sh tools/test_gfx_api_contract.sh "$(BUILD)/m10-api-tests"
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
