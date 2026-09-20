@@ -52,6 +52,9 @@ jobs:
       - name: Test M13 overworld resource and flow contracts
         run: make m13-world-test
 
+      - name: Test native resources with pinned upstream shape loader
+        run: SANITIZE=1 sh tools/test_runtime_resources.sh
+
       - name: Cross-compile M5 upstream core slice
         run: make m5-core-check
 

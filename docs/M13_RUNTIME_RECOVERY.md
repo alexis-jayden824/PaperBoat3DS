@@ -80,3 +80,33 @@ player-input/physics, collision, EVT, and camera units into a single ARM11
 relocatable object and verifies the authoritative symbols. This is the first
 integration gate, not completion: the next gate is resolving the platform
 closure and placing that object in the final ELF.
+
+### Native resource adapter
+
+`source/runtime_resources.c` now provides the real `ResourceGetDataByName`,
+`ResourceGetSizeByName`, texture dimension, and `GameEngine_Get*Exact` symbols.
+It returns stable writable blob, vertex, texture, and F3DEX2 display-list
+storage, with bounded allocations and explicit unsupported-format errors.
+Vertices are converted to native endian; display-list word pairs expand to
+native pointer-width `Gfx` packets. Texture/palette bytes retain their original
+byte order. Blob storage includes upstream's 16-byte zero padding.
+
+The cache never evicts behind live game pointers. Its owner must stop all game
+and GPU users before clearing it. It is limited to 1,024 resources, a 2 MiB
+serialized-entry limit, and the existing scene memory budget. Archive lookup is
+currently name-based and scans the directory on cache misses; CRC-name indexing,
+engine/game archive routing, and an explicit map-lifetime policy remain needed
+before full-runtime activation. Unsupported versions/types fail rather than
+returning serialized bytes as if they were native objects.
+
+`sh tools/test_runtime_resources.sh` links and executes the pinned upstream
+`Shape_LoadFromRawData` against synthetic O2R data supplied by this adapter.
+It verifies the resulting model's native display-list pointer and native vertex
+fields, both endian modes, compressed/stored entries, extended command payloads,
+stable mutable pointers, malformed inputs, memory rejection/retry, and teardown.
+`SANITIZE=1` adds ASan/UBSan to that same integration test. The ARM11 check also
+compiles the consumer's ABI assertions against the real pinned `Gfx` type.
+
+This adapter is not yet bound by the default application loop. The shipped
+application still uses the diagnostic scene; the new resource tests do not
+establish a running world, renderer fidelity, or completion of M13.

@@ -235,6 +235,8 @@ m13-core-check: fetch-upstream
 			}; \
 	done
 	@test -s "$(M13_BUILD)/paperboat-runtime-slice.o"
+	@$(CC) -c tests/test_runtime_upstream_consumer.c \
+		-o "$(M13_BUILD)/resource-abi.o" $(M5_GAME_CFLAGS)
 
 $(BUILD):
 	@mkdir -p $@
