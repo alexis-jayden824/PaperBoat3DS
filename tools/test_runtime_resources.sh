@@ -30,6 +30,7 @@ done
     "$project_root/source/compat.c" "$project_root/source/memory.c" \
     "$project_root/source/o2r.c" "$project_root/source/texture.c" \
     "$project_root/source/runtime_resources.c" \
+    "$project_root/source/runtime_sprite.c" \
     "$project_root/tests/test_runtime_resources.c" $objects -o "$out/test"
 "$out/test" "$out/fixtures/stored.o2r"
 "$out/test" "$out/fixtures/deflate.o2r"

@@ -13,6 +13,18 @@ def resource(kind, body, big=False, version=0):
     return h + body
 
 
+def sparse_player_sprite():
+    """One raster whose image lives in the separate player-raster archive."""
+    blob = bytearray()
+    blob += struct.pack('<IIii', 20, 28, 1, 1)
+    blob += struct.pack('<I', 0xFFFFFFFF)  # no animations (back sprite)
+    blob += struct.pack('<II', 36, 0xFFFFFFFF)
+    blob += struct.pack('<II', 44, 0xFFFFFFFF)
+    blob += struct.pack('<IBBbb', 0x1000, 8, 8, 0, -1)
+    blob += bytes(32)  # embedded palette fallback
+    return resource(0x4F424C42, struct.pack('<I', len(blob)) + blob)
+
+
 out = Path(sys.argv[1])
 out.mkdir(parents=True, exist_ok=True)
 for compression, label in ((zipfile.ZIP_STORED, 'stored'), (zipfile.ZIP_DEFLATED, 'deflate')):
@@ -35,3 +47,8 @@ for compression, label in ((zipfile.ZIP_STORED, 'stored'), (zipfile.ZIP_DEFLATED
         z.writestr('bad/vertex', resource(0x4F565458, struct.pack('<I', 2)+bytes(16)))
         z.writestr('bad/texture', resource(0x4F544558, struct.pack('<IIII', 2, 2, 2, 1)+b'x'))
         z.writestr('bad/dl', resource(0x4F444C54, bytes((4, 0, 0, 0, 0, 0, 0, 0))+struct.pack('<II', 0x33000000, 0)))
+        z.writestr('sprites/player_sprite_1', sparse_player_sprite())
+        # Metadata presence is enough for sprite conversion; the texture must
+        # remain unloaded until the renderer actually requests it.
+        z.writestr('sprites/player_sprite_1_raster_0', resource(0x4F424C42, struct.pack('<I', 1)+b'x'))
+        z.writestr('sprites/npc_sprite_001', sparse_player_sprite())

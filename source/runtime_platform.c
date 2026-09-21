@@ -54,8 +54,41 @@ bool pb_runtime_start_toad_town(PBRuntime *runtime) {
     active_runtime = runtime;
     pb_runtime_resources_bind(&runtime->resources);
     runtime->state = PB_RUNTIME_LOADING;
+    if (runtime->log != NULL) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                     "building resource index");
+    }
+    if (!pb_runtime_resources_prepare(&runtime->resources)) {
+        runtime->state = PB_RUNTIME_FAILED;
+        runtime->error = runtime->resources.error != NULL
+                             ? runtime->resources.error
+                             : "resource index unavailable";
+        if (runtime->log != NULL) {
+            pb_log_write(runtime->log, PB_LOG_ERROR, "runtime",
+                         "resource index failed: %s (%s)", runtime->error,
+                         pb_o2r_result_name(runtime->resources.archive_error));
+        }
+        return false;
+    }
+    if (runtime->log != NULL) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                     "resource index ready entries=%lu bytes=%lu",
+                     (unsigned long)runtime->resources.index_count,
+                     (unsigned long)runtime->resources.index_allocation);
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                     "initializing upstream globals");
+    }
     init_game_globals();
+    if (runtime->log != NULL) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                     "loading upstream engine data");
+    }
     load_engine_data();
+    if (runtime->log != NULL) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                     "upstream engine data ready resources=%lu",
+                     (unsigned long)runtime->resources.count);
+    }
 
     /* Keep the original gAreas numbering: Toad Town is area 1.  Its real map
      * table keeps the original placeholder at index 0, so mac_00 is map 1. */

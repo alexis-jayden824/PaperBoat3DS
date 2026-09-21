@@ -192,7 +192,7 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.2-m13r2` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.3-m13r3` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 

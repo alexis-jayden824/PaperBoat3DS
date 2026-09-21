@@ -231,7 +231,7 @@ input, or Old 3DS performance behavior.
 
 ## M13 core overworld gameplay
 
-Use the private bundle marked `0.13.2-m13r2` with the same owner-generated O2R
+Use the private bundle marked `0.13.3-m13r3` with the same owner-generated O2R
 files installed in Folium's virtual SD.
 
 1. Enter file select and confirm a slot. The bottom screen must change from the

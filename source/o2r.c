@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "zlib.h"
@@ -248,6 +249,31 @@ static PBO2RResult fill_entry(PBO2REntry *entry, const char *name,
     return PB_O2R_OK;
 }
 
+static uint64_t path_crc64(const char *text) {
+    uint64_t crc = UINT64_MAX;
+    while (*text != '\0') {
+        crc ^= (uint64_t)(uint8_t)*text++ << 56U;
+        for (unsigned int bit = 0U; bit < 8U; bit++) {
+            crc = (crc & (UINT64_C(1) << 63U)) != 0U
+                      ? (crc << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
+                      : crc << 1U;
+        }
+    }
+    return crc;
+}
+
+static uint32_t calculate_crc32(const uint8_t *data, size_t size) {
+    uint32_t crc = UINT32_MAX;
+    for (size_t index = 0; index < size; index++) {
+        crc ^= data[index];
+        for (unsigned int bit = 0; bit < 8U; bit++) {
+            const uint32_t mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+        }
+    }
+    return ~crc;
+}
+
 PBO2RResult pb_o2r_find_entries(PBArchive *archive,
                                 PBO2RRequest *requests,
                                 size_t request_count,
@@ -398,19 +424,6 @@ PBO2RResult pb_o2r_find_entries_with_prefix(PBArchive *archive,
     return *entry_count > 0U ? PB_O2R_OK : PB_O2R_ENTRY_NOT_FOUND;
 }
 
-static uint64_t path_crc64(const char *text) {
-    uint64_t crc = UINT64_MAX;
-    while (*text != '\0') {
-        crc ^= (uint64_t)(uint8_t)*text++ << 56U;
-        for (unsigned int bit = 0U; bit < 8U; bit++) {
-            crc = (crc & (UINT64_C(1) << 63U)) != 0U
-                      ? (crc << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
-                      : crc << 1U;
-        }
-    }
-    return crc;
-}
-
 PBO2RResult pb_o2r_find_entry_by_hash(PBArchive *archive, uint64_t hash,
                                       PBO2REntry *entry,
                                       PBO2RStats *stats) {
@@ -463,16 +476,217 @@ PBO2RResult pb_o2r_find_entry_by_hash(PBArchive *archive, uint64_t hash,
     return PB_O2R_ENTRY_NOT_FOUND;
 }
 
-static uint32_t calculate_crc32(const uint8_t *data, size_t size) {
-    uint32_t crc = UINT32_MAX;
-    for (size_t index = 0; index < size; index++) {
-        crc ^= data[index];
-        for (unsigned int bit = 0; bit < 8U; bit++) {
-            const uint32_t mask = 0U - (crc & 1U);
-            crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+PBO2RResult pb_o2r_index_capacity(PBArchive *archive, size_t *entry_capacity,
+                                  PBO2RStats *stats) {
+    if (archive == NULL || entry_capacity == NULL) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    *entry_capacity = 0U;
+    PBZipDirectory directory;
+    const PBO2RResult result = find_directory(archive, &directory, stats);
+    if (result == PB_O2R_OK) {
+        *entry_capacity = directory.entries;
+    }
+    return result;
+}
+
+static int compare_index_entries(const void *left, const void *right) {
+    const PBO2RIndexEntry *a = left;
+    const PBO2RIndexEntry *b = right;
+    if (a->name_hash < b->name_hash) return -1;
+    if (a->name_hash > b->name_hash) return 1;
+    if (a->local_header_offset < b->local_header_offset) return -1;
+    if (a->local_header_offset > b->local_header_offset) return 1;
+    return 0;
+}
+
+PBO2RResult pb_o2r_build_index(PBArchive *archive, PBO2RIndexEntry *entries,
+                               size_t entry_capacity, size_t *entry_count,
+                               PBO2RStats *stats) {
+    if (archive == NULL || entries == NULL || entry_capacity == 0U ||
+        entry_count == NULL) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    *entry_count = 0U;
+
+    PBZipDirectory directory;
+    PBO2RResult result = find_directory(archive, &directory, stats);
+    if (result != PB_O2R_OK) return result;
+    if (entry_capacity < directory.entries) {
+        return PB_O2R_CAPACITY_EXCEEDED;
+    }
+
+    PBZipCursor cursor;
+    cursor_init(&cursor, archive, directory.offset, directory.size, stats);
+    for (uint32_t entry_index = 0U; entry_index < directory.entries;
+         entry_index++) {
+        uint8_t header[PB_ZIP_CENTRAL_HEADER_SIZE];
+        if (!cursor_read(&cursor, header, sizeof(header))) {
+            return PB_O2R_IO_ERROR;
+        }
+        if (read_le32(header) != PB_ZIP_CENTRAL_SIGNATURE) {
+            return PB_O2R_INVALID_ZIP;
+        }
+
+        const uint16_t name_size = read_le16(&header[28]);
+        const uint16_t extra_size = read_le16(&header[30]);
+        const uint16_t comment_size = read_le16(&header[32]);
+        char name[PB_O2R_NAME_CAPACITY];
+        const bool name_available = name_size > 0U && name_size < sizeof(name);
+        if (name_available) {
+            if (!cursor_read(&cursor, name, name_size)) {
+                return PB_O2R_IO_ERROR;
+            }
+            name[name_size] = '\0';
+        } else if (!cursor_skip(&cursor, name_size)) {
+            return PB_O2R_INVALID_ZIP;
+        }
+        if (!cursor_skip(&cursor, (size_t)extra_size + comment_size)) {
+            return PB_O2R_INVALID_ZIP;
+        }
+        if (stats != NULL) stats->entries_scanned++;
+        if (!name_available) continue;
+
+        const uint32_t compressed_size = read_le32(&header[20]);
+        const uint32_t uncompressed_size = read_le32(&header[24]);
+        const uint32_t local_header_offset = read_le32(&header[42]);
+        if (compressed_size == UINT32_MAX ||
+            uncompressed_size == UINT32_MAX ||
+            local_header_offset == UINT32_MAX) {
+            return PB_O2R_ZIP64_DIRECTORY;
+        }
+        PBO2RIndexEntry *entry = &entries[*entry_count];
+        entry->name_hash = path_crc64(name);
+        entry->crc32 = read_le32(&header[16]);
+        entry->name_crc32 =
+            calculate_crc32((const uint8_t *)name, name_size);
+        entry->compressed_size = compressed_size;
+        entry->uncompressed_size = uncompressed_size;
+        entry->local_header_offset = local_header_offset;
+        entry->flags = read_le16(&header[8]);
+        entry->method = read_le16(&header[10]);
+        (*entry_count)++;
+    }
+    qsort(entries, *entry_count, sizeof(*entries), compare_index_entries);
+    return PB_O2R_OK;
+}
+
+static PBO2RResult materialize_index_entry(
+    PBArchive *archive, const PBO2RIndexEntry *indexed,
+    const char *expected_name, PBO2REntry *entry, PBO2RStats *stats) {
+    uint8_t local[PB_ZIP_LOCAL_HEADER_SIZE];
+    if (!archive_read_exact(archive, indexed->local_header_offset, local,
+                            sizeof(local), stats)) {
+        return PB_O2R_IO_ERROR;
+    }
+    if (read_le32(local) != PB_ZIP_LOCAL_SIGNATURE ||
+        read_le16(&local[6]) != indexed->flags ||
+        read_le16(&local[8]) != indexed->method) {
+        return PB_O2R_INVALID_ZIP;
+    }
+    const uint16_t name_size = read_le16(&local[26]);
+    if (name_size == 0U || name_size >= PB_O2R_NAME_CAPACITY) {
+        return PB_O2R_INVALID_ZIP;
+    }
+    char name[PB_O2R_NAME_CAPACITY];
+    if (!archive_read_exact(archive,
+                            indexed->local_header_offset + sizeof(local),
+                            name, name_size, stats)) {
+        return PB_O2R_IO_ERROR;
+    }
+    name[name_size] = '\0';
+    if (path_crc64(name) != indexed->name_hash ||
+        (expected_name != NULL && strcmp(name, expected_name) != 0)) {
+        return PB_O2R_ENTRY_NOT_FOUND;
+    }
+
+    memset(entry, 0, sizeof(*entry));
+    memcpy(entry->name, name, (size_t)name_size + 1U);
+    entry->crc32 = indexed->crc32;
+    entry->compressed_size = indexed->compressed_size;
+    entry->uncompressed_size = indexed->uncompressed_size;
+    entry->local_header_offset = indexed->local_header_offset;
+    entry->flags = indexed->flags;
+    entry->method = indexed->method;
+    entry->found = true;
+    return PB_O2R_OK;
+}
+
+static size_t lower_bound_hash(const PBO2RIndexEntry *entries,
+                               size_t entry_count, uint64_t hash) {
+    size_t first = 0U;
+    size_t length = entry_count;
+    while (length > 0U) {
+        const size_t half = length / 2U;
+        const size_t middle = first + half;
+        if (entries[middle].name_hash < hash) {
+            first = middle + 1U;
+            length -= half + 1U;
+        } else {
+            length = half;
         }
     }
-    return ~crc;
+    return first;
+}
+
+PBO2RResult pb_o2r_find_indexed(PBArchive *archive,
+                                const PBO2RIndexEntry *entries,
+                                size_t entry_count, const char *name,
+                                PBO2REntry *entry, PBO2RStats *stats) {
+    const size_t name_size = name != NULL ? strlen(name) : 0U;
+    if (archive == NULL || entries == NULL || entry_count == 0U ||
+        name_size == 0U || name_size >= PB_O2R_NAME_CAPACITY ||
+        entry == NULL) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    memset(entry, 0, sizeof(*entry));
+    const uint64_t hash = path_crc64(name);
+    const uint32_t name_crc =
+        calculate_crc32((const uint8_t *)name, name_size);
+    for (size_t index = lower_bound_hash(entries, entry_count, hash);
+         index < entry_count && entries[index].name_hash == hash; index++) {
+        if (entries[index].name_crc32 != name_crc) continue;
+        const PBO2RResult result = materialize_index_entry(
+            archive, &entries[index], name, entry, stats);
+        if (result == PB_O2R_OK) return result;
+        if (result != PB_O2R_ENTRY_NOT_FOUND) return result;
+    }
+    return PB_O2R_ENTRY_NOT_FOUND;
+}
+
+PBO2RResult pb_o2r_find_indexed_by_hash(PBArchive *archive,
+                                        const PBO2RIndexEntry *entries,
+                                        size_t entry_count, uint64_t hash,
+                                        PBO2REntry *entry,
+                                        PBO2RStats *stats) {
+    if (archive == NULL || entries == NULL || entry_count == 0U ||
+        entry == NULL) {
+        return PB_O2R_INVALID_ARGUMENT;
+    }
+    memset(entry, 0, sizeof(*entry));
+    const size_t index = lower_bound_hash(entries, entry_count, hash);
+    if (index == entry_count || entries[index].name_hash != hash) {
+        return PB_O2R_ENTRY_NOT_FOUND;
+    }
+    return materialize_index_entry(archive, &entries[index], NULL, entry,
+                                   stats);
+}
+
+bool pb_o2r_index_contains(const PBO2RIndexEntry *entries,
+                           size_t entry_count, const char *name) {
+    const size_t name_size = name != NULL ? strlen(name) : 0U;
+    if (entries == NULL || entry_count == 0U || name_size == 0U ||
+        name_size >= PB_O2R_NAME_CAPACITY) {
+        return false;
+    }
+    const uint64_t hash = path_crc64(name);
+    const uint32_t name_crc =
+        calculate_crc32((const uint8_t *)name, name_size);
+    for (size_t index = lower_bound_hash(entries, entry_count, hash);
+         index < entry_count && entries[index].name_hash == hash; index++) {
+        if (entries[index].name_crc32 == name_crc) return true;
+    }
+    return false;
 }
 
 static voidpf inflate_allocate(voidpf opaque, uInt items, uInt size) {

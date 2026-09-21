@@ -14,6 +14,9 @@ typedef struct {
     PBArchive *archive;
     PBMemoryMonitor *memory;
     PBRuntimeResource *head;
+    PBO2RIndexEntry *index;
+    size_t index_count;
+    size_t index_allocation;
     size_t count;
     size_t hits;
     PBO2RResult archive_error;
@@ -22,6 +25,7 @@ typedef struct {
 
 void pb_runtime_resources_init(PBRuntimeResources *resources,
                                PBArchive *archive, PBMemoryMonitor *memory);
+bool pb_runtime_resources_prepare(PBRuntimeResources *resources);
 void pb_runtime_resources_clear(PBRuntimeResources *resources);
 /* Single game instance, like upstream's engine singleton. NULL unbinds. */
 void pb_runtime_resources_bind(PBRuntimeResources *resources);

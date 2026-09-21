@@ -10,6 +10,32 @@ void *linearAlloc(size_t size) { return malloc(size); }
 void linearFree(void *p) { free(p); }
 uint64_t osGetTime(void) { return 0; }
 extern int test_upstream_resource_consumer(void);
+size_t Sprite_GetPlayerSize(int32_t index);
+void *Sprite_LoadPlayer(int32_t index, void *destination, size_t size);
+size_t Sprite_GetNPCSize(int32_t index);
+void *Sprite_LoadNPC(int32_t index, void *destination, size_t size);
+void GameEngine_InvalidateTextureCache(const void *address) { (void)address; }
+
+typedef struct {
+    void *image;
+    uint8_t width;
+    uint8_t height;
+    int8_t palette;
+    int8_t quad_cache_index;
+} TestNativeSpriteRaster;
+
+static uint64_t test_path_crc64(const char *text) {
+    uint64_t crc = UINT64_MAX;
+    while (*text != '\0') {
+        crc ^= (uint64_t)(uint8_t)*text++ << 56U;
+        for (unsigned int bit = 0; bit < 8; bit++) {
+            crc = (crc & (UINT64_C(1) << 63U)) != 0U
+                      ? (crc << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
+                      : crc << 1U;
+        }
+    }
+    return crc;
+}
 
 int main(int argc, char **argv) {
     assert(argc == 2);
@@ -21,6 +47,13 @@ int main(int argc, char **argv) {
     pb_runtime_resources_init(&resources, &archive, &memory);
     assert(ResourceGetDataByName("le/blob") == NULL);
     pb_runtime_resources_bind(&resources);
+    assert(pb_runtime_resources_prepare(&resources));
+    assert(resources.index != NULL && resources.index_count != 0);
+    const size_t index_used = memory.snapshot.class_used[PB_MEMORY_SCENE];
+    assert(pb_runtime_resource_exists("__OTR__le/blob"));
+    assert(!pb_runtime_resource_exists("absent"));
+    assert(resources.count == 0);
+    assert(memory.snapshot.class_used[PB_MEMORY_SCENE] == index_used);
     for (unsigned i = 0; i < 2; i++) {
         const char *tag = i ? "be" : "le";
         char name[96];
@@ -59,8 +92,41 @@ int main(int argc, char **argv) {
     }
     /* Calls the pinned Shape_LoadFromRawData, not a local reimplementation. */
     assert(test_upstream_resource_consumer() == 0);
+
+    /* Player image offsets can point outside the sprite blob because their
+     * fallback data lives in player_raster_image_data.  An indexed external
+     * raster path must be retained without decoding the texture early. */
+    const size_t player_size = Sprite_GetPlayerSize(1);
+    assert(player_size != 0);
+    void *player = malloc(player_size);
+    assert(player != NULL);
+    const size_t player_resource_count = resources.count;
+    assert(Sprite_LoadPlayer(1, player, player_size) == player);
+    assert(resources.count == player_resource_count);
+    void **rasters = ((void ***)player)[0];
+    TestNativeSpriteRaster *raster = rasters[0];
+    assert(raster != NULL && raster->width == 8 && raster->height == 8);
+    assert(strcmp(raster->image,
+                  "__OTR__sprites/player_sprite_1_raster_0") == 0);
+    free(player);
+
+    const char *raster_name = "sprites/player_sprite_1_raster_0";
+    const uint64_t raster_hash = test_path_crc64(raster_name);
+    uint8_t *raster_data = ResourceGetDataByCrc(raster_hash);
+    assert(raster_data != NULL && raster_data[0] == 'x');
+    assert(strcmp(ResourceGetNameByCrc(raster_hash), raster_name) == 0);
+    assert(resources.count == player_resource_count + 1);
+
+    /* The same out-of-range image offset remains invalid for an NPC sprite,
+     * whose fallback pixels must be local to its own blob. */
+    const size_t npc_size = Sprite_GetNPCSize(1);
+    assert(npc_size != 0);
+    void *npc = malloc(npc_size);
+    assert(npc != NULL && Sprite_LoadNPC(1, npc, npc_size) == NULL);
+    free(npc);
     pb_runtime_resources_clear(&resources);
-    assert(resources.count == 0 && resources.head == NULL);
+    assert(resources.count == 0 && resources.head == NULL &&
+           resources.index == NULL && resources.index_count == 0);
     assert(memory.snapshot.class_used[PB_MEMORY_SCENE] == 0);
     assert(ResourceGetDataByName("le/blob") == NULL);
     pb_runtime_resources_bind(&resources);
@@ -71,6 +137,7 @@ int main(int argc, char **argv) {
     assert(ResourceGetDataByName("le/blob") != NULL);
     pb_runtime_resources_clear(&resources);
     pb_archive_close(&archive);
-    puts("Runtime resources: endian, pointer lifetime, malformed input, failure/retry, and upstream shape consumer passed");
+    puts("Runtime resources: index, endian, pointer lifetime, sparse sprites, "
+         "malformed input, failure/retry, and upstream shape consumer passed");
     return 0;
 }

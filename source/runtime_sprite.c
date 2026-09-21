@@ -114,7 +114,7 @@ static bool add_size(size_t *total, size_t count, size_t element) {
 
 static size_t convert_sprite(const uint8_t *source, size_t source_size,
                              uint8_t *destination, size_t destination_size,
-                             const char *asset_path) {
+                             bool player_sprite, const char *asset_path) {
     if (source == NULL || source_size < sizeof(N64SpriteHeader) + 4U) return 0U;
     const N64SpriteHeader *header = (const N64SpriteHeader *)source;
     size_t raster_count = 0U, palette_count = 0U, animation_count = 0U;
@@ -195,7 +195,13 @@ static size_t convert_sprite(const uint8_t *source, size_t source_size,
         if (path != NULL) {
             rasters[i].image = (void *)path;
         } else {
-            if (input->image_offset >= source_size) return 0U;
+            /* Player raster offsets address the separate raster-image blob,
+             * not necessarily bytes embedded in this sprite blob.  The
+             * upstream cache loader resolves those offsets before drawing.
+             * NPC raster offsets, by contrast, must remain local. */
+            if (!player_sprite && input->image_offset >= source_size) {
+                return 0U;
+            }
             rasters[i].image = raw + input->image_offset;
         }
         rasters[i].width = input->width;
@@ -289,7 +295,7 @@ size_t Sprite_GetNPCSize(SpriteS32 index) {
     snprintf(path, sizeof(path), "__OTR__sprites/npc_sprite_%03ld", (long)index);
     const size_t size = sprite_blob_size(path);
     return size != 0U ? convert_sprite(ResourceGetDataByName(path), size,
-                                       NULL, 0U, NULL) : 0U;
+                                       NULL, 0U, false, NULL) : 0U;
 }
 
 void *Sprite_LoadNPC(SpriteS32 index, void *destination, size_t size) {
@@ -298,7 +304,7 @@ void *Sprite_LoadNPC(SpriteS32 index, void *destination, size_t size) {
     const size_t blob_size = sprite_blob_size(path);
     return destination != NULL &&
                    convert_sprite(ResourceGetDataByName(path), blob_size,
-                                  destination, size, path) != 0U
+                                  destination, size, false, path) != 0U
                ? destination
                : NULL;
 }
@@ -339,7 +345,7 @@ size_t Sprite_GetPlayerSize(SpriteS32 index) {
     snprintf(path, sizeof(path), "__OTR__sprites/player_sprite_%ld", (long)index);
     const size_t size = sprite_blob_size(path);
     return size != 0U ? convert_sprite(ResourceGetDataByName(path), size,
-                                       NULL, 0U, NULL) : 0U;
+                                       NULL, 0U, true, NULL) : 0U;
 }
 
 void *Sprite_LoadPlayer(SpriteS32 index, void *destination, size_t size) {
@@ -348,7 +354,7 @@ void *Sprite_LoadPlayer(SpriteS32 index, void *destination, size_t size) {
     const size_t blob_size = sprite_blob_size(path);
     return destination != NULL &&
                    convert_sprite(ResourceGetDataByName(path), blob_size,
-                                  destination, size, path) != 0U
+                                  destination, size, true, path) != 0U
                ? destination
                : NULL;
 }

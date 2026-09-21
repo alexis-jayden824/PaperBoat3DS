@@ -509,6 +509,8 @@ int main(int argc, char **argv) {
                              (unsigned int)title_flow.selected_slot + 1U);
                 if (event == PB_TITLE_FLOW_EVENT_CONFIRM_SLOT) {
                     state.redraw_bottom = true;
+                    show_boot_checkpoint(
+                        "Loading indexed upstream runtime");
                     const bool started =
                         pb_runtime_start_toad_town(&runtime);
                     pb_log_write(&log,
