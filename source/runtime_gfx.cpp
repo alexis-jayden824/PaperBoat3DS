@@ -618,21 +618,36 @@ class RuntimeDisplayListRenderer {
             output.objectZ = object[2];
             output.clipZ = clip[2];
             output.clipW = clip[3];
-            if (!std::isfinite(clip[3]) || std::fabs(clip[3]) < 0.0001f) {
+            /*
+             * Do NOT reject W<=0 vertices here.  Fast3D deliberately leaves
+             * world vertices in homogeneous clip space and lets the GPU clip
+             * triangles crossing the eye/near plane.  The old CPU divide made
+             * those vertices explode to huge screen coordinates, which is the
+             * source of the repeated horizontal wedges seen in mac_00.
+             *
+             * This compatibility bridge still converts to our 400x240 PICA
+             * viewport, but keeps the divide homogeneous: x/y are formed as
+             * viewport-affine clip coordinates and are multiplied by W again
+             * in AppendVertex.  No 1/W appears on the CPU path.
+             */
+            if (!std::isfinite(clip[0]) || !std::isfinite(clip[1]) ||
+                !std::isfinite(clip[2]) || !std::isfinite(clip[3])) {
                 continue;
             }
-            const float reciprocalW = 1.0f / clip[3];
-            const float ndcX = clip[0] * reciprocalW;
-            const float ndcY = clip[1] * reciprocalW;
-            const float ndcZ = clip[2] * reciprocalW;
+            const float halfWidth = viewportWidth * 0.5f;
+            const float halfHeight = viewportHeight * 0.5f;
+            const float centerX = viewportX + halfWidth;
+            const float centerY = viewportY + halfHeight;
             output.screenX =
-                viewportX + (ndcX + 1.0f) * viewportWidth * 0.5f;
+                std::fabs(clip[3]) > 0.0001f
+                    ? (clip[0] * halfWidth + centerX * clip[3]) / clip[3]
+                    : centerX;
             output.screenY =
-                viewportY + (ndcY + 1.0f) * viewportHeight * 0.5f;
-            /* Preserve the unclamped homogeneous value.  PICA clips triangles
-             * against W/Z after interpolation; clamping here, or rejecting a
-             * triangle merely because one vertex is behind the eye, severs
-             * large world polygons at the near plane. */
+                std::fabs(clip[3]) > 0.0001f
+                    ? (clip[1] * halfHeight + centerY * clip[3]) / clip[3]
+                    : centerY;
+            const float ndcZ =
+                std::fabs(clip[3]) > 0.0001f ? clip[2] / clip[3] : 0.0f;
             output.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
             output.textureS = static_cast<float>(
                 (static_cast<int32_t>(input.texture[0]) * textureScaleS) >>
