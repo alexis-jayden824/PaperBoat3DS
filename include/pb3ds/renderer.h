@@ -121,6 +121,9 @@ typedef struct {
     bool depth_write_enabled;
     PBCompareFunction depth_function;
     PBBlendMode blend_mode;
+    bool alpha_test_enabled;
+    PBCompareFunction alpha_function;
+    uint8_t alpha_reference;
     PBTextureFilter min_filter;
     PBTextureFilter mag_filter;
     PBTextureWrap wrap_s;

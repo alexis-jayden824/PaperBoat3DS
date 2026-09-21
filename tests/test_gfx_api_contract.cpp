@@ -157,7 +157,7 @@ static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
         { .words = { UINT32_C(0xFF100007), UINT32_C(0x56780000) } },
         { .words = { UINT32_C(0xF6008008), 0U } },
         { .words = { UINT32_C(0xEF200000), 0U } },
-        { .words = { UINT32_C(0xFD100007),
+        { .words = { UINT32_C(0xFD100000),
                      reinterpret_cast<uintptr_t>(texture) } },
         { .words = { UINT32_C(0xF5100000), 0U } },
         { .words = { UINT32_C(0xF3000000), 0U } },
@@ -187,6 +187,70 @@ static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
           sizeof(displayList) / sizeof(displayList[0]));
     CHECK(afterRuntime->commands_peak_frame >=
           afterRuntime->commands_last_frame);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeLoadTileSubregion(PBGfxApi3DS *api) {
+    static uint8_t texture[16U * 16U * 2U] = {};
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD10000F),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100400), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF4010010), UINT32_C(0x0702C02C) } },
+        { .words = { UINT32_C(0xF5100400), 0U } },
+        { .words = { UINT32_C(0xF2010010), UINT32_C(0x0002C02C) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), UINT32_C(0x00800080) } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes + 256U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeOneCycleUsesSecondCombiner(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* Cycle 0 is SHADE; cycle 1 is TEXEL0.  Real one-cycle RDP semantics
+     * select cycle 1, so rendering this rectangle must upload a texture. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFE7879) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
     return true;
 }
 
@@ -333,6 +397,8 @@ static bool testCBoundary() {
     CHECK(stats->draw_calls == 16);
     CHECK(testRuntimeDisplayList(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
+    CHECK(testRuntimeLoadTileSubregion(api));
+    CHECK(testRuntimeOneCycleUsesSecondCombiner(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

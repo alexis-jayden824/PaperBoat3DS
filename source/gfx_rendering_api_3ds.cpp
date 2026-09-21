@@ -510,8 +510,8 @@ struct GfxRenderingAPI3DS::Impl {
     Fast::FilteringMode filterMode = Fast::FILTER_THREE_POINT;
     PBRenderPipeline pipeline = {
         PB_CULL_NONE, false, false, PB_COMPARE_GREATER_EQUAL,
-        PB_BLEND_DISABLED, PB_FILTER_NEAREST, PB_FILTER_NEAREST,
-        PB_WRAP_REPEAT, PB_WRAP_REPEAT,
+        PB_BLEND_DISABLED, false, PB_COMPARE_GREATER, 0,
+        PB_FILTER_NEAREST, PB_FILTER_NEAREST, PB_WRAP_REPEAT, PB_WRAP_REPEAT,
     };
     uint32_t diagnosticTexture = 0;
     uint32_t firstFrameTexture = 0;
@@ -792,6 +792,30 @@ void GfxRenderingAPI3DS::SetUseAlpha(bool useAlpha) {
     }
     mImpl->pipeline.blend_mode =
         useAlpha ? PB_BLEND_ALPHA : PB_BLEND_DISABLED;
+    (void)mImpl->ApplyPipeline();
+}
+
+void GfxRenderingAPI3DS::ConfigureRuntimePipeline(
+    bool depthTest, bool depthWrite, bool decal, int8_t cullKeepSign,
+    bool useAlpha, bool alphaTest, uint8_t alphaReference) {
+    if (mImpl == nullptr) return;
+    mImpl->zmodeDecal = decal;
+    mImpl->pipeline.depth_test_enabled = depthTest;
+    mImpl->pipeline.depth_write_enabled = depthWrite;
+    mImpl->pipeline.depth_function = decal
+        ? (mImpl->strictDecal ? PB_COMPARE_EQUAL : PB_COMPARE_GREATER_EQUAL)
+        : PB_COMPARE_GREATER_EQUAL;
+    mCurrentCullKeepSign = cullKeepSign;
+    mImpl->pipeline.cull_mode = cullKeepSign > 0
+                                    ? PB_CULL_BACK_CCW
+                                    : (cullKeepSign < 0
+                                           ? PB_CULL_FRONT_CCW
+                                           : PB_CULL_NONE);
+    mImpl->pipeline.blend_mode =
+        useAlpha ? PB_BLEND_ALPHA : PB_BLEND_DISABLED;
+    mImpl->pipeline.alpha_test_enabled = alphaTest;
+    mImpl->pipeline.alpha_function = PB_COMPARE_GREATER;
+    mImpl->pipeline.alpha_reference = alphaReference;
     (void)mImpl->ApplyPipeline();
 }
 

@@ -212,6 +212,8 @@ bool pb_renderer_pipeline_is_valid(const PBRenderPipeline *pipeline) {
         (unsigned int)pipeline->depth_function >=
             (unsigned int)PB_COMPARE_COUNT ||
         (unsigned int)pipeline->blend_mode >= (unsigned int)PB_BLEND_COUNT ||
+        (unsigned int)pipeline->alpha_function >=
+            (unsigned int)PB_COMPARE_COUNT ||
         (unsigned int)pipeline->min_filter >= (unsigned int)PB_FILTER_COUNT ||
         (unsigned int)pipeline->mag_filter >= (unsigned int)PB_FILTER_COUNT ||
         (unsigned int)pipeline->wrap_s >= (unsigned int)PB_WRAP_COUNT ||
@@ -239,6 +241,9 @@ static bool pipeline_equals(const PBRenderPipeline *left,
            left->depth_write_enabled == right->depth_write_enabled &&
            left->depth_function == right->depth_function &&
            left->blend_mode == right->blend_mode &&
+           left->alpha_test_enabled == right->alpha_test_enabled &&
+           left->alpha_function == right->alpha_function &&
+           left->alpha_reference == right->alpha_reference &&
            left->min_filter == right->min_filter &&
            left->mag_filter == right->mag_filter &&
            left->wrap_s == right->wrap_s && left->wrap_t == right->wrap_t;

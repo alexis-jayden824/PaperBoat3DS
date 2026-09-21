@@ -102,6 +102,7 @@ constexpr uint32_t ZMODE_DEC = 0xC00U;
 constexpr uint32_t FORCE_BL = 0x4000U;
 constexpr uint32_t G_ZS_PRIM = 1U << 2U;
 constexpr uint32_t G_CYCLE_TYPE_MASK = 3U << 20U;
+constexpr uint32_t G_CYCLE_2 = 1U << 20U;
 constexpr uint32_t G_CYCLE_COPY = 2U << 20U;
 constexpr uint32_t G_CYCLE_FILL = 3U << 20U;
 constexpr uint8_t G_MW_NUMLIGHT = 0x02;
@@ -377,9 +378,13 @@ class RuntimeDisplayListRenderer {
         uint16_t resourceWidth = 0U;
         uint16_t resourceHeight = 0U;
         uint16_t imageWidth = 0U;
+        uint16_t loadedWidth = 0U;
+        uint16_t loadedHeight = 0U;
         uint8_t format = 0U;
         uint8_t size = 0U;
         uint32_t resourceType = 0U;
+        uint32_t rowStrideTexels = 0U;
+        uint32_t offsetTexels = 0U;
         size_t payloadSize = 0U;
     };
 
@@ -397,10 +402,28 @@ class RuntimeDisplayListRenderer {
     };
 
     struct CombinerUse {
-        bool texture = true;
-        bool shade = true;
+        bool texture = false;
+        bool shade = false;
         bool primitive = false;
         bool environment = false;
+    };
+
+    struct CombinerCycle {
+        uint8_t rgb[4] = { 31U, 31U, 31U, 31U };
+        uint8_t alpha[4] = { 7U, 7U, 7U, 7U };
+    };
+
+    struct DecodedCombiner {
+        std::array<CombinerCycle, 2U> cycles = {};
+        size_t cycleCount = 1U;
+        CombinerUse use = {};
+    };
+
+    struct FloatColor {
+        float red = 0.0f;
+        float green = 0.0f;
+        float blue = 0.0f;
+        float alpha = 0.0f;
     };
 
     bool PrepareShaders() {
@@ -456,7 +479,12 @@ class RuntimeDisplayListRenderer {
         batch.clear();
         batchTriangles = 0U;
         batchTextured = false;
-        batchTexture = 0U;
+        batchHasTexture = false;
+        batchFill = false;
+        batchTextureReplace = false;
+        batchCombiner = {};
+        batchTextureInfo = {};
+        fillRectangleColor = {};
         depthImageAddress = 0U;
         colorImageAddress = 0U;
         colorTargetIsDepth = false;
@@ -582,7 +610,11 @@ class RuntimeDisplayListRenderer {
                 viewportX + (ndcX + 1.0f) * viewportWidth * 0.5f;
             output.screenY =
                 viewportY + (ndcY + 1.0f) * viewportHeight * 0.5f;
-            output.depth = Clamp01(1.0f - (ndcZ * 0.5f + 0.5f));
+            /* Preserve the unclamped homogeneous value.  PICA clips triangles
+             * against W/Z after interpolation; clamping here, or rejecting a
+             * triangle merely because one vertex is behind the eye, severs
+             * large world polygons at the near plane. */
+            output.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
             output.textureS = static_cast<float>(
                 (static_cast<int32_t>(input.texture[0]) * textureScaleS) >>
                 16);
@@ -591,73 +623,218 @@ class RuntimeDisplayListRenderer {
                 16);
             output.color = Illuminate(input);
             output.valid = std::isfinite(output.screenX) &&
-                           std::isfinite(output.screenY) && clip[3] > 0.0f;
+                           std::isfinite(output.screenY) &&
+                           std::isfinite(output.depth);
         }
     }
 
-    static bool FormulaReferences(uint8_t value, uint8_t source) {
-        return value == source;
-    }
-
-    CombinerUse DecodeCombinerUse() const {
-        CombinerUse use = {};
-        use.texture = false;
-        use.shade = false;
+    DecodedCombiner DecodeCombiner() const {
+        DecodedCombiner decoded = {};
         const uint32_t word0 = combineWord0;
         const uint32_t word1 = combineWord1;
-        const uint8_t values[] = {
-            static_cast<uint8_t>((word0 >> 20U) & 0xFU),
-            static_cast<uint8_t>((word1 >> 28U) & 0xFU),
-            static_cast<uint8_t>((word0 >> 15U) & 0x1FU),
-            static_cast<uint8_t>((word1 >> 15U) & 0x7U),
-            static_cast<uint8_t>((word0 >> 12U) & 0x7U),
-            static_cast<uint8_t>((word1 >> 12U) & 0x7U),
-            static_cast<uint8_t>((word0 >> 9U) & 0x7U),
-            static_cast<uint8_t>((word1 >> 9U) & 0x7U),
-            static_cast<uint8_t>((word0 >> 5U) & 0xFU),
-            static_cast<uint8_t>((word1 >> 24U) & 0xFU),
-            static_cast<uint8_t>(word0 & 0x1FU),
-            static_cast<uint8_t>((word1 >> 6U) & 0x7U),
-            static_cast<uint8_t>((word1 >> 21U) & 0x7U),
-            static_cast<uint8_t>((word1 >> 3U) & 0x7U),
-            static_cast<uint8_t>((word1 >> 18U) & 0x7U),
-            static_cast<uint8_t>(word1 & 0x7U),
+        decoded.cycles[0] = {
+            { static_cast<uint8_t>((word0 >> 20U) & 0xFU),
+              static_cast<uint8_t>((word1 >> 28U) & 0xFU),
+              static_cast<uint8_t>((word0 >> 15U) & 0x1FU),
+              static_cast<uint8_t>((word1 >> 15U) & 0x7U) },
+            { static_cast<uint8_t>((word0 >> 12U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 12U) & 0x7U),
+              static_cast<uint8_t>((word0 >> 9U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 9U) & 0x7U) },
         };
-        for (uint8_t value : values) {
-            use.texture = use.texture || value == 1U || value == 2U ||
-                          value == 8U || value == 9U;
-            use.shade = use.shade || FormulaReferences(value, 4U) ||
-                        FormulaReferences(value, 11U);
-            use.primitive = use.primitive || FormulaReferences(value, 3U) ||
-                            FormulaReferences(value, 10U);
-            use.environment = use.environment || FormulaReferences(value, 5U);
+        decoded.cycles[1] = {
+            { static_cast<uint8_t>((word0 >> 5U) & 0xFU),
+              static_cast<uint8_t>((word1 >> 24U) & 0xFU),
+              static_cast<uint8_t>(word0 & 0x1FU),
+              static_cast<uint8_t>((word1 >> 6U) & 0x7U) },
+            { static_cast<uint8_t>((word1 >> 21U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 3U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 18U) & 0x7U),
+              static_cast<uint8_t>(word1 & 0x7U) },
+        };
+        decoded.cycleCount =
+            (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_2 ? 2U : 1U;
+
+        /* The RDP's one-cycle path executes the second half of the encoded
+         * combiner.  Most SDK macros deliberately duplicate both halves, but
+         * Paper Mario also has modes where they differ (notably framebuffer
+         * and layered sprite paths).  Treating the first half as active can
+         * therefore select the wrong texel/alpha source and visibly sever a
+         * layer even though its geometry and texture decode are sound. */
+        if (decoded.cycleCount == 1U) {
+            decoded.cycles[0] = decoded.cycles[1];
         }
-        return use;
+
+        for (size_t cycleIndex = 0U;
+             cycleIndex < decoded.cycleCount; cycleIndex++) {
+            CombinerCycle &cycle = decoded.cycles[cycleIndex];
+            if (cycle.rgb[0] >= 8U) cycle.rgb[0] = 31U;
+            if (cycle.rgb[1] >= 8U) cycle.rgb[1] = 31U;
+            if (cycle.rgb[2] >= 16U) cycle.rgb[2] = 31U;
+            if (cycle.rgb[3] == 7U) cycle.rgb[3] = 31U;
+            if (cycle.rgb[0] == cycle.rgb[1] || cycle.rgb[2] == 31U) {
+                cycle.rgb[0] = cycle.rgb[1] = cycle.rgb[2] = 31U;
+            }
+            if (cycle.alpha[0] == cycle.alpha[1] ||
+                cycle.alpha[2] == 7U) {
+                cycle.alpha[0] = cycle.alpha[1] = cycle.alpha[2] = 7U;
+            }
+        }
+        if (decoded.cycleCount == 1U) {
+            for (uint8_t &value : decoded.cycles[0].rgb) {
+                if (value == 2U) value = 1U;
+                if (value == 9U) value = 8U;
+            }
+            for (uint8_t &value : decoded.cycles[0].alpha) {
+                if (value == 2U) value = 1U;
+            }
+        }
+
+        for (size_t cycleIndex = 0U;
+             cycleIndex < decoded.cycleCount; cycleIndex++) {
+            const CombinerCycle &cycle = decoded.cycles[cycleIndex];
+            for (uint8_t value : cycle.rgb) {
+                decoded.use.texture = decoded.use.texture || value == 1U ||
+                                      value == 2U || value == 8U ||
+                                      value == 9U;
+                decoded.use.shade = decoded.use.shade || value == 4U ||
+                                    value == 11U;
+                decoded.use.primitive = decoded.use.primitive ||
+                                        value == 3U || value == 10U ||
+                                        value == 14U;
+                decoded.use.environment = decoded.use.environment ||
+                                          value == 5U || value == 12U;
+            }
+            for (size_t slot = 0U; slot < 4U; slot++) {
+                const uint8_t value = cycle.alpha[slot];
+                decoded.use.texture = decoded.use.texture || value == 1U ||
+                                      value == 2U;
+                decoded.use.shade = decoded.use.shade || value == 4U;
+                decoded.use.primitive = decoded.use.primitive ||
+                                        value == 3U ||
+                                        (value == 6U && slot == 2U);
+                decoded.use.environment = decoded.use.environment ||
+                                          value == 5U;
+            }
+        }
+        return decoded;
+    }
+
+    static FloatColor ToFloatColor(const Color &color) {
+        return {
+            static_cast<float>(color.red) / 255.0f,
+            static_cast<float>(color.green) / 255.0f,
+            static_cast<float>(color.blue) / 255.0f,
+            static_cast<float>(color.alpha) / 255.0f,
+        };
+    }
+
+    static FloatColor ScalarColor(float value) {
+        return { value, value, value, value };
+    }
+
+    static FloatColor ClampColor(const FloatColor &color) {
+        return { Clamp01(color.red), Clamp01(color.green),
+                 Clamp01(color.blue), Clamp01(color.alpha) };
+    }
+
+    FloatColor RgbCombinerSource(uint8_t value, size_t slot,
+                                 const FloatColor &combined,
+                                 const FloatColor &shade) const {
+        const FloatColor white = { 1.0f, 1.0f, 1.0f, 1.0f };
+        switch (value) {
+            case 0U: return combined;
+            case 1U:
+            case 2U: return white;
+            case 3U: return ToFloatColor(primColor);
+            case 4U: return shade;
+            case 5U: return ToFloatColor(envColor);
+            case 6U:
+                return slot == 1U ? FloatColor{} : white;
+            case 7U:
+                return slot == 2U ? ScalarColor(combined.alpha)
+                                  : FloatColor{};
+            case 8U:
+            case 9U: return white;
+            case 10U: return ScalarColor(ToFloatColor(primColor).alpha);
+            case 11U: return ScalarColor(shade.alpha);
+            case 12U: return ScalarColor(ToFloatColor(envColor).alpha);
+            case 13U:
+            case 14U: return white;
+            case 15U:
+                return slot == 2U ? white : FloatColor{};
+            case 31U:
+            default: return {};
+        }
+    }
+
+    float AlphaCombinerSource(uint8_t value, size_t slot,
+                              const FloatColor &combined,
+                              const FloatColor &shade) const {
+        switch (value) {
+            case 0U: return slot == 2U ? 1.0f : combined.alpha;
+            case 1U:
+            case 2U: return 1.0f;
+            case 3U: return ToFloatColor(primColor).alpha;
+            case 4U: return shade.alpha;
+            case 5U: return ToFloatColor(envColor).alpha;
+            case 6U: return 1.0f;
+            case 7U:
+            default: return 0.0f;
+        }
+    }
+
+    FloatColor EvaluateCombiner(const LoadedVertex &vertex) const {
+        FloatColor combined = {};
+        const FloatColor shade = ToFloatColor(vertex.color);
+        for (size_t cycleIndex = 0U;
+             cycleIndex < batchCombiner.cycleCount; cycleIndex++) {
+            const CombinerCycle &cycle =
+                batchCombiner.cycles[cycleIndex];
+            const FloatColor a =
+                RgbCombinerSource(cycle.rgb[0], 0U, combined, shade);
+            const FloatColor b =
+                RgbCombinerSource(cycle.rgb[1], 1U, combined, shade);
+            const FloatColor c =
+                RgbCombinerSource(cycle.rgb[2], 2U, combined, shade);
+            const FloatColor d =
+                RgbCombinerSource(cycle.rgb[3], 3U, combined, shade);
+            FloatColor next = {
+                (a.red - b.red) * c.red + d.red,
+                (a.green - b.green) * c.green + d.green,
+                (a.blue - b.blue) * c.blue + d.blue,
+                0.0f,
+            };
+            const float alphaA = AlphaCombinerSource(
+                cycle.alpha[0], 0U, combined, shade);
+            const float alphaB = AlphaCombinerSource(
+                cycle.alpha[1], 1U, combined, shade);
+            const float alphaC = AlphaCombinerSource(
+                cycle.alpha[2], 2U, combined, shade);
+            const float alphaD = AlphaCombinerSource(
+                cycle.alpha[3], 3U, combined, shade);
+            next.alpha = (alphaA - alphaB) * alphaC + alphaD;
+            combined = ClampColor(next);
+        }
+        return combined;
     }
 
     Color ShadeForVertex(const LoadedVertex &vertex) const {
-        const CombinerUse use = DecodeCombinerUse();
-        Color output = use.shade ? vertex.color : Color{};
-        const auto multiply = [&output](const Color &color) {
-            output.red = static_cast<uint8_t>(
-                (static_cast<unsigned int>(output.red) * color.red + 127U) /
-                255U);
-            output.green = static_cast<uint8_t>(
-                (static_cast<unsigned int>(output.green) * color.green + 127U) /
-                255U);
-            output.blue = static_cast<uint8_t>(
-                (static_cast<unsigned int>(output.blue) * color.blue + 127U) /
-                255U);
-            output.alpha = static_cast<uint8_t>(
-                (static_cast<unsigned int>(output.alpha) * color.alpha +
-                 127U) /
-                255U);
+        FloatColor evaluated = batchFill
+                                   ? ToFloatColor(fillRectangleColor)
+                                   : (batchTextureReplace
+                                          ? FloatColor{ 1.0f, 1.0f, 1.0f,
+                                                        1.0f }
+                                          : EvaluateCombiner(vertex));
+        Color output = {
+            static_cast<uint8_t>(evaluated.red * 255.0f + 0.5f),
+            static_cast<uint8_t>(evaluated.green * 255.0f + 0.5f),
+            static_cast<uint8_t>(evaluated.blue * 255.0f + 0.5f),
+            static_cast<uint8_t>(evaluated.alpha * 255.0f + 0.5f),
         };
-        if (use.primitive) multiply(primColor);
-        if (use.environment) multiply(envColor);
         if ((geometryMode & G_FOG) != 0U) {
             const float divisor = std::fabs(vertex.clipW) < 0.001f
-                                      ? 0.001f
+                                      ? std::copysign(0.001f, vertex.clipW)
                                       : vertex.clipW;
             const float factor = Clamp01(
                 (vertex.clipZ / divisor * fogMultiply + fogOffset) / 255.0f);
@@ -713,8 +890,10 @@ class RuntimeDisplayListRenderer {
             typeOut == nullptr) {
             return false;
         }
-        uint32_t width = source.resourceWidth;
-        uint32_t height = source.resourceHeight;
+        uint32_t width = source.loadedWidth;
+        uint32_t height = source.loadedHeight;
+        if (width == 0U) width = source.resourceWidth;
+        if (height == 0U) height = source.resourceHeight;
         if (width == 0U) {
             width = tile.lowerS >= tile.upperS
                         ? ((tile.lowerS - tile.upperS) >> 2U) + 1U
@@ -737,18 +916,35 @@ class RuntimeDisplayListRenderer {
                                   ? source.resourceType
                                   : TextureTypeFor(tile.format, tile.size);
         if (type == PB_RESOURCE_TEXTURE_ERROR) return false;
-        const size_t texels = static_cast<size_t>(width) * height;
+        const size_t rowStride = source.rowStrideTexels != 0U
+                                     ? source.rowStrideTexels
+                                     : width;
+        if (rowStride < width || source.offsetTexels > SIZE_MAX - width ||
+            height - 1U >
+                (SIZE_MAX - source.offsetTexels - width) / rowStride) {
+            return false;
+        }
+        const size_t addressedTexels = source.offsetTexels +
+            (static_cast<size_t>(height) - 1U) * rowStride + width;
         size_t required = 0U;
         switch (type) {
-            case PB_RESOURCE_TEXTURE_RGBA32: required = texels * 4U; break;
+            case PB_RESOURCE_TEXTURE_RGBA32:
+                if (addressedTexels > SIZE_MAX / 4U) return false;
+                required = addressedTexels * 4U;
+                break;
             case PB_RESOURCE_TEXTURE_RGBA16:
-            case PB_RESOURCE_TEXTURE_IA16: required = texels * 2U; break;
+            case PB_RESOURCE_TEXTURE_IA16:
+                if (addressedTexels > SIZE_MAX / 2U) return false;
+                required = addressedTexels * 2U;
+                break;
             case PB_RESOURCE_TEXTURE_CI4:
             case PB_RESOURCE_TEXTURE_I4:
-            case PB_RESOURCE_TEXTURE_IA4: required = (texels + 1U) / 2U; break;
+            case PB_RESOURCE_TEXTURE_IA4:
+                required = (addressedTexels + 1U) / 2U;
+                break;
             case PB_RESOURCE_TEXTURE_CI8:
             case PB_RESOURCE_TEXTURE_I8:
-            case PB_RESOURCE_TEXTURE_IA8: required = texels; break;
+            case PB_RESOURCE_TEXTURE_IA8: required = addressedTexels; break;
             default: return false;
         }
         if (source.payloadSize != 0U && required > source.payloadSize) {
@@ -775,7 +971,8 @@ class RuntimeDisplayListRenderer {
         };
         for (uint32_t y = 0U; y < height; y++) {
             for (uint32_t x = 0U; x < width; x++) {
-                const size_t texel = static_cast<size_t>(y) * width + x;
+                const size_t texel = source.offsetTexels +
+                                     static_cast<size_t>(y) * rowStride + x;
                 uint8_t *destination =
                     &(*rgba)[(static_cast<size_t>(y) * paddedWidth + x) * 4U];
                 switch (type) {
@@ -852,6 +1049,10 @@ class RuntimeDisplayListRenderer {
         key ^= static_cast<uint64_t>(height) << 17U;
         key ^= static_cast<uint64_t>(type) << 27U;
         key ^= static_cast<uint64_t>(tile.palette) << 2U;
+        key ^= static_cast<uint64_t>(source.rowStrideTexels) *
+               UINT64_C(0x85EBCA6B);
+        key ^= static_cast<uint64_t>(source.offsetTexels) *
+               UINT64_C(0xC2B2AE35);
         key ^= key >> 32U;
         return static_cast<uint32_t>(key);
     }
@@ -905,8 +1106,10 @@ class RuntimeDisplayListRenderer {
                             ? source.resourceType
                             : TextureTypeFor(tile.format, tile.size);
         const uint8_t *palette = PaletteFor(tile, type);
-        uint32_t width = source.resourceWidth;
-        uint32_t height = source.resourceHeight;
+        uint32_t width = source.loadedWidth;
+        uint32_t height = source.loadedHeight;
+        if (width == 0U) width = source.resourceWidth;
+        if (height == 0U) height = source.resourceHeight;
         if (width == 0U && tile.lowerS >= tile.upperS) {
             width = ((tile.lowerS - tile.upperS) >> 2U) + 1U;
         }
@@ -952,28 +1155,49 @@ class RuntimeDisplayListRenderer {
         return &textures.back();
     }
 
-    bool BeginBatch(bool textured) {
-        if (batchTriangles != 0U && batchTextured == textured) return true;
+    bool BeginBatch(bool textureRequested, bool fill = false) {
+        const DecodedCombiner combiner = DecodeCombiner();
+        const bool copyCycle =
+            (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY;
+        const bool textured = textureRequested &&
+                              (combiner.use.texture || copyCycle);
+        if (batchTriangles != 0U && batchTextured == textured &&
+            batchFill == fill) {
+            return true;
+        }
         if (!Flush()) return false;
         batchTextured = textured;
-        batchTexture = 0U;
-        api->SetDepthTestAndMask(
+        batchFill = fill;
+        batchHasTexture = false;
+        batchTextureInfo = {};
+        batchCombiner = combiner;
+        batchTextureReplace = textured &&
+                              (!batchCombiner.use.texture || copyCycle);
+        const bool depthTest =
             ((geometryMode & G_ZBUFFER) != 0U ||
              (otherModeLow & G_ZS_PRIM) != 0U) &&
-                (otherModeLow & Z_CMP) != 0U,
-            (otherModeLow & Z_UPD) != 0U);
-        api->SetZmodeDecal((otherModeLow & ZMODE_DEC) == ZMODE_DEC);
+            (otherModeLow & Z_CMP) != 0U;
+        const bool depthWrite = (otherModeLow & Z_UPD) != 0U;
         const uint32_t cull = geometryMode & G_CULL_BOTH;
-        api->SetCullMode(cull == G_CULL_FRONT
-                             ? 1
-                             : (cull == G_CULL_BACK ? -1 : 0));
-        api->SetUseAlpha(textured || (otherModeLow & FORCE_BL) != 0U ||
-                         primColor.alpha != 255U || envColor.alpha != 255U);
+        const int8_t cullKeepSign = cull == G_CULL_FRONT
+                                        ? 1
+                                        : (cull == G_CULL_BACK ? -1 : 0);
+        const bool useAlpha = textured ||
+                              (otherModeLow & FORCE_BL) != 0U ||
+                              primColor.alpha != 255U ||
+                              envColor.alpha != 255U;
+        const uint8_t alphaReference =
+            (otherModeLow & 3U) == 1U ? blendColor.alpha : 0U;
+        api->ConfigureRuntimePipeline(
+            depthTest, depthWrite,
+            (otherModeLow & ZMODE_DEC) == ZMODE_DEC, cullKeepSign,
+            useAlpha, textured, alphaReference);
         if (textured) {
             Tile &tile = tiles[firstTile & 7U];
             TextureCacheEntry *texture = AcquireTexture(tile);
             if (texture == nullptr) return false;
-            batchTexture = texture->id;
+            batchTextureInfo = *texture;
+            batchHasTexture = true;
             api->LoadShader(textureShader);
             api->SelectTexture(0, texture->id);
             const bool linear = ((otherModeHigh >> 12U) & 3U) != 0U;
@@ -995,15 +1219,16 @@ class RuntimeDisplayListRenderer {
         return true;
     }
 
-    void AppendVertex(const LoadedVertex &vertex, const Tile *tile,
-                      const TextureCacheEntry *texture) {
-        const float clipW = std::max(0.0001f, vertex.clipW);
+    void AppendVertex(const LoadedVertex &vertex, const Tile *tile) {
+        const float clipW = std::fabs(vertex.clipW) < 0.0001f
+                                ? std::copysign(0.0001f, vertex.clipW)
+                                : vertex.clipW;
         batch.push_back(vertex.screenX * clipW);
         batch.push_back(vertex.screenY * clipW);
         batch.push_back(vertex.depth * clipW);
         batch.push_back(clipW);
         batch.push_back(0.0f);
-        if (tile != nullptr && texture != nullptr) {
+        if (tile != nullptr && batchHasTexture) {
             const float s =
                 ShiftTextureCoordinate(vertex.textureS / 32.0f,
                                        tile->shiftS) -
@@ -1012,9 +1237,10 @@ class RuntimeDisplayListRenderer {
                 ShiftTextureCoordinate(vertex.textureT / 32.0f,
                                        tile->shiftT) -
                 static_cast<float>(tile->upperT) / 4.0f;
-            batch.push_back(s / texture->textureWidth);
+            batch.push_back(s / batchTextureInfo.textureWidth);
             batch.push_back(pb_renderer_n64_texture_v(
-                t, texture->sourceHeight, texture->textureHeight));
+                t, batchTextureInfo.sourceHeight,
+                batchTextureInfo.textureHeight));
         }
         const Color color = ShadeForVertex(vertex);
         batch.push_back(static_cast<float>(color.red) / 255.0f);
@@ -1041,21 +1267,11 @@ class RuntimeDisplayListRenderer {
             !triangle[2]->valid) {
             return true;
         }
-        const bool textured = DecodeCombinerUse().texture;
+        const bool textured = DecodeCombiner().use.texture;
         if (!BeginBatch(textured)) return false;
         const Tile *tile = textured ? &tiles[firstTile & 7U] : nullptr;
-        TextureCacheEntry *texture = nullptr;
-        if (textured) {
-            for (TextureCacheEntry &entry : textures) {
-                if (entry.id == batchTexture) {
-                    texture = &entry;
-                    break;
-                }
-            }
-            if (texture == nullptr) return false;
-        }
         for (const LoadedVertex *vertex : triangle) {
-            AppendVertex(*vertex, tile, texture);
+            AppendVertex(*vertex, tile);
         }
         batchTriangles++;
         if (batchTriangles >= kBatchTriangleLimit) return Flush();
@@ -1080,7 +1296,7 @@ class RuntimeDisplayListRenderer {
     bool EmitRectangle(float left, float top, float right, float bottom,
                        float upperS, float upperT, float lowerS,
                        float lowerT, bool textured,
-                       bool flipTexture = false) {
+                       bool flipTexture = false, bool fill = false) {
         if (right <= left || bottom <= top) return true;
         if (!Flush()) return false;
         const float screenLeft = kScreenInset + left;
@@ -1112,17 +1328,10 @@ class RuntimeDisplayListRenderer {
                                             upperS, upperT, depth);
             rectangle[5] = rectangle[0];
         }
-        if (!BeginBatch(textured)) return false;
+        if (!BeginBatch(textured, fill)) return false;
         const Tile *tile = textured ? &tiles[firstTile & 7U] : nullptr;
-        TextureCacheEntry *texture = nullptr;
-        if (textured) {
-            for (TextureCacheEntry &entry : textures) {
-                if (entry.id == batchTexture) texture = &entry;
-            }
-            if (texture == nullptr) return false;
-        }
         for (const LoadedVertex &vertex : rectangle) {
-            AppendVertex(vertex, tile, texture);
+            AppendVertex(vertex, tile);
         }
         batchTriangles += 2U;
         return Flush();
@@ -1189,10 +1398,38 @@ class RuntimeDisplayListRenderer {
         tile.lowerT = static_cast<uint16_t>(word1 & 0xFFFU);
     }
 
-    void LoadTexture(size_t tileIndex) {
+    void LoadTexture(size_t tileIndex, uint32_t word0 = 0U,
+                     uint32_t word1 = 0U, bool loadTile = false) {
         if (tileIndex >= tiles.size()) return;
         const size_t tmemIndex = tiles[tileIndex].tmem != 0U ? 1U : 0U;
-        loadedTextures[tmemIndex] = textureToLoad;
+        TextureSource loaded = textureToLoad;
+        const uint32_t upperS = (word0 >> 12U) & 0xFFFU;
+        const uint32_t upperT = word0 & 0xFFFU;
+        const uint32_t lowerS = (word1 >> 12U) & 0xFFFU;
+        const uint32_t lowerT = word1 & 0xFFFU;
+        if (loadTile) {
+            const uint32_t stride = loaded.resourceWidth != 0U
+                                        ? loaded.resourceWidth
+                                        : loaded.imageWidth;
+            const uint32_t offsetX = upperS >> 2U;
+            const uint32_t offsetY = upperT >> 2U;
+            loaded.rowStrideTexels = stride;
+            loaded.offsetTexels = offsetY * stride + offsetX;
+            if (lowerS >= upperS && lowerT >= upperT) {
+                loaded.loadedWidth = static_cast<uint16_t>(
+                    ((lowerS - upperS) >> 2U) + 1U);
+                loaded.loadedHeight = static_cast<uint16_t>(
+                    ((lowerT - upperT) >> 2U) + 1U);
+            }
+        } else {
+            /* LoadBlock sources are contiguous even though the command's
+             * texture-image width is conventionally one.  Let DecodeTexture
+             * derive the row width from the render tile instead of treating
+             * every row as a single texel. */
+            loaded.rowStrideTexels = 0U;
+            loaded.offsetTexels = 0U;
+        }
+        loadedTextures[tmemIndex] = loaded;
     }
 
     void LoadPalette(size_t tileIndex, size_t entries) {
@@ -1610,14 +1847,24 @@ class RuntimeDisplayListRenderer {
                     commandCount += 1U;
                     break;
                 case G_LOADBLOCK:
+                    Flush();
+                    LoadTexture((word1 >> 24U) & 7U, word0, word1, false);
+                    break;
                 case G_LOADTILE:
                     Flush();
-                    LoadTexture((word1 >> 24U) & 7U);
+                    LoadTexture((word1 >> 24U) & 7U, word0, word1, true);
                     break;
                 case G_LOADBLOCK_WIDE:
                     Flush();
-                    LoadTexture(word0 & 7U);
-                    index++;
+                    {
+                        const PBRuntimeGfx &parameters = displayList[++index];
+                        const uint32_t parametersWord =
+                            static_cast<uint32_t>(parameters.words.w0);
+                        const uint32_t loadWord0 =
+                            (((parametersWord >> 16U) & 0xFFFU) << 12U) |
+                            (parametersWord & 0xFFFU);
+                        LoadTexture(word0 & 7U, loadWord0, 0U, false);
+                    }
                     commandCount++;
                     break;
                 case G_LOADTLUT:
@@ -1682,6 +1929,18 @@ class RuntimeDisplayListRenderer {
                 case G_SETFILLCOLOR:
                     Flush();
                     fillColor = word1;
+                    {
+                        const uint16_t color =
+                            static_cast<uint16_t>(fillColor);
+                        fillRectangleColor = {
+                            ExpandFive(color >> 11U),
+                            ExpandFive(color >> 6U),
+                            ExpandFive(color >> 1U),
+                            static_cast<uint8_t>((color & 1U) != 0U
+                                                     ? 255U
+                                                     : 0U),
+                        };
+                    }
                     break;
                 case G_SETSCISSOR: {
                     Flush();
@@ -1802,19 +2061,14 @@ class RuntimeDisplayListRenderer {
                     const bool inclusiveEdge =
                         (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY ||
                         (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_FILL;
-                    const uint16_t color = static_cast<uint16_t>(fillColor);
-                    primColor = {
-                        ExpandFive(color >> 11U), ExpandFive(color >> 6U),
-                        ExpandFive(color >> 1U),
-                        static_cast<uint8_t>((color & 1U) != 0U ? 255U : 0U),
-                    };
                     if (!EmitRectangle(((word1 >> 12U) & 0xFFFU) / 4.0f,
                                        (word1 & 0xFFFU) / 4.0f,
                                        ((word0 >> 12U) & 0xFFFU) / 4.0f +
                                            (inclusiveEdge ? 1.0f : 0.0f),
                                        (word0 & 0xFFFU) / 4.0f +
                                            (inclusiveEdge ? 1.0f : 0.0f),
-                                       0.0f, 0.0f, 0.0f, 0.0f, false)) {
+                                       0.0f, 0.0f, 0.0f, 0.0f, false,
+                                       false, true)) {
                         return false;
                     }
                     break;
@@ -1846,7 +2100,8 @@ class RuntimeDisplayListRenderer {
                                 4.0f,
                             signed24(static_cast<uint32_t>(corner.words.w1)) /
                                 4.0f,
-                            right, bottom, 0.0f, 0.0f, 0.0f, 0.0f, false)) {
+                            right, bottom, 0.0f, 0.0f, 0.0f, 0.0f, false,
+                            false, true)) {
                         return false;
                     }
                     break;
@@ -2012,7 +2267,12 @@ class RuntimeDisplayListRenderer {
     std::vector<float> batch;
     size_t batchTriangles = 0U;
     bool batchTextured = false;
-    uint32_t batchTexture = 0U;
+    bool batchHasTexture = false;
+    bool batchFill = false;
+    bool batchTextureReplace = false;
+    DecodedCombiner batchCombiner = {};
+    TextureCacheEntry batchTextureInfo = {};
+    Color fillRectangleColor = {};
     std::vector<TextureCacheEntry> textures;
     uint64_t textureUseClock = 0U;
     uint64_t frameSerial = 0U;

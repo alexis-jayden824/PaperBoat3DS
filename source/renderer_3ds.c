@@ -28,7 +28,11 @@ typedef struct {
 typedef struct {
     uint32_t id;
     C3D_Tex texture;
+    PBTextureFilter filter;
+    PBTextureWrap wrap_s;
+    PBTextureWrap wrap_t;
     bool allocated;
+    bool sampler_set;
 } PBRendererTexture;
 
 struct PBRenderer3DS {
@@ -44,6 +48,8 @@ struct PBRenderer3DS {
     size_t stream_capacity_vertices;
     size_t stream_used_vertices;
     int projection_uniform;
+    uint32_t bound_textures[PB_GFX_TEXTURE_UNITS];
+    int combiner_mode;
     bool c3d_ready;
     bool program_ready;
     bool frame_open;
@@ -98,6 +104,9 @@ static void apply_pipeline(PBRenderer3DS *renderer) {
     C3D_DepthTest(depth_enabled, depth_function,
                   pipeline->depth_write_enabled ? GPU_WRITE_ALL
                                                 : GPU_WRITE_COLOR);
+    C3D_AlphaTest(pipeline->alpha_test_enabled,
+                  (GPU_TESTFUNC)pipeline->alpha_function,
+                  pipeline->alpha_reference);
 
     switch (pipeline->blend_mode) {
         case PB_BLEND_ALPHA:
@@ -165,6 +174,7 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     }
 
     PBRendererInitResult result = PB_RENDERER_INIT_CITRO3D;
+    renderer->combiner_mode = -1;
     if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) {
         goto fail;
     }
@@ -234,6 +244,9 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
         .depth_write_enabled = false,
         .depth_function = PB_COMPARE_GREATER_EQUAL,
         .blend_mode = PB_BLEND_DISABLED,
+        .alpha_test_enabled = false,
+        .alpha_function = PB_COMPARE_GREATER,
+        .alpha_reference = 0,
         .min_filter = PB_FILTER_NEAREST,
         .mag_filter = PB_FILTER_NEAREST,
         .wrap_s = PB_WRAP_REPEAT,
@@ -249,6 +262,7 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     renderer->scissor = viewport;
     apply_pipeline(renderer);
     apply_combiner(PB_GFX_COMBINER_FALLBACK);
+    renderer->combiner_mode = PB_GFX_COMBINER_FALLBACK;
     sync_stats(renderer);
 
     *renderer_out = renderer;
@@ -293,6 +307,11 @@ bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer) {
     if (command_usage > renderer->stats.command_buffer_peak) {
         renderer->stats.command_buffer_peak = command_usage;
     }
+    if (renderer->stream_used_vertices != 0U) {
+        GSPGPU_FlushDataCache(
+            renderer->stream_buffer,
+            renderer->stream_used_vertices * sizeof(PBRendererVertex));
+    }
     C3D_FrameEnd(0);
     renderer->frame_open = false;
     renderer->stats.frames++;
@@ -320,10 +339,15 @@ bool pb_renderer_3ds_clear(PBRenderer3DS *renderer, bool color, bool depth) {
 
 bool pb_renderer_3ds_set_viewport(PBRenderer3DS *renderer,
                                   const PBViewport *viewport) {
-    if (renderer == NULL ||
-        pb_renderer_bind_viewport(&renderer->state_cache, viewport) ==
-            PB_BIND_REJECTED) {
+    if (renderer == NULL) {
         return false;
+    }
+    const PBBindResult bind =
+        pb_renderer_bind_viewport(&renderer->state_cache, viewport);
+    if (bind == PB_BIND_REJECTED) return false;
+    if (bind == PB_BIND_UNCHANGED) {
+        sync_stats(renderer);
+        return true;
     }
     PBTargetViewport target;
     if (!pb_renderer_viewport_to_target(viewport, &target)) {
@@ -354,10 +378,15 @@ bool pb_renderer_3ds_set_scissor(PBRenderer3DS *renderer,
 
 bool pb_renderer_3ds_set_pipeline(PBRenderer3DS *renderer,
                                   const PBRenderPipeline *pipeline) {
-    if (renderer == NULL ||
-        pb_renderer_bind_pipeline(&renderer->state_cache, pipeline) ==
-            PB_BIND_REJECTED) {
+    if (renderer == NULL) {
         return false;
+    }
+    const PBBindResult bind =
+        pb_renderer_bind_pipeline(&renderer->state_cache, pipeline);
+    if (bind == PB_BIND_REJECTED) return false;
+    if (bind == PB_BIND_UNCHANGED) {
+        sync_stats(renderer);
+        return true;
     }
     apply_pipeline(renderer);
     sync_stats(renderer);
@@ -406,6 +435,12 @@ bool pb_renderer_3ds_upload_texture(PBRenderer3DS *renderer,
     entry->id = texture_id;
     entry->texture = new_texture;
     entry->allocated = true;
+    entry->sampler_set = false;
+    for (size_t tile = 0; tile < PB_GFX_TEXTURE_UNITS; tile++) {
+        if (renderer->bound_textures[tile] == texture_id) {
+            renderer->bound_textures[tile] = 0U;
+        }
+    }
     renderer->stats.texture_bytes += layout.bytes;
     return true;
 }
@@ -416,7 +451,9 @@ bool pb_renderer_3ds_bind_texture(PBRenderer3DS *renderer, int tile,
     if (entry == NULL || tile < 0 || tile >= (int)PB_GFX_TEXTURE_UNITS) {
         return false;
     }
+    if (renderer->bound_textures[tile] == texture_id) return true;
     C3D_TexBind(tile, &entry->texture);
+    renderer->bound_textures[tile] = texture_id;
     return true;
 }
 
@@ -431,10 +468,18 @@ bool pb_renderer_3ds_set_sampler(PBRenderer3DS *renderer,
         (unsigned int)wrap_t >= PB_WRAP_COUNT) {
         return false;
     }
+    if (entry->sampler_set && entry->filter == filter &&
+        entry->wrap_s == wrap_s && entry->wrap_t == wrap_t) {
+        return true;
+    }
     C3D_TexSetFilter(&entry->texture, (GPU_TEXTURE_FILTER_PARAM)filter,
                      (GPU_TEXTURE_FILTER_PARAM)filter);
     C3D_TexSetWrap(&entry->texture, (GPU_TEXTURE_WRAP_PARAM)wrap_s,
                    (GPU_TEXTURE_WRAP_PARAM)wrap_t);
+    entry->filter = filter;
+    entry->wrap_s = wrap_s;
+    entry->wrap_t = wrap_t;
+    entry->sampler_set = true;
     return true;
 }
 
@@ -443,6 +488,11 @@ void pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
     PBRendererTexture *entry = find_texture(renderer, texture_id);
     if (entry == NULL) {
         return;
+    }
+    for (size_t tile = 0; tile < PB_GFX_TEXTURE_UNITS; tile++) {
+        if (renderer->bound_textures[tile] == texture_id) {
+            renderer->bound_textures[tile] = 0U;
+        }
     }
     renderer->stats.texture_bytes -= entry->texture.size;
     C3D_TexDelete(&entry->texture);
@@ -455,7 +505,9 @@ bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
         combiner_mode > PB_GFX_COMBINER_FALLBACK) {
         return false;
     }
+    if (renderer->combiner_mode == combiner_mode) return true;
     apply_combiner(combiner_mode);
+    renderer->combiner_mode = combiner_mode;
     return true;
 }
 
@@ -525,8 +577,6 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
     C3D_BufInfo *buffers = C3D_GetBufInfo();
     BufInfo_Init(buffers);
     PBRendererVertex *draw_buffer = &renderer->stream_buffer[first_vertex];
-    GSPGPU_FlushDataCache(draw_buffer,
-                          vertex_count * sizeof(PBRendererVertex));
     BufInfo_Add(buffers, draw_buffer, sizeof(PBRendererVertex), 3, 0x210);
     C3D_DrawArrays(GPU_TRIANGLES, 0, (int)vertex_count);
     renderer->stream_used_vertices = next_used_vertices;

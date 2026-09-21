@@ -210,3 +210,42 @@ and pause-step diagnostics remain visible or logged for the next device test.
 These corrections remain part of M13. M14 cannot begin until an r6-or-later
 device recording shows a complete Toad Town background, correctly oriented
 sprites and UI, responsive upstream movement, and repeatable pause/resume.
+
+## r7 material, clipping, and submission recovery
+
+The r6 device recording confirms that texture row orientation is corrected and
+that upstream dialogue, actors, and map objects are being submitted. It also
+isolates the remaining black-world and incomplete-object failures to the 3DS
+interpreter rather than missing assets:
+
+- Combiner operands were treated as an unordered set of color multipliers.
+  Paper Mario frequently uses `(A - B) * C + D`; multiplying every referenced
+  primitive or environment color can turn a valid texture/fog expression
+  completely black. The runtime now decodes both color/alpha cycles, removes
+  algebraically unused operands, and evaluates the non-texture portion in
+  formula order before the PICA texture stage. One-cycle mode also selects the
+  RDP's second encoded combiner half (with TEXEL1 remapped to TEXEL0), which is
+  required when Paper Mario intentionally gives the two halves different
+  sprite or framebuffer sources.
+- A triangle was discarded whenever any transformed vertex had non-positive
+  `W`, and depth was clamped before clipping. Large building and ground
+  polygons crossing the near plane therefore disappeared in whole pieces.
+  Signed homogeneous coordinates and unclamped depth now reach PICA's clipper.
+- Transparent sprite texels were blended while still participating in depth
+  updates. The native pipeline now carries alpha-compare state, so zero-alpha
+  texels are rejected before they can sever later Mario, NPC, glyph, or UI
+  layers.
+- `G_LOADTILE` now preserves source row stride, tile offsets, and loaded
+  dimensions. This is required for sprites and UI assembled from subregions;
+  `G_LOADBLOCK` remains contiguous even when its conventional image width is
+  one.
+- The renderer no longer linearly searches the runtime texture cache for every
+  triangle or flushes the entire CPU cache for every draw. It retains the
+  resolved texture per batch, deduplicates native viewport/pipeline/texture/
+  sampler/combiner state, and flushes the used linear vertex range once before
+  frame submission.
+
+`0.13.7-m13r7` is a device-validation candidate, not an M13 acceptance claim.
+It must show the Toad Town background and building surfaces, whole sprites,
+responsive 30 Hz-class movement after warm-up, zero renderer/resource error
+counters, and stable pause/resume before M13 can close.

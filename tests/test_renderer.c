@@ -175,6 +175,9 @@ static PBRenderPipeline valid_pipeline(void) {
         .depth_write_enabled = true,
         .depth_function = PB_COMPARE_GREATER,
         .blend_mode = PB_BLEND_ALPHA,
+        .alpha_test_enabled = true,
+        .alpha_function = PB_COMPARE_GREATER,
+        .alpha_reference = 0,
         .min_filter = PB_FILTER_NEAREST,
         .mag_filter = PB_FILTER_LINEAR,
         .wrap_s = PB_WRAP_REPEAT,
@@ -190,6 +193,9 @@ static bool test_pipeline_and_cache(void) {
     CHECK(pb_renderer_pipeline_is_valid(&pipeline));
     pipeline.depth_write_enabled = false;
     CHECK(pb_renderer_pipeline_is_valid(&pipeline));
+    pipeline = valid_pipeline();
+    pipeline.alpha_function = (PBCompareFunction)PB_COMPARE_COUNT;
+    CHECK(!pb_renderer_pipeline_is_valid(&pipeline));
     pipeline = valid_pipeline();
     pipeline.wrap_s = (PBTextureWrap)PB_WRAP_COUNT;
     CHECK(!pb_renderer_pipeline_is_valid(&pipeline));

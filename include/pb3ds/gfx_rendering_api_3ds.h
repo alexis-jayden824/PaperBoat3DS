@@ -70,6 +70,10 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     void SetViewport(int x, int y, int width, int height) override;
     void SetScissor(int x, int y, int width, int height) override;
     void SetUseAlpha(bool useAlpha) override;
+    void ConfigureRuntimePipeline(bool depthTest, bool depthWrite,
+                                  bool decal, int8_t cullKeepSign,
+                                  bool useAlpha, bool alphaTest,
+                                  uint8_t alphaReference);
     void DrawTriangles(float bufVbo[], size_t bufVboLen,
                        size_t bufVboNumTris) override;
     void Init() override;
