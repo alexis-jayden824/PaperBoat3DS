@@ -251,6 +251,10 @@ static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
     CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
     CHECK(afterRuntime->texture_fallbacks ==
           beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->semantic_combiner_batches ==
+          beforeRuntime.semantic_combiner_batches + 1U);
+    CHECK(afterRuntime->legacy_combiner_fallbacks ==
+          beforeRuntime.legacy_combiner_fallbacks);
     return true;
 }
 

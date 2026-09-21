@@ -12,8 +12,8 @@ mkdir -p "$build_directory"
     -I"$project_root/include" \
     "$project_root/source/renderer.c" \
     "$project_root/source/gfx_bridge.c" \
+    "$project_root/source/fast3d_semantics.c" \
     "$project_root/tests/test_gfx_bridge.c" \
     -o "$test_binary"
 
 "$test_binary"
-

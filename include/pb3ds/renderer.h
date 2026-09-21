@@ -175,6 +175,7 @@ typedef enum {
 } PBRendererInitResult;
 
 typedef struct PBRenderer3DS PBRenderer3DS;
+typedef struct PBGfxTevProgram PBGfxTevProgram;
 
 bool pb_renderer_texture_layout(PBTextureLayout *layout, uint16_t width,
                                 uint16_t height, PBTextureFormat format);
@@ -240,6 +241,8 @@ void pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
                                     uint32_t texture_id);
 bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
                                   int combiner_mode);
+bool pb_renderer_3ds_set_combiner_program(PBRenderer3DS *renderer,
+                                          const PBGfxTevProgram *program);
 bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
                                  const float *vertices,
                                  size_t float_count,

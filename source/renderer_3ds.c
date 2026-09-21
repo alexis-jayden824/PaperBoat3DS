@@ -21,7 +21,8 @@
 
 typedef struct {
     float position[4];
-    float texcoord[2];
+    float texcoord0[2];
+    float texcoord1[2];
     float color[4];
 } PBRendererVertex;
 
@@ -50,6 +51,8 @@ struct PBRenderer3DS {
     int projection_uniform;
     uint32_t bound_textures[PB_GFX_TEXTURE_UNITS];
     int combiner_mode;
+    PBGfxTevProgram combiner_program;
+    bool combiner_program_valid;
     bool preserve_color_next_frame;
     bool c3d_ready;
     bool program_ready;
@@ -128,8 +131,10 @@ static void apply_pipeline(PBRenderer3DS *renderer) {
 }
 
 static void apply_combiner(int combiner_mode) {
+    for (int stage = 0; stage < (int)PB_GFX_TEV_STAGE_COUNT; stage++) {
+        C3D_TexEnvInit(C3D_GetTexEnv(stage));
+    }
     C3D_TexEnv *environment = C3D_GetTexEnv(0);
-    C3D_TexEnvInit(environment);
 
     switch ((PBGfxCombinerMode)combiner_mode) {
         case PB_GFX_COMBINER_SHADE:
@@ -155,6 +160,83 @@ static void apply_combiner(int combiner_mode) {
             C3D_TexEnvFunc(environment, C3D_Both, GPU_REPLACE);
             break;
     }
+}
+
+static GPU_TEVSRC tev_source(PBGfxTevSource source) {
+    switch (source) {
+        case PB_GFX_TEV_TEXTURE0: return GPU_TEXTURE0;
+        case PB_GFX_TEV_TEXTURE1: return GPU_TEXTURE1;
+        case PB_GFX_TEV_PREVIOUS: return GPU_PREVIOUS;
+        case PB_GFX_TEV_CONSTANT: return GPU_CONSTANT;
+        case PB_GFX_TEV_SHADE:
+        default: return GPU_PRIMARY_COLOR;
+    }
+}
+
+static GPU_TEVOP_RGB tev_rgb_operand(PBGfxTevRgbOperand operand) {
+    return operand == PB_GFX_TEV_RGB_ALPHA
+               ? GPU_TEVOP_RGB_SRC_ALPHA
+               : GPU_TEVOP_RGB_SRC_COLOR;
+}
+
+static GPU_COMBINEFUNC tev_function(PBGfxTevFunction function) {
+    switch (function) {
+        case PB_GFX_TEV_MODULATE: return GPU_MODULATE;
+        case PB_GFX_TEV_ADD: return GPU_ADD;
+        case PB_GFX_TEV_SUBTRACT: return GPU_SUBTRACT;
+        case PB_GFX_TEV_INTERPOLATE: return GPU_INTERPOLATE;
+        case PB_GFX_TEV_MULTIPLY_ADD: return GPU_MULTIPLY_ADD;
+        case PB_GFX_TEV_REPLACE:
+        default: return GPU_REPLACE;
+    }
+}
+
+static uint8_t tev_color_component(float value) {
+    if (value <= 0.0f) return 0U;
+    if (value >= 1.0f) return 255U;
+    return (uint8_t)(value * 255.0f + 0.5f);
+}
+
+static bool apply_combiner_program(const PBGfxTevProgram *program) {
+    if (program == NULL || program->stage_count == 0U ||
+        program->stage_count > PB_GFX_TEV_STAGE_COUNT) {
+        return false;
+    }
+    for (size_t stage_index = 0; stage_index < PB_GFX_TEV_STAGE_COUNT;
+         stage_index++) {
+        C3D_TexEnv *environment = C3D_GetTexEnv((int)stage_index);
+        C3D_TexEnvInit(environment);
+        if (stage_index >= program->stage_count) {
+            continue;
+        }
+        const PBGfxTevStage *stage = &program->stages[stage_index];
+        C3D_TexEnvColor(
+            environment,
+            IVec_Pack(tev_color_component(stage->constant[0]),
+                      tev_color_component(stage->constant[1]),
+                      tev_color_component(stage->constant[2]),
+                      tev_color_component(stage->constant[3])));
+        C3D_TexEnvSrc(environment, C3D_RGB,
+                      tev_source(stage->rgb_sources[0]),
+                      tev_source(stage->rgb_sources[1]),
+                      tev_source(stage->rgb_sources[2]));
+        C3D_TexEnvSrc(environment, C3D_Alpha,
+                      tev_source(stage->alpha_sources[0]),
+                      tev_source(stage->alpha_sources[1]),
+                      tev_source(stage->alpha_sources[2]));
+        C3D_TexEnvOpRgb(environment,
+                        tev_rgb_operand(stage->rgb_operands[0]),
+                        tev_rgb_operand(stage->rgb_operands[1]),
+                        tev_rgb_operand(stage->rgb_operands[2]));
+        C3D_TexEnvOpAlpha(environment, GPU_TEVOP_A_SRC_ALPHA,
+                          GPU_TEVOP_A_SRC_ALPHA,
+                          GPU_TEVOP_A_SRC_ALPHA);
+        C3D_TexEnvFunc(environment, C3D_RGB,
+                       tev_function(stage->rgb_function));
+        C3D_TexEnvFunc(environment, C3D_Alpha,
+                       tev_function(stage->alpha_function));
+    }
+    return true;
 }
 
 static void sync_stats(PBRenderer3DS *renderer) {
@@ -213,7 +295,8 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     AttrInfo_Init(attributes);
     AttrInfo_AddLoader(attributes, 0, GPU_FLOAT, 4);
     AttrInfo_AddLoader(attributes, 1, GPU_FLOAT, 2);
-    AttrInfo_AddLoader(attributes, 2, GPU_FLOAT, 4);
+    AttrInfo_AddLoader(attributes, 2, GPU_FLOAT, 2);
+    AttrInfo_AddLoader(attributes, 3, GPU_FLOAT, 4);
 
     Mtx_OrthoTilt(&renderer->projection, 0.0f, (float)PB_RENDER_TOP_WIDTH,
                   0.0f, (float)PB_RENDER_TOP_HEIGHT, 0.0f, 1.0f, true);
@@ -520,6 +603,24 @@ bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
     if (renderer->combiner_mode == combiner_mode) return true;
     apply_combiner(combiner_mode);
     renderer->combiner_mode = combiner_mode;
+    renderer->combiner_program_valid = false;
+    return true;
+}
+
+bool pb_renderer_3ds_set_combiner_program(PBRenderer3DS *renderer,
+                                          const PBGfxTevProgram *program) {
+    if (renderer == NULL || program == NULL) {
+        return false;
+    }
+    if (renderer->combiner_program_valid &&
+        memcmp(&renderer->combiner_program, program,
+               sizeof(*program)) == 0) {
+        return true;
+    }
+    if (!apply_combiner_program(program)) return false;
+    renderer->combiner_program = *program;
+    renderer->combiner_program_valid = true;
+    renderer->combiner_mode = -1;
     return true;
 }
 
@@ -534,7 +635,7 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
                                  bool uses_alpha) {
     if (renderer == NULL || !renderer->frame_open || vertices == NULL ||
         triangle_count == 0 ||
-        triangle_count > PB_GFX_MAX_STREAM_TRIANGLES || uses_texture1 ||
+        triangle_count > PB_GFX_MAX_STREAM_TRIANGLES ||
         triangle_count > SIZE_MAX / 3U) {
         return false;
     }
@@ -566,11 +667,18 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
         destination->position[1] = source[1];
         destination->position[2] = source[2];
         destination->position[3] = source[3];
-        destination->texcoord[0] = 0.0f;
-        destination->texcoord[1] = 0.0f;
+        destination->texcoord0[0] = 0.0f;
+        destination->texcoord0[1] = 0.0f;
+        destination->texcoord1[0] = 0.0f;
+        destination->texcoord1[1] = 0.0f;
         if (uses_texture0) {
-            destination->texcoord[0] = source[offset + 0U];
-            destination->texcoord[1] = source[offset + 1U];
+            destination->texcoord0[0] = source[offset + 0U];
+            destination->texcoord0[1] = source[offset + 1U];
+            offset += 2U;
+        }
+        if (uses_texture1) {
+            destination->texcoord1[0] = source[offset + 0U];
+            destination->texcoord1[1] = source[offset + 1U];
             offset += 2U;
         }
         if (uses_shade) {
@@ -589,7 +697,7 @@ bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
     C3D_BufInfo *buffers = C3D_GetBufInfo();
     BufInfo_Init(buffers);
     PBRendererVertex *draw_buffer = &renderer->stream_buffer[first_vertex];
-    BufInfo_Add(buffers, draw_buffer, sizeof(PBRendererVertex), 3, 0x210);
+    BufInfo_Add(buffers, draw_buffer, sizeof(PBRendererVertex), 4, 0x3210);
     C3D_DrawArrays(GPU_TRIANGLES, 0, (int)vertex_count);
     renderer->stream_used_vertices = next_used_vertices;
     if (renderer->stream_used_vertices >

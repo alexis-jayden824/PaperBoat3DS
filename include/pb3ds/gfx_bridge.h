@@ -15,6 +15,7 @@ extern "C" {
 #define PB_GFX_MAX_SHADERS 64U
 #define PB_GFX_MAX_STREAM_BYTES (576U * 1024U)
 #define PB_GFX_MAX_STREAM_TRIANGLES 4096U
+#define PB_GFX_TEV_STAGE_COUNT 6U
 
 /* Values are fixed by libultraship's pinned Fast3D interpreter contract. */
 typedef enum {
@@ -71,6 +72,42 @@ typedef enum {
     PB_GFX_COMBINER_TEXTURE0_SHADE,
     PB_GFX_COMBINER_FALLBACK,
 } PBGfxCombinerMode;
+
+typedef enum {
+    PB_GFX_TEV_SHADE,
+    PB_GFX_TEV_TEXTURE0,
+    PB_GFX_TEV_TEXTURE1,
+    PB_GFX_TEV_PREVIOUS,
+    PB_GFX_TEV_CONSTANT,
+} PBGfxTevSource;
+
+typedef enum {
+    PB_GFX_TEV_RGB_COLOR,
+    PB_GFX_TEV_RGB_ALPHA,
+} PBGfxTevRgbOperand;
+
+typedef enum {
+    PB_GFX_TEV_REPLACE,
+    PB_GFX_TEV_MODULATE,
+    PB_GFX_TEV_ADD,
+    PB_GFX_TEV_SUBTRACT,
+    PB_GFX_TEV_INTERPOLATE,
+    PB_GFX_TEV_MULTIPLY_ADD,
+} PBGfxTevFunction;
+
+typedef struct {
+    PBGfxTevSource rgb_sources[3];
+    PBGfxTevSource alpha_sources[3];
+    PBGfxTevRgbOperand rgb_operands[3];
+    PBGfxTevFunction rgb_function;
+    PBGfxTevFunction alpha_function;
+    float constant[4];
+} PBGfxTevStage;
+
+typedef struct PBGfxTevProgram {
+    PBGfxTevStage stages[PB_GFX_TEV_STAGE_COUNT];
+    uint8_t stage_count;
+} PBGfxTevProgram;
 
 typedef enum {
     PB_GFX_REJECT_NONE = 0,
@@ -141,6 +178,9 @@ typedef struct {
 uint64_t pb_gfx_shader_option(PBGfxShaderOption option);
 bool pb_gfx_combiner_decode(PBGfxCombinerPlan *plan, uint64_t shader_id0,
                             uint64_t shader_id1);
+bool pb_gfx_combiner_compile_tev(const PBGfxCombinerPlan *plan,
+                                 const float inputs[6][4],
+                                 PBGfxTevProgram *program);
 bool pb_gfx_validate_draw(const PBGfxCombinerPlan *plan,
                           const float *vertices, size_t float_count,
                           size_t triangle_count, size_t *stream_bytes);

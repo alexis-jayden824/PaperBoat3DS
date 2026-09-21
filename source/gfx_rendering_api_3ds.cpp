@@ -38,7 +38,7 @@ constexpr uint64_t kShadeShader =
     PackFormula(0, 0, 0, PB_GFX_SHADER_SHADE, 16);
 constexpr uint64_t kTextureShadeShader =
     PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 0) |
-    PackFormula(PB_GFX_SHADER_TEXEL0_ALPHA, 0, PB_GFX_SHADER_SHADE, 0, 16);
+    PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 16);
 constexpr uint64_t kAlphaOption = uint64_t{1} << PB_GFX_OPT_ALPHA;
 constexpr size_t kFirstFrameVertexStride = 11U;
 constexpr size_t kFirstFrameVertexCount = 6U;
@@ -208,8 +208,11 @@ bool NativeSampler(PBRenderer3DS *renderer, uint32_t id,
 void NativeDelete(PBRenderer3DS *renderer, uint32_t id) {
     pb_renderer_3ds_delete_texture(renderer, id);
 }
-bool NativeCombiner(PBRenderer3DS *renderer, PBGfxCombinerMode mode) {
-    return pb_renderer_3ds_set_combiner(renderer, static_cast<int>(mode));
+bool NativeCombiner(PBRenderer3DS *renderer, const PBGfxCombinerPlan &plan,
+                    const float inputs[6][4]) {
+    PBGfxTevProgram program = {};
+    return pb_gfx_combiner_compile_tev(&plan, inputs, &program) &&
+           pb_renderer_3ds_set_combiner_program(renderer, &program);
 }
 bool NativeDraw(PBRenderer3DS *renderer, const float *vertices,
                 size_t floatCount, size_t triangleCount,
@@ -252,8 +255,10 @@ bool NativeSampler(PBRenderer3DS *, uint32_t, PBTextureFilter,
     return true;
 }
 void NativeDelete(PBRenderer3DS *, uint32_t) {}
-bool NativeCombiner(PBRenderer3DS *, PBGfxCombinerMode) {
-    return true;
+bool NativeCombiner(PBRenderer3DS *, const PBGfxCombinerPlan &plan,
+                    const float inputs[6][4]) {
+    PBGfxTevProgram program = {};
+    return pb_gfx_combiner_compile_tev(&plan, inputs, &program);
 }
 bool NativeDraw(PBRenderer3DS *, const float *, size_t, size_t,
                 const PBGfxCombinerPlan &) {
@@ -606,9 +611,6 @@ void GfxRenderingAPI3DS::LoadShader(Fast::ShaderProgram *newPrg) {
         return;
     }
     mImpl->currentShader = newPrg;
-    if (!NativeCombiner(mImpl->renderer, newPrg->plan.mode)) {
-        mImpl->Reject();
-    }
 }
 
 void GfxRenderingAPI3DS::ClearShaderCache() {
@@ -669,6 +671,11 @@ Fast::ShaderProgram *GfxRenderingAPI3DS::LookupShader(uint64_t shaderId0,
         }
     }
     return nullptr;
+}
+
+bool GfxRenderingAPI3DS::ShaderIsSupported(
+    const Fast::ShaderProgram *program) const {
+    return program != nullptr && program->allocated && program->plan.supported;
 }
 
 void GfxRenderingAPI3DS::ShaderGetInfo(Fast::ShaderProgram *prg,
@@ -831,10 +838,13 @@ void GfxRenderingAPI3DS::DrawTriangles(float bufVbo[], size_t bufVboLen,
                                    bufVboLen, bufVboNumTris)) {
         return;
     }
-    if (!NativeCombiner(mImpl->renderer, mImpl->currentShader->plan.mode) ||
+    if (!NativeCombiner(mImpl->renderer, mImpl->currentShader->plan,
+                        mCombinerUniforms.inputs) ||
         !NativeDraw(mImpl->renderer, bufVbo, bufVboLen, bufVboNumTris,
                     mImpl->currentShader->plan)) {
         mImpl->Reject();
+    } else {
+        mCombinerUniformsDirty = false;
     }
 }
 

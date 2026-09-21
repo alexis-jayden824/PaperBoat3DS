@@ -252,3 +252,40 @@ draws.
 It must show the Toad Town background and building surfaces, whole sprites,
 responsive 30 Hz-class movement after warm-up, zero renderer/resource error
 counters, and stable pause/resume before M13 can close.
+
+## r9 Fast3D semantic combiner boundary
+
+The r8 device results show that repairing individual approximations in the
+temporary display-list walker is not a renderer replacement. In particular,
+its CPU path substituted white for every texture operand and then reduced the
+result to one of three fixed PICA modes. An expression such as
+`(TEXEL0 - ENVIRONMENT) * SHADE + ENVIRONMENT` therefore could not retain
+Fast3D's meaning even when resource, texture, and command counters were clean.
+
+`0.13.9-m13r9` starts the larger
+PaperBoat -> Fast3D semantics -> GfxRenderingAPI3DS -> PICA200 migration:
+
+- A target-independent module now reproduces the pinned libultraship
+  `GenerateCC` shader IDs, normalization, one-cycle TEXEL1 remap, constant
+  input mapping, shade-varying assignment, and cycle texture semantics.
+- `GfxRenderingAPI3DS` compiles `(A - B) * C + D` into PICA200 TEV programs.
+  Direct replace, multiply, multiply-add, and interpolate forms stay in one
+  stage; general formulas and a pair of cycles can consume up to all six
+  hardware stages. Saturation-sensitive multi-stage cases remain part of the
+  device-validation boundary rather than being treated as proven equivalent.
+  Primitive/environment constants are latched per draw instead of folded into
+  a white-texture CPU approximation.
+- The native stream and vertex shader now carry independent TEXEL0 and TEXEL1
+  coordinates, so the backend contract no longer rejects a second texture
+  merely because the temporary walker cannot bind it yet.
+- The compatibility walker uses the semantic path for supported one-cycle
+  batches. Fog, key/convert constants, and its still-incomplete second-tile
+  path remain on the old evaluator and increment an explicit legacy fallback
+  counter. This is a measured migration boundary, not a claim that the
+  temporary walker has become Fast3D.
+
+The bottom screen reports `CC:<semantic>/<legacy>` and shutdown logs preserve
+both totals. The r9 playtest must compare the formerly black background and
+building materials, record both counters before/pause/after resume, and keep
+renderer rejects at zero. A nonzero legacy count is expected at this stage;
+it identifies the next semantics to move rather than closing M13.

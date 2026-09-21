@@ -13,6 +13,8 @@ typedef struct {
     uint64_t commands;
     uint64_t display_lists;
     uint64_t texture_fallbacks;
+    uint64_t semantic_combiner_batches;
+    uint64_t legacy_combiner_fallbacks;
     uint64_t depth_target_clears;
     uint64_t copy_rectangles;
     uint32_t unknown_commands;
@@ -56,6 +58,7 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
                                                 uint64_t shaderId1) override;
     Fast::ShaderProgram *LookupShader(uint64_t shaderId0,
                                      uint64_t shaderId1) override;
+    bool ShaderIsSupported(const Fast::ShaderProgram *program) const;
     void ShaderGetInfo(Fast::ShaderProgram *prg, uint8_t *numInputs,
                        bool usedTextures[2]) override;
     uint32_t NewTexture() override;

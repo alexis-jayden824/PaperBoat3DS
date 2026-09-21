@@ -23,6 +23,10 @@ mkdir -p "$build_directory"
     -o "$build_directory/gfx_bridge.o"
 "$host_cc" -std=c11 -O2 -Wall -Wextra -Werror \
     -I"$project_root/include" \
+    -c "$project_root/source/fast3d_semantics.c" \
+    -o "$build_directory/fast3d_semantics.o"
+"$host_cc" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$project_root/include" \
     -c "$project_root/source/title_layout.c" \
     -o "$build_directory/title_layout.o"
 "$host_cxx" -std=gnu++17 -O2 -Wall -Wextra -Werror \
@@ -34,6 +38,7 @@ mkdir -p "$build_directory"
     "$project_root/source/runtime_gfx.cpp" \
     "$project_root/tests/test_gfx_api_contract.cpp" \
     "$build_directory/renderer.o" "$build_directory/gfx_bridge.o" \
+    "$build_directory/fast3d_semantics.o" \
     "$build_directory/title_layout.o" \
     -o "$build_directory/test_gfx_api_contract"
 

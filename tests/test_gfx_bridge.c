@@ -1,4 +1,5 @@
 #include "pb3ds/gfx_bridge.h"
+#include "pb3ds/fast3d_semantics.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,8 +30,122 @@ static uint64_t shade_shader_id(void) {
 
 static uint64_t texture_shade_shader_id(void) {
     return pack_formula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 0) |
-           pack_formula(PB_GFX_SHADER_TEXEL0_ALPHA, 0,
+           pack_formula(PB_GFX_SHADER_TEXEL0, 0,
                         PB_GFX_SHADER_SHADE, 0, 16);
+}
+
+static void encode_combine_words(const uint8_t cycles[2][2][4],
+                                 uint32_t *word0, uint32_t *word1) {
+    *word0 = UINT32_C(0xFC000000) |
+             (((uint32_t)cycles[0][0][0] & 0xFU) << 20U) |
+             (((uint32_t)cycles[0][0][2] & 0x1FU) << 15U) |
+             (((uint32_t)cycles[0][1][0] & 0x7U) << 12U) |
+             (((uint32_t)cycles[0][1][2] & 0x7U) << 9U) |
+             (((uint32_t)cycles[1][0][0] & 0xFU) << 5U) |
+             ((uint32_t)cycles[1][0][2] & 0x1FU);
+    *word1 = (((uint32_t)cycles[0][0][1] & 0xFU) << 28U) |
+             (((uint32_t)cycles[1][0][1] & 0xFU) << 24U) |
+             (((uint32_t)cycles[1][1][0] & 0x7U) << 21U) |
+             (((uint32_t)cycles[1][1][2] & 0x7U) << 18U) |
+             (((uint32_t)cycles[0][0][3] & 0x7U) << 15U) |
+             (((uint32_t)cycles[0][1][1] & 0x7U) << 12U) |
+             (((uint32_t)cycles[0][1][3] & 0x7U) << 9U) |
+             (((uint32_t)cycles[1][0][3] & 0x7U) << 6U) |
+             (((uint32_t)cycles[1][1][1] & 0x7U) << 3U) |
+             ((uint32_t)cycles[1][1][3] & 0x7U);
+}
+
+static bool test_fast3d_semantics_and_tev(void) {
+    uint8_t cycles[2][2][4] = {
+        { { 1U, 31U, 4U, 31U }, { 1U, 7U, 4U, 7U } },
+        { { 31U, 31U, 31U, 31U }, { 7U, 7U, 7U, 7U } },
+    };
+    uint32_t word0 = 0U;
+    uint32_t word1 = 0U;
+    encode_combine_words(cycles, &word0, &word1);
+    PBFast3DCombiner semantic;
+    CHECK(pb_fast3d_generate_combiner(
+        &semantic, word0, word1,
+        pb_gfx_shader_option(PB_GFX_OPT_ALPHA)));
+    CHECK(semantic.shader_id0 == texture_shade_shader_id());
+    CHECK(semantic.used_textures[0]);
+    CHECK(!semantic.used_textures[1]);
+    CHECK(semantic.uses_shade);
+
+    /* (TEXEL0 - ENVIRONMENT) * SHADE + ENVIRONMENT is a single
+     * hardware interpolate stage, not TEXEL0 times a CPU approximation. */
+    cycles[0][0][0] = 1U;
+    cycles[0][0][1] = 5U;
+    cycles[0][0][2] = 4U;
+    cycles[0][0][3] = 5U;
+    encode_combine_words(cycles, &word0, &word1);
+    CHECK(pb_fast3d_generate_combiner(
+        &semantic, word0, word1,
+        pb_gfx_shader_option(PB_GFX_OPT_ALPHA)));
+    CHECK(semantic.input_mapping[0][0] ==
+          PB_FAST3D_INPUT_ENVIRONMENT);
+    PBGfxCombinerPlan plan;
+    CHECK(pb_gfx_combiner_decode(&plan, semantic.shader_id0,
+                                 semantic.shader_id1));
+    float inputs[6][4] = { { 0 } };
+    inputs[0][0] = 0.25f;
+    inputs[0][1] = 0.50f;
+    inputs[0][2] = 0.75f;
+    PBGfxTevProgram program;
+    CHECK(pb_gfx_combiner_compile_tev(&plan, inputs, &program));
+    CHECK(program.stage_count == 1U);
+    CHECK(program.stages[0].rgb_function == PB_GFX_TEV_INTERPOLATE);
+    CHECK(program.stages[0].rgb_sources[0] == PB_GFX_TEV_TEXTURE0);
+    CHECK(program.stages[0].rgb_sources[1] == PB_GFX_TEV_CONSTANT);
+    CHECK(program.stages[0].rgb_sources[2] == PB_GFX_TEV_SHADE);
+    CHECK(program.stages[0].constant[0] == 0.25f);
+    CHECK(program.stages[0].constant[1] == 0.50f);
+    CHECK(program.stages[0].constant[2] == 0.75f);
+
+    /* One-cycle TEXEL1 aliases TEXEL0 in the canonical generator. */
+    cycles[0][0][0] = 31U;
+    cycles[0][0][1] = 31U;
+    cycles[0][0][2] = 31U;
+    cycles[0][0][3] = 2U;
+    cycles[0][1][0] = 7U;
+    cycles[0][1][1] = 7U;
+    cycles[0][1][2] = 7U;
+    cycles[0][1][3] = 2U;
+    encode_combine_words(cycles, &word0, &word1);
+    CHECK(pb_fast3d_generate_combiner(
+        &semantic, word0, word1,
+        pb_gfx_shader_option(PB_GFX_OPT_ALPHA)));
+    CHECK((semantic.shader_id0 & UINT64_C(0xF000)) ==
+          ((uint64_t)PB_GFX_SHADER_TEXEL0 << 12U));
+    CHECK(semantic.used_textures[0]);
+    CHECK(!semantic.used_textures[1]);
+
+    /* In two-cycle mode the logical TEXEL0 source swaps physical texture
+     * units in cycle two, matching Fast3D's RDP pipeline semantics. */
+    const uint8_t two_cycle[2][2][4] = {
+        { { 31U, 31U, 31U, 1U }, { 7U, 7U, 7U, 1U } },
+        { { 0U, 31U, 1U, 31U }, { 0U, 7U, 1U, 7U } },
+    };
+    encode_combine_words(two_cycle, &word0, &word1);
+    CHECK(pb_fast3d_generate_combiner(
+        &semantic, word0, word1,
+        pb_gfx_shader_option(PB_GFX_OPT_ALPHA) |
+            pb_gfx_shader_option(PB_GFX_OPT_TWO_CYCLE)));
+    CHECK(semantic.used_textures[0]);
+    CHECK(semantic.used_textures[1]);
+    CHECK(pb_gfx_combiner_decode(&plan, semantic.shader_id0,
+                                 semantic.shader_id1));
+    CHECK(plan.vertex_stride_floats == 9U);
+    CHECK(pb_gfx_combiner_compile_tev(&plan, inputs, &program));
+    CHECK(program.stage_count == 2U);
+    CHECK(program.stages[0].rgb_sources[0] == PB_GFX_TEV_TEXTURE0);
+    CHECK(program.stages[1].rgb_function == PB_GFX_TEV_INTERPOLATE);
+    CHECK(program.stages[1].rgb_sources[0] == PB_GFX_TEV_PREVIOUS);
+    CHECK(program.stages[1].rgb_sources[1] == PB_GFX_TEV_CONSTANT);
+    CHECK(program.stages[1].rgb_sources[2] == PB_GFX_TEV_TEXTURE1);
+
+    CHECK(!pb_fast3d_generate_combiner(NULL, word0, word1, 0U));
+    return true;
 }
 
 static bool test_combiner_decode(void) {
@@ -46,8 +161,7 @@ static bool test_combiner_decode(void) {
 
     CHECK(pb_gfx_combiner_decode(
         &plan, texture_shade_shader_id(),
-        pb_gfx_shader_option(PB_GFX_OPT_ALPHA) |
-            pb_gfx_shader_option(PB_GFX_OPT_TEXEL0_CLAMP_S)));
+        pb_gfx_shader_option(PB_GFX_OPT_ALPHA)));
     CHECK(plan.mode == PB_GFX_COMBINER_TEXTURE0_SHADE);
     CHECK(plan.used_textures[0]);
     CHECK(!plan.used_textures[1]);
@@ -55,16 +169,23 @@ static bool test_combiner_decode(void) {
 
     CHECK(!pb_gfx_combiner_decode(
         &plan, texture_shade_shader_id(),
+        pb_gfx_shader_option(PB_GFX_OPT_ALPHA) |
+            pb_gfx_shader_option(PB_GFX_OPT_TEXEL0_CLAMP_S)));
+    CHECK((plan.reject_reasons & PB_GFX_REJECT_OPTION) != 0);
+
+    CHECK(pb_gfx_combiner_decode(
+        &plan, texture_shade_shader_id(),
         pb_gfx_shader_option(PB_GFX_OPT_TWO_CYCLE)));
-    CHECK((plan.reject_reasons & PB_GFX_REJECT_TWO_CYCLE) != 0);
-    CHECK(plan.mode == PB_GFX_COMBINER_FALLBACK);
+    CHECK(plan.two_cycle);
+    CHECK(plan.used_textures[0]);
+    CHECK(plan.used_textures[1]);
 
     const uint64_t texture1 =
         pack_formula(0, 0, 0, PB_GFX_SHADER_TEXEL1, 0) |
         pack_formula(0, 0, 0, PB_GFX_SHADER_TEXEL1_ALPHA, 16);
-    CHECK(!pb_gfx_combiner_decode(&plan, texture1, 0));
+    CHECK(pb_gfx_combiner_decode(&plan, texture1, 0));
     CHECK(plan.used_textures[1]);
-    CHECK((plan.reject_reasons & PB_GFX_REJECT_TEXTURE1) != 0);
+    CHECK(plan.vertex_stride_floats == 7U);
 
     CHECK(!pb_gfx_combiner_decode(
         &plan, shade_shader_id(), UINT64_C(2) << PB_GFX_OPT_PRISM_SHADER));
@@ -74,8 +195,17 @@ static bool test_combiner_decode(void) {
         pack_formula(PB_GFX_SHADER_INPUT_1, PB_GFX_SHADER_INPUT_2,
                      PB_GFX_SHADER_INPUT_3, PB_GFX_SHADER_INPUT_4, 0) |
         pack_formula(0, 0, 0, PB_GFX_SHADER_ONE, 16);
-    CHECK(!pb_gfx_combiner_decode(&plan, unsupported_formula, 0));
+    CHECK(pb_gfx_combiner_decode(&plan, unsupported_formula, 0));
     CHECK(plan.num_inputs == 4);
+    float inputs[6][4] = { { 0 } };
+    PBGfxTevProgram program;
+    CHECK(pb_gfx_combiner_compile_tev(&plan, inputs, &program));
+    CHECK(program.stage_count == 1U);
+
+    const uint64_t noise_formula =
+        pack_formula(0, 0, 0, PB_GFX_SHADER_NOISE, 0) |
+        pack_formula(0, 0, 0, PB_GFX_SHADER_ONE, 16);
+    CHECK(!pb_gfx_combiner_decode(&plan, noise_formula, 0));
     CHECK((plan.reject_reasons & PB_GFX_REJECT_FORMULA) != 0);
     CHECK(!pb_gfx_combiner_decode(NULL, 0, 0));
     CHECK(pb_gfx_shader_option((PBGfxShaderOption)99) == 0);
@@ -182,7 +312,8 @@ static bool test_integrated_draw_accounting(void) {
 }
 
 int main(void) {
-    if (!test_combiner_decode() || !test_draw_contract() ||
+    if (!test_fast3d_semantics_and_tev() || !test_combiner_decode() ||
+        !test_draw_contract() ||
         !test_frame_and_rectangles() || !test_texture_registry() ||
         !test_integrated_draw_accounting()) {
         return EXIT_FAILURE;

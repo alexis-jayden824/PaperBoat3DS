@@ -190,11 +190,13 @@ static void print_bottom_screen(PrintConsole *console,
                    (unsigned long long)runtime_gfx_stats->display_lists,
                    (unsigned long)runtime_gfx_stats->max_call_depth,
                    (unsigned long)runtime_gfx_stats->malformed_lists);
-            printf("\x1b[27;2HCmd/frame:%lu peak:%lu Zclear:%llu\n",
+            printf("\x1b[27;2HCmd/f:%lu pk:%lu CC:%llu/%llu\n",
                    (unsigned long)runtime_gfx_stats->commands_last_frame,
                    (unsigned long)runtime_gfx_stats->commands_peak_frame,
                    (unsigned long long)
-                       runtime_gfx_stats->depth_target_clears);
+                       runtime_gfx_stats->semantic_combiner_batches,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_combiner_fallbacks);
         }
         printf("\x1b[19;2HSystem: %s  %s\n",
                state->model_query_ok
@@ -672,6 +674,24 @@ int main(int argc, char **argv) {
                      (unsigned long)graphics_stats->unsupported_shaders,
                      (unsigned long)graphics_stats->rejected_commands,
                      (unsigned long)graphics_stats->frame_failures);
+    }
+    const PBRuntimeGfxStats *runtime_gfx_stats =
+        pb_gfx_api_3ds_runtime_stats(graphics);
+    if (runtime_gfx_stats != NULL) {
+        pb_log_write(&log, PB_LOG_INFO, "runtime-gfx-shutdown",
+                     "commands=%llu lists=%llu semantic_combiner_batches=%llu "
+                     "legacy_combiner_fallbacks=%llu texture_fallbacks=%llu "
+                     "unknown=%lu missing=%lu malformed=%lu",
+                     (unsigned long long)runtime_gfx_stats->commands,
+                     (unsigned long long)runtime_gfx_stats->display_lists,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_combiner_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_combiner_fallbacks,
+                     (unsigned long long)runtime_gfx_stats->texture_fallbacks,
+                     (unsigned long)runtime_gfx_stats->unknown_commands,
+                     (unsigned long)runtime_gfx_stats->missing_resources,
+                     (unsigned long)runtime_gfx_stats->malformed_lists);
     }
     if (renderer_stats != NULL) {
         pb_log_write(&log, PB_LOG_INFO, "renderer-shutdown",

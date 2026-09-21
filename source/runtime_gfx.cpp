@@ -13,6 +13,7 @@
 #include <new>
 #include <vector>
 
+#include "pb3ds/fast3d_semantics.h"
 #include "pb3ds/runtime_resources.h"
 #include "pb3ds/texture.h"
 
@@ -141,7 +142,7 @@ constexpr uint64_t kShadeShader =
     PackFormula(0, 0, 0, PB_GFX_SHADER_SHADE, 16);
 constexpr uint64_t kTextureShadeShader =
     PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 0) |
-    PackFormula(PB_GFX_SHADER_TEXEL0_ALPHA, 0, PB_GFX_SHADER_SHADE, 0, 16);
+    PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 16);
 constexpr uint64_t kAlphaOption = uint64_t{1} << PB_GFX_OPT_ALPHA;
 
 struct N64Vertex {
@@ -438,6 +439,12 @@ class RuntimeDisplayListRenderer {
         CombinerUse use = {};
     };
 
+    struct SemanticBatch {
+        PBFast3DCombiner combiner = {};
+        Fast::CombinerUniforms uniforms = {};
+        Fast::ShaderProgram *shader = nullptr;
+    };
+
     struct FloatColor {
         float red = 0.0f;
         float green = 0.0f;
@@ -482,6 +489,7 @@ class RuntimeDisplayListRenderer {
         viewportHeight = 240.0f;
         primColor = {};
         envColor = {};
+        primLodFraction = 0U;
         fogColor = { 0U, 0U, 0U, 0U };
         blendColor = {};
         fillColor = 0U;
@@ -501,6 +509,11 @@ class RuntimeDisplayListRenderer {
         batchHasTexture = false;
         batchFill = false;
         batchTextureReplace = false;
+        batchSemantic = false;
+        batchShaderUsesTexture0 = false;
+        batchShaderUsesTexture1 = false;
+        batchShaderUsesShade = true;
+        batchShaderUsesAlpha = true;
         batchCombiner = {};
         batchTextureInfo = {};
         fillRectangleColor = {};
@@ -765,6 +778,96 @@ class RuntimeDisplayListRenderer {
     static FloatColor ClampColor(const FloatColor &color) {
         return { Clamp01(color.red), Clamp01(color.green),
                  Clamp01(color.blue), Clamp01(color.alpha) };
+    }
+
+    bool FillSemanticUniforms(const PBFast3DCombiner &combiner,
+                              Fast::CombinerUniforms *uniforms) const {
+        if (uniforms == nullptr) return false;
+        *uniforms = {};
+        const FloatColor primitive = ToFloatColor(primColor);
+        const FloatColor environment = ToFloatColor(envColor);
+        const float primLod =
+            static_cast<float>(primLodFraction) / 255.0f;
+        for (size_t input = 0U; input < PB_FAST3D_COMBINER_INPUTS;
+             input++) {
+            switch (combiner.input_mapping[0][input]) {
+                case 0U:
+                    break;
+                case PB_FAST3D_INPUT_PRIMITIVE:
+                    uniforms->inputs[input][0] = primitive.red;
+                    uniforms->inputs[input][1] = primitive.green;
+                    uniforms->inputs[input][2] = primitive.blue;
+                    break;
+                case PB_FAST3D_INPUT_ENVIRONMENT:
+                    uniforms->inputs[input][0] = environment.red;
+                    uniforms->inputs[input][1] = environment.green;
+                    uniforms->inputs[input][2] = environment.blue;
+                    break;
+                case PB_FAST3D_INPUT_PRIMITIVE_ALPHA:
+                    uniforms->inputs[input][0] = primitive.alpha;
+                    uniforms->inputs[input][1] = primitive.alpha;
+                    uniforms->inputs[input][2] = primitive.alpha;
+                    break;
+                case PB_FAST3D_INPUT_ENVIRONMENT_ALPHA:
+                    uniforms->inputs[input][0] = environment.alpha;
+                    uniforms->inputs[input][1] = environment.alpha;
+                    uniforms->inputs[input][2] = environment.alpha;
+                    break;
+                case PB_FAST3D_INPUT_PRIM_LOD_FRACTION:
+                    uniforms->inputs[input][0] = primLod;
+                    uniforms->inputs[input][1] = primLod;
+                    uniforms->inputs[input][2] = primLod;
+                    break;
+                default:
+                    /* Key/convert registers are not decoded by the temporary
+                     * display-list walker yet.  Keep them on its measured
+                     * legacy path instead of inventing a constant. */
+                    return false;
+            }
+
+            switch (combiner.input_mapping[1][input]) {
+                case 0U:
+                    break;
+                case PB_FAST3D_INPUT_PRIMITIVE:
+                    uniforms->inputs[input][3] = primitive.alpha;
+                    break;
+                case PB_FAST3D_INPUT_ENVIRONMENT:
+                    uniforms->inputs[input][3] = environment.alpha;
+                    break;
+                case PB_FAST3D_INPUT_ALPHA_PRIM_LOD_FRACTION:
+                    uniforms->inputs[input][3] = primLod;
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    bool BuildSemanticBatch(const DecodedCombiner &decoded,
+                            SemanticBatch *semantic) {
+        if (semantic == nullptr || api == nullptr ||
+            (geometryMode & G_FOG) != 0U || decoded.cycleCount != 1U) {
+            return false;
+        }
+        *semantic = {};
+        const uint64_t options =
+            pb_gfx_shader_option(PB_GFX_OPT_ALPHA);
+        if (!pb_fast3d_generate_combiner(&semantic->combiner, combineWord0,
+                                         combineWord1, options) ||
+            semantic->combiner.used_textures[1] ||
+            !FillSemanticUniforms(semantic->combiner,
+                                  &semantic->uniforms)) {
+            return false;
+        }
+        semantic->shader = api->LookupShader(
+            semantic->combiner.shader_id0, semantic->combiner.shader_id1);
+        if (semantic->shader == nullptr) {
+            semantic->shader = api->CreateAndLoadNewShader(
+                semantic->combiner.shader_id0,
+                semantic->combiner.shader_id1);
+        }
+        return api->ShaderIsSupported(semantic->shader);
     }
 
     FloatColor RgbCombinerSource(uint8_t value, size_t slot,
@@ -1200,19 +1303,36 @@ class RuntimeDisplayListRenderer {
         const DecodedCombiner combiner = DecodeCombiner();
         const bool copyCycle =
             (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY;
-        const bool textured = textureRequested &&
-                              (combiner.use.texture || copyCycle);
+        bool textured = textureRequested &&
+                        (combiner.use.texture || copyCycle);
         if (batchTriangles != 0U && batchTextured == textured &&
             batchFill == fill) {
             return true;
         }
         if (!Flush()) return false;
-        batchTextured = textured;
         batchFill = fill;
         batchHasTexture = false;
         batchTextureInfo = {};
         batchCombiner = combiner;
-        batchTextureReplace = textured &&
+        batchSemantic = false;
+        batchShaderUsesTexture0 = false;
+        batchShaderUsesTexture1 = false;
+        batchShaderUsesShade = true;
+        batchShaderUsesAlpha = true;
+        SemanticBatch semantic;
+        const bool semanticCandidate = !fill && !copyCycle;
+        if (semanticCandidate && BuildSemanticBatch(combiner, &semantic)) {
+            batchSemantic = true;
+            batchShaderUsesTexture0 = semantic.combiner.used_textures[0];
+            batchShaderUsesTexture1 = semantic.combiner.used_textures[1];
+            batchShaderUsesShade = semantic.combiner.uses_shade;
+            textured = batchShaderUsesTexture0 || batchShaderUsesTexture1;
+            stats.semantic_combiner_batches++;
+        } else if (semanticCandidate) {
+            stats.legacy_combiner_fallbacks++;
+        }
+        batchTextured = textured;
+        batchTextureReplace = !batchSemantic && textured &&
                               (!batchCombiner.use.texture || copyCycle);
         const bool depthTest =
             ((geometryMode & G_ZBUFFER) != 0U ||
@@ -1239,14 +1359,18 @@ class RuntimeDisplayListRenderer {
             if (texture == nullptr) return false;
             batchTextureInfo = *texture;
             batchHasTexture = true;
-            api->LoadShader(textureShader);
             api->SelectTexture(0, texture->id);
             const bool linear = ((otherModeHigh >> 12U) & 3U) != 0U;
             api->SetTextureFilter(linear ? Fast::FILTER_LINEAR
                                          : Fast::FILTER_NONE);
             api->SetSamplerParameters(0, linear, tile.clampS, tile.clampT);
+        }
+        if (batchSemantic) {
+            api->SetCombinerUniforms(semantic.uniforms);
+            api->LoadShader(semantic.shader);
         } else {
-            api->LoadShader(shadeShader);
+            batchShaderUsesTexture0 = textured;
+            api->LoadShader(textured ? textureShader : shadeShader);
         }
         return true;
     }
@@ -1269,7 +1393,8 @@ class RuntimeDisplayListRenderer {
         batch.push_back(vertex.depth * clipW);
         batch.push_back(clipW);
         batch.push_back(0.0f);
-        if (tile != nullptr && batchHasTexture) {
+        if (tile != nullptr && batchHasTexture &&
+            batchShaderUsesTexture0) {
             const float s =
                 ShiftTextureCoordinate(vertex.textureS / 32.0f,
                                        tile->shiftS) -
@@ -1283,11 +1408,23 @@ class RuntimeDisplayListRenderer {
                 t, batchTextureInfo.sourceHeight,
                 batchTextureInfo.textureHeight));
         }
-        const Color color = ShadeForVertex(vertex);
-        batch.push_back(static_cast<float>(color.red) / 255.0f);
-        batch.push_back(static_cast<float>(color.green) / 255.0f);
-        batch.push_back(static_cast<float>(color.blue) / 255.0f);
-        batch.push_back(static_cast<float>(color.alpha) / 255.0f);
+        if (batchShaderUsesTexture1) {
+            /* The upstream interpreter supplies an independent second UV
+             * pair.  The compatibility walker intentionally keeps two-cycle
+             * draws on its legacy path until it can bind that second tile. */
+            batch.push_back(0.0f);
+            batch.push_back(0.0f);
+        }
+        if (batchShaderUsesShade) {
+            const Color color = batchSemantic ? vertex.color
+                                              : ShadeForVertex(vertex);
+            batch.push_back(static_cast<float>(color.red) / 255.0f);
+            batch.push_back(static_cast<float>(color.green) / 255.0f);
+            batch.push_back(static_cast<float>(color.blue) / 255.0f);
+            if (batchShaderUsesAlpha) {
+                batch.push_back(static_cast<float>(color.alpha) / 255.0f);
+            }
+        }
     }
 
     bool EmitTriangle(uint8_t first, uint8_t second, uint8_t third) {
@@ -1977,6 +2114,7 @@ class RuntimeDisplayListRenderer {
                     break;
                 case G_SETPRIMCOLOR:
                     Flush();
+                    primLodFraction = static_cast<uint8_t>(word0);
                     primColor = {
                         static_cast<uint8_t>(word1 >> 24U),
                         static_cast<uint8_t>(word1 >> 16U),
@@ -2343,6 +2481,7 @@ class RuntimeDisplayListRenderer {
     float viewportHeight = 240.0f;
     Color primColor = {};
     Color envColor = {};
+    uint8_t primLodFraction = 0U;
     Color fogColor = {};
     Color blendColor = {};
     uint32_t fillColor = 0U;
@@ -2368,6 +2507,11 @@ class RuntimeDisplayListRenderer {
     bool batchHasTexture = false;
     bool batchFill = false;
     bool batchTextureReplace = false;
+    bool batchSemantic = false;
+    bool batchShaderUsesTexture0 = false;
+    bool batchShaderUsesTexture1 = false;
+    bool batchShaderUsesShade = true;
+    bool batchShaderUsesAlpha = true;
     DecodedCombiner batchCombiner = {};
     TextureCacheEntry batchTextureInfo = {};
     Color fillRectangleColor = {};
