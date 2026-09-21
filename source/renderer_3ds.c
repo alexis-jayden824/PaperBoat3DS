@@ -50,6 +50,7 @@ struct PBRenderer3DS {
     int projection_uniform;
     uint32_t bound_textures[PB_GFX_TEXTURE_UNITS];
     int combiner_mode;
+    bool preserve_color_next_frame;
     bool c3d_ready;
     bool program_ready;
     bool frame_open;
@@ -285,7 +286,11 @@ bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer) {
     }
     renderer->frame_open = true;
     renderer->stream_used_vertices = 0;
-    C3D_RenderTargetClear(renderer->target, C3D_CLEAR_ALL,
+    const C3D_ClearBits clear_bits = renderer->preserve_color_next_frame
+                                         ? C3D_CLEAR_DEPTH
+                                         : C3D_CLEAR_ALL;
+    renderer->preserve_color_next_frame = false;
+    C3D_RenderTargetClear(renderer->target, clear_bits,
                           PB_RENDER_CLEAR_COLOR, PB_RENDER_CLEAR_DEPTH);
     if (!C3D_FrameDrawOn(renderer->target)) {
         C3D_FrameEnd(0);
@@ -297,6 +302,13 @@ bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer) {
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, renderer->projection_uniform,
                      &renderer->projection);
     return true;
+}
+
+void pb_renderer_3ds_preserve_color(PBRenderer3DS *renderer,
+                                    bool preserve_color) {
+    if (renderer != NULL && !renderer->frame_open) {
+        renderer->preserve_color_next_frame = preserve_color;
+    }
 }
 
 bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer) {

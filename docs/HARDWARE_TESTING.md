@@ -192,7 +192,7 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.7-m13r7` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.8-m13r8` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
@@ -211,7 +211,7 @@ repeat it on the New 3DS XL/LL when the console is available. In addition:
    stream overflows, and memory failures remain zero, then preserve the exact
    build SHA, both-screen captures, and `PaperBoat3DS.log`.
 
-For r7, also photograph the `Step`, `Cmd/frame`, `Zclear`, `probe`, and
+For r8, also photograph the `Step`, `Cmd/frame`, `Zclear`, `probe`, and
 `pause` fields before pausing, while paused, and after resuming. Verify that
 the world background and complete building surfaces are present, Mario/NPCs
 remain whole while crossing other objects, and the warmed-up `last` update

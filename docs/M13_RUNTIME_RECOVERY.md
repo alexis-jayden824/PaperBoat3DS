@@ -223,10 +223,10 @@ interpreter rather than missing assets:
   primitive or environment color can turn a valid texture/fog expression
   completely black. The runtime now decodes both color/alpha cycles, removes
   algebraically unused operands, and evaluates the non-texture portion in
-  formula order before the PICA texture stage. One-cycle mode also selects the
-  RDP's second encoded combiner half (with TEXEL1 remapped to TEXEL0), which is
-  required when Paper Mario intentionally gives the two halves different
-  sprite or framebuffer sources.
+  formula order before the PICA texture stage. The r8 correction keeps the
+  first encoded cycle in one-cycle mode, matching the linked PaperBoat/Fast
+  contract; r7's second-cycle selection caused valid world and menu materials
+  to evaluate as transparent black.
 - A triangle was discarded whenever any transformed vertex had non-positive
   `W`, and depth was clamped before clipping. Large building and ground
   polygons crossing the near plane therefore disappeared in whole pieces.
@@ -245,7 +245,10 @@ interpreter rather than missing assets:
   sampler/combiner state, and flushes the used linear vertex range once before
   frame submission.
 
-`0.13.7-m13r7` is a device-validation candidate, not an M13 acceptance claim.
+`0.13.8-m13r8` is a device-validation candidate, not an M13 acceptance claim.
+It also preserves the last native color target during pause, suppresses the
+dummy CPU framebuffer strips, and avoids their redundant texture uploads and
+draws.
 It must show the Toad Town background and building surfaces, whole sprites,
 responsive 30 Hz-class movement after warm-up, zero renderer/resource error
 counters, and stable pause/resume before M13 can close.

@@ -223,17 +223,17 @@ static bool testRuntimeLoadTileSubregion(PBGfxApi3DS *api) {
     return true;
 }
 
-static bool testRuntimeOneCycleUsesSecondCombiner(PBGfxApi3DS *api) {
+static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
     static uint8_t texture[8U * 8U * 2U] = {};
-    /* Cycle 0 is SHADE; cycle 1 is TEXEL0.  Real one-cycle RDP semantics
-     * select cycle 1, so rendering this rectangle must upload a texture. */
+    /* Cycle 0 is TEXEL0; cycle 1 is SHADE. PaperBoat/Fast selects cycle 0
+     * for one-cycle rendering, so this rectangle must upload a texture. */
     const PBRuntimeGfx displayList[] = {
         { .words = { UINT32_C(0xFD100007),
                      reinterpret_cast<uintptr_t>(texture) } },
         { .words = { UINT32_C(0xF5100000), 0U } },
         { .words = { UINT32_C(0xF3000000), 0U } },
         { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
-        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFE7879) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
         { .words = { UINT32_C(0xE4020020), 0U } },
         { .words = { UINT32_C(0xE1000000), 0U } },
         { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
@@ -398,7 +398,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeDisplayList(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeLoadTileSubregion(api));
-    CHECK(testRuntimeOneCycleUsesSecondCombiner(api));
+    CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

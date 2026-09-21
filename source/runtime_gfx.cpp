@@ -112,6 +112,12 @@ constexpr uint8_t G_MV_VIEWPORT = 0x08;
 constexpr uint8_t G_MV_LIGHT = 0x0A;
 constexpr uint8_t G_MWO_POINT_ST = 0x14;
 
+#ifdef __3DS__
+extern "C" int32_t get_game_mode(void);
+extern "C" uint16_t *nuGfxZBuffer;
+constexpr int32_t GAME_MODE_PAUSE = 10;
+#endif
+
 constexpr size_t kMaxVertices = 80U;
 constexpr size_t kMaxMatrixStack = 12U;
 constexpr size_t kBatchTriangleLimit = 384U;
@@ -278,8 +284,14 @@ class RuntimeDisplayListRenderer {
         ResetFrameState();
         const uint64_t previousFrame = frameSerial++;
         (void)previousFrame;
+#ifdef __3DS__
+        pauseFrame = get_game_mode() == GAME_MODE_PAUSE;
+#else
+        pauseFrame = false;
+#endif
+        api->PreserveColorOnNextFrame(pauseFrame);
         api->StartFrame();
-        api->ClearFramebuffer(true, true);
+        api->ClearFramebuffer(!pauseFrame, true);
         depthClearPending = false;
         api->SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
         api->SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
@@ -386,6 +398,7 @@ class RuntimeDisplayListRenderer {
         uint32_t rowStrideTexels = 0U;
         uint32_t offsetTexels = 0U;
         size_t payloadSize = 0U;
+        bool framebufferSentinel = false;
     };
 
     struct TextureCacheEntry {
@@ -655,15 +668,10 @@ class RuntimeDisplayListRenderer {
         decoded.cycleCount =
             (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_2 ? 2U : 1U;
 
-        /* The RDP's one-cycle path executes the second half of the encoded
-         * combiner.  Most SDK macros deliberately duplicate both halves, but
-         * Paper Mario also has modes where they differ (notably framebuffer
-         * and layered sprite paths).  Treating the first half as active can
-         * therefore select the wrong texel/alpha source and visibly sever a
-         * layer even though its geometry and texture decode are sound. */
-        if (decoded.cycleCount == 1U) {
-            decoded.cycles[0] = decoded.cycles[1];
-        }
+        /* Match PaperBoat/Fast's contract: a one-cycle draw consumes the first
+         * decoded cycle. Selecting the second raw half makes many Paper Mario
+         * materials evaluate to transparent black even though their geometry
+         * and texture data are valid. */
 
         for (size_t cycleIndex = 0U;
              cycleIndex < decoded.cycleCount; cycleIndex++) {
@@ -1298,6 +1306,18 @@ class RuntimeDisplayListRenderer {
                        float lowerT, bool textured,
                        bool flipTexture = false, bool fill = false) {
         if (right <= left || bottom <= top) return true;
+        if (pauseFrame && textured) {
+            const Tile &tile = tiles[firstTile & 7U];
+            const TextureSource &source =
+                loadedTextures[tile.tmem != 0U ? 1U : 0U].data != nullptr
+                    ? loadedTextures[tile.tmem != 0U ? 1U : 0U]
+                    : textureToLoad;
+            /* PaperBoat's pause path samples the CPU z-buffer sentinel in 40
+             * strips. It is not framebuffer data on 3DS. Keep the previous
+             * color target instead of decoding that zero-filled sentinel into
+             * repeated bands. */
+            if (source.framebufferSentinel) return true;
+        }
         if (!Flush()) return false;
         const float screenLeft = kScreenInset + left;
         const float screenRight = kScreenInset + right;
@@ -1369,6 +1389,15 @@ class RuntimeDisplayListRenderer {
                 source.data = static_cast<const uint8_t *>(resolved);
             }
         }
+#ifdef __3DS__
+        if (nuGfxZBuffer != nullptr && source.data != nullptr) {
+            const uintptr_t begin = reinterpret_cast<uintptr_t>(nuGfxZBuffer);
+            const uintptr_t end = begin + 320U * 240U * sizeof(uint16_t);
+            const uintptr_t candidate =
+                reinterpret_cast<uintptr_t>(source.data);
+            source.framebufferSentinel = candidate >= begin && candidate < end;
+        }
+#endif
         textureToLoad = source;
     }
 
@@ -2061,12 +2090,23 @@ class RuntimeDisplayListRenderer {
                     const bool inclusiveEdge =
                         (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY ||
                         (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_FILL;
-                    if (!EmitRectangle(((word1 >> 12U) & 0xFFFU) / 4.0f,
-                                       (word1 & 0xFFFU) / 4.0f,
-                                       ((word0 >> 12U) & 0xFFFU) / 4.0f +
-                                           (inclusiveEdge ? 1.0f : 0.0f),
-                                       (word0 & 0xFFFU) / 4.0f +
-                                           (inclusiveEdge ? 1.0f : 0.0f),
+                    const float fillLeft =
+                        ((word1 >> 12U) & 0xFFFU) / 4.0f;
+                    const float fillTop = (word1 & 0xFFFU) / 4.0f;
+                    const float fillRight =
+                        ((word0 >> 12U) & 0xFFFU) / 4.0f +
+                        (inclusiveEdge ? 1.0f : 0.0f);
+                    const float fillBottom =
+                        (word0 & 0xFFFU) / 4.0f +
+                        (inclusiveEdge ? 1.0f : 0.0f);
+                    /* Pause coverage and filtered-background passes target
+                     * dummy CPU buffers in this port. Preserve the last PICA
+                     * color image instead of painting those passes on-screen. */
+                    if (pauseFrame && fillLeft <= 0.0f && fillTop <= 0.0f &&
+                        fillRight >= 320.0f && fillBottom >= 240.0f) {
+                        break;
+                    }
+                    if (!EmitRectangle(fillLeft, fillTop, fillRight, fillBottom,
                                        0.0f, 0.0f, 0.0f, 0.0f, false,
                                        false, true)) {
                         return false;
@@ -2264,6 +2304,7 @@ class RuntimeDisplayListRenderer {
     uintptr_t depthImageAddress = 0U;
     uintptr_t colorImageAddress = 0U;
     bool colorTargetIsDepth = false;
+    bool pauseFrame = false;
     std::vector<float> batch;
     size_t batchTriangles = 0U;
     bool batchTextured = false;

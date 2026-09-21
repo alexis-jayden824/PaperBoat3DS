@@ -214,6 +214,8 @@ const char *pb_renderer_init_result_name(PBRendererInitResult result);
 PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer);
 bool pb_renderer_3ds_render(PBRenderer3DS *renderer);
 bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer);
+void pb_renderer_3ds_preserve_color(PBRenderer3DS *renderer,
+                                    bool preserve_color);
 bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer);
 void pb_renderer_3ds_finish(PBRenderer3DS *renderer);
 bool pb_renderer_3ds_clear(PBRenderer3DS *renderer, bool color, bool depth);

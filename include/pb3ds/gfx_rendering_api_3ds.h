@@ -79,6 +79,7 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     void Init() override;
     void OnResize() override;
     void StartFrame() override;
+    void PreserveColorOnNextFrame(bool preserve);
     void EndFrame() override;
     void FinishRender() override;
     int CreateFramebuffer() override;

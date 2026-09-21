@@ -171,6 +171,9 @@ PBTextureWrap TranslateWrap(uint32_t mode) {
 bool NativeBegin(PBRenderer3DS *renderer) {
     return pb_renderer_3ds_begin_frame(renderer);
 }
+void NativePreserveColor(PBRenderer3DS *renderer, bool preserve) {
+    pb_renderer_3ds_preserve_color(renderer, preserve);
+}
 bool NativeEnd(PBRenderer3DS *renderer) {
     return pb_renderer_3ds_end_frame(renderer);
 }
@@ -220,6 +223,7 @@ bool NativeDraw(PBRenderer3DS *renderer, const float *vertices,
 bool NativeBegin(PBRenderer3DS *) {
     return true;
 }
+void NativePreserveColor(PBRenderer3DS *, bool) {}
 bool NativeEnd(PBRenderer3DS *) {
     return true;
 }
@@ -857,6 +861,12 @@ void GfxRenderingAPI3DS::StartFrame() {
         return;
     }
     mImpl->nativeFrameOpen = true;
+}
+
+void GfxRenderingAPI3DS::PreserveColorOnNextFrame(bool preserve) {
+    if (mImpl != nullptr) {
+        NativePreserveColor(mImpl->renderer, preserve);
+    }
 }
 
 void GfxRenderingAPI3DS::EndFrame() {
