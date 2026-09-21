@@ -111,6 +111,23 @@ static void print_bottom_screen(PrintConsole *console,
     printf("\x1b[1;2HM13 Runtime Recovery\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
+    if (runtime->state == PB_RUNTIME_LOADING) {
+        printf("\x1b[6;2HStarting PaperBoat...\n");
+        printf("\x1b[8;2HStage %lu: %.27s\n",
+               (unsigned long)runtime->startup_step,
+               runtime->startup_stage != NULL
+                   ? runtime->startup_stage : "preparing runtime");
+        printf("\x1b[10;2HIndex:%lu Resources:%lu Hits:%lu\n",
+               (unsigned long)runtime->resources.index_count,
+               (unsigned long)runtime->resources.count,
+               (unsigned long)runtime->resources.hits);
+        printf("\x1b[12;2HThe app remains responsive while\n");
+        printf("\x1b[13;2Hupstream systems initialize.\n");
+        printf("\x1b[26;2HSD log: %s\n",
+               pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
+        printf("\x1b[30;2HL+R+START exits checkpoint\n");
+        return;
+    }
     if (runtime->state != PB_RUNTIME_INACTIVE) {
         printf("\x1b[6;2HMap: mac_%02ld entry:%ld slot:%u\n",
                (long)runtime->stats.map_id,
@@ -481,7 +498,23 @@ int main(int argc, char **argv) {
             (input.native_held & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) {
             break;
         }
-        if (runtime.state == PB_RUNTIME_ACTIVE &&
+        if (runtime.state == PB_RUNTIME_LOADING &&
+            state.lifecycle == LIFECYCLE_ACTIVE) {
+            if (!pb_runtime_continue_startup(&runtime) &&
+                !runtime_failure_logged) {
+                runtime_failure_logged = true;
+                pb_log_write(&log, PB_LOG_ERROR, "runtime-launch",
+                             "startup failed stage=\"%s\" error=%s "
+                             "resource=%s",
+                             runtime.startup_stage != NULL
+                                 ? runtime.startup_stage : "unknown",
+                             runtime.error != NULL
+                                 ? runtime.error : "unknown",
+                             runtime.resources.error != NULL
+                                 ? runtime.resources.error : "none");
+            }
+            state.redraw_bottom = true;
+        } else if (runtime.state == PB_RUNTIME_ACTIVE &&
             state.lifecycle == LIFECYCLE_ACTIVE) {
             if (!pb_runtime_update(&runtime)) {
                 state.redraw_bottom = true;
@@ -512,7 +545,7 @@ int main(int argc, char **argv) {
                     show_boot_checkpoint(
                         "Loading indexed upstream runtime");
                     const bool started =
-                        pb_runtime_start_toad_town(&runtime);
+                        pb_runtime_begin_toad_town(&runtime);
                     pb_log_write(&log,
                                  started ? PB_LOG_INFO : PB_LOG_ERROR,
                                  "runtime-launch",

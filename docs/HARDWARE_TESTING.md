@@ -192,12 +192,13 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.3-m13r3` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.4-m13r4` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
-1. Verify file confirmation reaches upstream `mac_00` without a freeze and the
-   bottom screen reports `Upstream: active`, then `Mode:5`.
+1. Verify file confirmation advances through the numbered startup stages,
+   reaches upstream `mac_00` without a freeze, and reports `Upstream: active`,
+   then `Mode:5`.
 2. Compare Mario movement, collision, camera, sprites, textures, palettes,
    transparency, fog, UI, fades, and framing with the same PaperBoat/N64 route.
 3. Pause and resume at least ten times and verify upstream `Mode:10`, fixed
@@ -212,3 +213,7 @@ repeat it on the New 3DS XL/LL when the console is available. In addition:
 
 This validates only the M13 Toad Town route. Audio, saves, battles, and later
 chapter coverage remain blocked until its presentation and movement pass.
+
+If startup stops, preserve the last numbered stage and the complete log. A
+`runtime-panic` line includes the upstream assertion text; otherwise the final
+`runtime-start` stage identifies the call that did not return.

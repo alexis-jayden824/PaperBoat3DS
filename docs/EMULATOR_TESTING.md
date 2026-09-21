@@ -231,12 +231,13 @@ input, or Old 3DS performance behavior.
 
 ## M13 core overworld gameplay
 
-Use the private bundle marked `0.13.3-m13r3` with the same owner-generated O2R
+Use the private bundle marked `0.13.4-m13r4` with the same owner-generated O2R
 files installed in Folium's virtual SD.
 
-1. Enter file select and confirm a slot. The bottom screen must change from the
-   title checkpoint to `Upstream: active`; the top screen must reach authentic
-   `mac_00` through PaperBoat's transition frames without freezing.
+1. Enter file select and confirm a slot. The bottom screen must advance through
+   numbered `Starting PaperBoat` stages and then change to `Upstream: active`;
+   the top screen must reach authentic `mac_00` through PaperBoat's transition
+   frames without freezing.
 2. Wait for `Mode:5`, then move in several directions. Verify Mario is visible,
    acceleration/deceleration and facing resemble the PaperBoat/N64 reference,
    collision stops him at the same boundaries, the camera follows, and the
@@ -252,6 +253,11 @@ files installed in Folium's virtual SD.
    checker texture as a failure and photograph both screens immediately.
 6. Exercise the `mac_00`/`mac_01` exits if reachable in the candidate, then
    exit with L+R+START and preserve the SHA, captures, and log.
+
+If startup does not finish, photograph the numbered stage and preserve the
+complete log. A `runtime-panic` line is a captured upstream assertion; a final
+`runtime-start` line without its following stage identifies the call that did
+not return. Do not describe either case as successful gameplay.
 
 M13 stays open after a successful boot. Acceptance requires this upstream path
 to look and feel correct side by side; audio, saves, battles, and later chapter

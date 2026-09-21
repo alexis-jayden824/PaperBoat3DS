@@ -118,7 +118,7 @@ compiles the consumer's ABI assertions against the real pinned `Gfx` type.
 An owner-only host run against the generated `pm64.o2r` exercised 400 updates,
 including directional input and pause/resume. After 21 transition-held updates,
 379 frames were submitted from the real game loop. The trace recorded 54,093
-draws, 344,591 triangles, 1,033,773 vertices, 1,306 runtime resources,
+draws, 344,591 triangles, 1,033,773 vertices, 609 runtime resources,
 2,647,677 display-list commands, 151,115 nested lists, and a maximum call depth
 of five. Player position, speed, and action changed under input and remained
 fixed during pause.
@@ -138,3 +138,26 @@ and handoff symbols, passes the static memory budget, and packages `.3dsx`,
 `.3ds`, and `.cia` candidates. It does not prove 3DS performance or
 presentation fidelity. M13 remains open until side-by-side captures establish
 Toad Town framing, layers, textures, transparency, fog, and movement feel.
+
+### Native startup isolation
+
+The `0.13.3-m13r3` device log proves that the complete 60,826-entry index is
+built in about 3.45 seconds and `init_game_globals` returns. Both recorded runs
+then stop inside upstream `load_engine_data`, before the first world frame or a
+resource error is reported. This rules out the archive scan and file-select
+event as the immediate failure boundary.
+
+`0.13.4-m13r4` preserves the exact upstream initialization order but executes
+its 38 operations one per application frame. The bottom screen and persistent
+log name the operation before it runs, from save-flash and heap setup through
+player sprites, fonts, HUD, and Toad Town activation. The application therefore
+services the 3DS lifecycle and redraws between operations. Its port-owned
+`is_debug_panic` also records the active stage and assertion message, marks the
+runtime failed, and returns to the diagnostic screen instead of invoking the
+desktop port's opaque `abort()` path. The build rejects an unnamespaced
+upstream panic definition and verifies the staged-start symbols in the final
+ELF.
+
+This isolation does not by itself close M13: the native test must reach
+`Upstream: active`, and movement and presentation must still pass the existing
+side-by-side acceptance gates.

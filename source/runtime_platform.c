@@ -1,6 +1,7 @@
 #include "pb3ds/runtime.h"
 
 #include <math.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,13 +13,171 @@
 #include "game_modes.h"
 #include "gbi_custom.h"
 #include "port/interpolation/FrameInterpolation.h"
+#include "sprite.h"
 
 extern void init_game_globals(void);
-extern void load_engine_data(void);
 extern void Graphics_ThreadUpdate(void);
+extern s8 gGameStepDelayCount;
 
 static PBRuntime *active_runtime;
 static uint64_t runtime_time;
+static jmp_buf runtime_panic_jump;
+static bool runtime_panic_armed;
+
+typedef enum {
+    PB_START_RESOURCE_INDEX = 1,
+    PB_START_GLOBALS,
+    PB_START_DEFAULTS,
+    PB_START_FLASH,
+    PB_START_INPUT,
+    PB_START_GENERAL_HEAP,
+    PB_START_RENDER_TASKS,
+    PB_START_WORKERS,
+    PB_START_SCRIPTS,
+    PB_START_CAMERAS,
+    PB_START_PLAYER_STATUS,
+    PB_START_PLAYER_SPRITES,
+    PB_START_ENTITY_MODELS,
+    PB_START_ANIMATORS,
+    PB_START_MODELS,
+    PB_START_SPRITE_SHADING,
+    PB_START_BACKGROUND,
+    PB_START_CHARACTER_SET,
+    PB_START_PRINTERS,
+    PB_START_GAME_MODE,
+    PB_START_NPCS,
+    PB_START_HUD,
+    PB_START_TRIGGERS,
+    PB_START_ENTITIES,
+    PB_START_PLAYER_DATA,
+    PB_START_ENCOUNTER,
+    PB_START_OVERLAYS,
+    PB_START_EFFECTS,
+    PB_START_SAVED_VARIABLES,
+    PB_START_ITEM_ENTITIES,
+    PB_START_MUSIC,
+    PB_START_AMBIENT,
+    PB_START_SOUNDS,
+    PB_START_WINDOWS,
+    PB_START_CURTAINS,
+    PB_START_RUMBLE,
+    PB_START_ENGINE_READY,
+    PB_START_TOAD_TOWN,
+} PBRuntimeStartupStep;
+
+static const char *runtime_startup_stage(uint32_t step) {
+    switch ((PBRuntimeStartupStep)step) {
+        case PB_START_RESOURCE_INDEX: return "building resource index";
+        case PB_START_GLOBALS: return "initializing upstream globals";
+        case PB_START_DEFAULTS: return "setting engine defaults";
+        case PB_START_FLASH: return "initializing save flash";
+        case PB_START_INPUT: return "clearing upstream input";
+        case PB_START_GENERAL_HEAP: return "creating general heap";
+        case PB_START_RENDER_TASKS: return "clearing render tasks";
+        case PB_START_WORKERS: return "clearing worker list";
+        case PB_START_SCRIPTS: return "clearing script list";
+        case PB_START_CAMERAS: return "creating upstream cameras";
+        case PB_START_PLAYER_STATUS: return "clearing player status";
+        case PB_START_PLAYER_SPRITES: return "loading player sprites";
+        case PB_START_ENTITY_MODELS: return "clearing entity models";
+        case PB_START_ANIMATORS: return "clearing animators";
+        case PB_START_MODELS: return "clearing model data";
+        case PB_START_SPRITE_SHADING: return "clearing sprite shading";
+        case PB_START_BACKGROUND: return "resetting background";
+        case PB_START_CHARACTER_SET: return "clearing character set";
+        case PB_START_PRINTERS: return "loading message font";
+        case PB_START_GAME_MODE: return "clearing game mode";
+        case PB_START_NPCS: return "clearing NPCs";
+        case PB_START_HUD: return "creating HUD cache";
+        case PB_START_TRIGGERS: return "clearing triggers";
+        case PB_START_ENTITIES: return "clearing entities";
+        case PB_START_PLAYER_DATA: return "clearing player data";
+        case PB_START_ENCOUNTER: return "initializing encounters";
+        case PB_START_OVERLAYS: return "clearing screen overlays";
+        case PB_START_EFFECTS: return "clearing effects";
+        case PB_START_SAVED_VARIABLES: return "clearing saved variables";
+        case PB_START_ITEM_ENTITIES: return "creating item workers";
+        case PB_START_MUSIC: return "resetting music state";
+        case PB_START_AMBIENT: return "resetting ambient state";
+        case PB_START_SOUNDS: return "clearing sound state";
+        case PB_START_WINDOWS: return "clearing windows";
+        case PB_START_CURTAINS: return "initializing curtains";
+        case PB_START_RUMBLE: return "initializing rumble state";
+        case PB_START_ENGINE_READY: return "finalizing engine data";
+        case PB_START_TOAD_TOWN: return "activating Toad Town";
+        default: return "unknown startup stage";
+    }
+}
+
+static void runtime_mark_startup_stage(PBRuntime *runtime) {
+    runtime->startup_stage = runtime_startup_stage(runtime->startup_step);
+    if (runtime->log != NULL) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                     "step=%lu stage=\"%s\" resources=%lu hits=%lu",
+                     (unsigned long)runtime->startup_step,
+                     runtime->startup_stage,
+                     (unsigned long)runtime->resources.count,
+                     (unsigned long)runtime->resources.hits);
+    }
+}
+
+static void runtime_fail(PBRuntime *runtime, const char *error) {
+    runtime->state = PB_RUNTIME_FAILED;
+    runtime->error = error;
+}
+
+static void runtime_set_engine_defaults(void) {
+    gOverrideFlags = 0;
+    gGameStatusPtr->unk_79 = 0;
+    gGameStatusPtr->backgroundFlags = 0;
+    gGameStatusPtr->musicEnabled = true;
+    gGameStatusPtr->healthBarsEnabled = true;
+    gGameStatusPtr->introPart = INTRO_PART_NONE;
+    gGameStatusPtr->demoBattleFlags = 0;
+    gGameStatusPtr->multiplayerEnabled = false;
+    gGameStatusPtr->altViewportOffset.x = -8;
+    gGameStatusPtr->altViewportOffset.y = 4;
+    gTimeFreezeMode = TIME_FREEZE_NONE;
+    gGameStatusPtr->debugQuizmo = 0;
+    gGameStatusPtr->unk_13C = 0;
+    gGameStepDelayCount = 5;
+    gGameStatusPtr->saveCount = 0;
+}
+
+static void runtime_finish_engine_data(void) {
+    for (size_t i = 0U;
+         i < sizeof(gGameStatusPtr->holdRepeatInterval) /
+                 sizeof(gGameStatusPtr->holdRepeatInterval[0]); i++) {
+        gGameStatusPtr->holdRepeatInterval[i] = 3;
+        gGameStatusPtr->holdDelayTime[i] = 12;
+    }
+    gOverrideFlags |= GLOBAL_OVERRIDES_DISABLE_DRAW_FRAME;
+    set_game_mode(GAME_MODE_STARTUP);
+}
+
+static void runtime_activate_toad_town(PBRuntime *runtime) {
+    /* Keep the original gAreas numbering: Toad Town is area 1.  Its real map
+     * table keeps the original placeholder at index 0, so mac_00 is map 1. */
+    gGameStatusPtr->areaID = 1;
+    gGameStatusPtr->mapID = 1;
+    gGameStatusPtr->entryID = 6;
+    gGameStatusPtr->prevArea = 1;
+    gGameStatusPtr->demoState = DEMO_STATE_NONE;
+    runtime->stats.area_id = gGameStatusPtr->areaID;
+    runtime->stats.map_id = gGameStatusPtr->mapID;
+    runtime->stats.entry_id = gGameStatusPtr->entryID;
+    set_game_mode(GAME_MODE_ENTER_DEMO_WORLD);
+    if (runtime->state == PB_RUNTIME_FAILED) return;
+    runtime->startup_stage = "upstream runtime active";
+    runtime->state = PB_RUNTIME_ACTIVE;
+    if (runtime->log != NULL) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "runtime",
+                     "upstream activated area=mac map=mac_00 entry=6 "
+                     "resources=%lu hits=%lu",
+                     (unsigned long)runtime->resources.count,
+                     (unsigned long)runtime->resources.hits);
+    }
+}
 
 const char *pb_runtime_state_name(PBRuntimeState state) {
     switch (state) {
@@ -28,6 +187,21 @@ const char *pb_runtime_state_name(PBRuntimeState state) {
         case PB_RUNTIME_INACTIVE:
         default: return "inactive";
     }
+}
+
+void is_debug_panic(const char *message) {
+    if (active_runtime != NULL) {
+        runtime_fail(active_runtime, "upstream assertion failed");
+        if (active_runtime->log != NULL) {
+            pb_log_write(active_runtime->log, PB_LOG_ERROR, "runtime-panic",
+                         "stage=\"%s\" message=\"%s\"",
+                         active_runtime->startup_stage != NULL
+                             ? active_runtime->startup_stage : "runtime update",
+                         message != NULL ? message : "panic");
+        }
+    }
+    if (runtime_panic_armed) longjmp(runtime_panic_jump, 1);
+    abort();
 }
 
 void pb_runtime_init(PBRuntime *runtime, PBArchive *archive,
@@ -41,7 +215,7 @@ void pb_runtime_init(PBRuntime *runtime, PBArchive *archive,
     runtime->log = log;
 }
 
-bool pb_runtime_start_toad_town(PBRuntime *runtime) {
+bool pb_runtime_begin_toad_town(PBRuntime *runtime) {
     if (runtime == NULL || runtime->resources.archive == NULL ||
         runtime->resources.archive->file == NULL || runtime->input == NULL ||
         runtime->graphics == NULL) {
@@ -51,69 +225,125 @@ bool pb_runtime_start_toad_town(PBRuntime *runtime) {
         }
         return false;
     }
+    if (runtime->state != PB_RUNTIME_INACTIVE) {
+        runtime_fail(runtime, "runtime already started");
+        return false;
+    }
     active_runtime = runtime;
     pb_runtime_resources_bind(&runtime->resources);
     runtime->state = PB_RUNTIME_LOADING;
-    if (runtime->log != NULL) {
-        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
-                     "building resource index");
-    }
-    if (!pb_runtime_resources_prepare(&runtime->resources)) {
-        runtime->state = PB_RUNTIME_FAILED;
-        runtime->error = runtime->resources.error != NULL
-                             ? runtime->resources.error
-                             : "resource index unavailable";
-        if (runtime->log != NULL) {
-            pb_log_write(runtime->log, PB_LOG_ERROR, "runtime",
-                         "resource index failed: %s (%s)", runtime->error,
-                         pb_o2r_result_name(runtime->resources.archive_error));
+    runtime->error = NULL;
+    runtime->startup_step = PB_START_RESOURCE_INDEX;
+    runtime_mark_startup_stage(runtime);
+    return true;
+}
+
+bool pb_runtime_continue_startup(PBRuntime *runtime) {
+    if (runtime == NULL || runtime != active_runtime ||
+        runtime->state != PB_RUNTIME_LOADING) return false;
+
+    runtime_panic_armed = true;
+    if (setjmp(runtime_panic_jump) != 0) {
+        runtime_panic_armed = false;
+        if (runtime->state != PB_RUNTIME_FAILED) {
+            runtime_fail(runtime, "upstream assertion failed");
         }
         return false;
     }
-    if (runtime->log != NULL) {
-        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
-                     "resource index ready entries=%lu bytes=%lu",
-                     (unsigned long)runtime->resources.index_count,
-                     (unsigned long)runtime->resources.index_allocation);
-        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
-                     "initializing upstream globals");
-    }
-    init_game_globals();
-    if (runtime->log != NULL) {
-        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
-                     "loading upstream engine data");
-    }
-    load_engine_data();
-    if (runtime->log != NULL) {
-        pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
-                     "upstream engine data ready resources=%lu",
-                     (unsigned long)runtime->resources.count);
-    }
 
-    /* Keep the original gAreas numbering: Toad Town is area 1.  Its real map
-     * table keeps the original placeholder at index 0, so mac_00 is map 1. */
-    gGameStatusPtr->areaID = 1;
-    gGameStatusPtr->mapID = 1;
-    gGameStatusPtr->entryID = 6;
-    gGameStatusPtr->prevArea = 1;
-    gGameStatusPtr->demoState = DEMO_STATE_NONE;
-    runtime->stats.area_id = gGameStatusPtr->areaID;
-    runtime->stats.map_id = gGameStatusPtr->mapID;
-    runtime->stats.entry_id = gGameStatusPtr->entryID;
-    set_game_mode(GAME_MODE_ENTER_DEMO_WORLD);
-    runtime->state = PB_RUNTIME_ACTIVE;
-    if (runtime->log != NULL) {
-        pb_log_write(runtime->log, PB_LOG_INFO, "runtime",
-                     "upstream activated area=mac map=mac_00 entry=6");
+    switch ((PBRuntimeStartupStep)runtime->startup_step) {
+        case PB_START_RESOURCE_INDEX:
+            if (!pb_runtime_resources_prepare(&runtime->resources)) {
+                runtime_fail(runtime,
+                    runtime->resources.error != NULL
+                        ? runtime->resources.error
+                        : "resource index unavailable");
+                if (runtime->log != NULL) {
+                    pb_log_write(runtime->log, PB_LOG_ERROR, "runtime",
+                                 "resource index failed: %s (%s)",
+                                 runtime->error,
+                                 pb_o2r_result_name(
+                                     runtime->resources.archive_error));
+                }
+            } else if (runtime->log != NULL) {
+                pb_log_write(runtime->log, PB_LOG_INFO, "runtime-start",
+                             "resource index ready entries=%lu bytes=%lu",
+                             (unsigned long)runtime->resources.index_count,
+                             (unsigned long)runtime->resources.index_allocation);
+            }
+            break;
+        case PB_START_GLOBALS: init_game_globals(); break;
+        case PB_START_DEFAULTS: runtime_set_engine_defaults(); break;
+        case PB_START_FLASH: fio_init_flash(); break;
+        case PB_START_INPUT: clear_input(); break;
+        case PB_START_GENERAL_HEAP: general_heap_create(); break;
+        case PB_START_RENDER_TASKS: clear_render_tasks(); break;
+        case PB_START_WORKERS: clear_worker_list(); break;
+        case PB_START_SCRIPTS: clear_script_list(); break;
+        case PB_START_CAMERAS: create_cameras(); break;
+        case PB_START_PLAYER_STATUS: clear_player_status(); break;
+        case PB_START_PLAYER_SPRITES:
+            spr_init_sprites(PLAYER_SPRITES_MARIO_WORLD);
+            break;
+        case PB_START_ENTITY_MODELS: clear_entity_models(); break;
+        case PB_START_ANIMATORS: clear_animator_list(); break;
+        case PB_START_MODELS: clear_model_data(); break;
+        case PB_START_SPRITE_SHADING: clear_sprite_shading_data(); break;
+        case PB_START_BACKGROUND: reset_background_settings(); break;
+        case PB_START_CHARACTER_SET: clear_character_set(); break;
+        case PB_START_PRINTERS: clear_printers(); break;
+        case PB_START_GAME_MODE: clear_game_mode(); break;
+        case PB_START_NPCS: clear_npcs(); break;
+        case PB_START_HUD: hud_element_clear_cache(); break;
+        case PB_START_TRIGGERS: clear_trigger_data(); break;
+        case PB_START_ENTITIES: clear_entity_data(false); break;
+        case PB_START_PLAYER_DATA: clear_player_data(); break;
+        case PB_START_ENCOUNTER: init_encounter_status(); break;
+        case PB_START_OVERLAYS: clear_screen_overlays(); break;
+        case PB_START_EFFECTS: clear_effect_data(); break;
+        case PB_START_SAVED_VARIABLES: clear_saved_variables(); break;
+        case PB_START_ITEM_ENTITIES: clear_item_entity_data(); break;
+        case PB_START_MUSIC: bgm_reset_sequence_players(); break;
+        case PB_START_AMBIENT: reset_ambient_sounds(); break;
+        case PB_START_SOUNDS: sfx_clear_sounds(); break;
+        case PB_START_WINDOWS: clear_windows(); break;
+        case PB_START_CURTAINS: initialize_curtains(); break;
+        case PB_START_RUMBLE: poll_rumble(); break;
+        case PB_START_ENGINE_READY: runtime_finish_engine_data(); break;
+        case PB_START_TOAD_TOWN: runtime_activate_toad_town(runtime); break;
+        default: runtime_fail(runtime, "invalid runtime startup stage"); break;
     }
+    runtime_panic_armed = false;
+
+    if (runtime->state == PB_RUNTIME_FAILED) return false;
+    if (runtime->state == PB_RUNTIME_ACTIVE) return true;
+    runtime->startup_step++;
+    runtime_mark_startup_stage(runtime);
     return true;
+}
+
+bool pb_runtime_start_toad_town(PBRuntime *runtime) {
+    if (!pb_runtime_begin_toad_town(runtime)) return false;
+    while (runtime->state == PB_RUNTIME_LOADING) {
+        if (!pb_runtime_continue_startup(runtime)) return false;
+    }
+    return runtime->state == PB_RUNTIME_ACTIVE;
 }
 
 bool pb_runtime_update(PBRuntime *runtime) {
     if (runtime == NULL || runtime != active_runtime ||
         runtime->state != PB_RUNTIME_ACTIVE) return false;
     runtime->frame_submitted = false;
+    runtime_panic_armed = true;
+    if (setjmp(runtime_panic_jump) != 0) {
+        runtime_panic_armed = false;
+        if (runtime->state != PB_RUNTIME_FAILED) {
+            runtime_fail(runtime, "upstream assertion failed");
+        }
+        return false;
+    }
     Graphics_ThreadUpdate();
+    runtime_panic_armed = false;
     runtime->stats.updates++;
     runtime->stats.game_mode = get_game_mode();
     runtime->stats.area_id = gGameStatusPtr->areaID;
@@ -132,6 +362,8 @@ void pb_runtime_shutdown(PBRuntime *runtime) {
     if (runtime == NULL) return;
     if (active_runtime == runtime) active_runtime = NULL;
     pb_runtime_resources_clear(&runtime->resources);
+    runtime->startup_stage = NULL;
+    runtime->startup_step = 0U;
     runtime->state = PB_RUNTIME_INACTIVE;
 }
 

@@ -44,12 +44,18 @@ typedef struct {
     PBRuntimeState state;
     PBRuntimeStats stats;
     const char *error;
+    const char *startup_stage;
+    uint32_t startup_step;
     bool frame_submitted;
 } PBRuntime;
 
 void pb_runtime_init(PBRuntime *runtime, PBArchive *archive,
                      PBMemoryMonitor *memory, PBInputState *input,
                      PBGfxApi3DS *graphics, PBLog *log);
+/* Device startup is intentionally incremental so aptMainLoop, diagnostics,
+ * and VBlank continue between upstream initialization stages. */
+bool pb_runtime_begin_toad_town(PBRuntime *runtime);
+bool pb_runtime_continue_startup(PBRuntime *runtime);
 bool pb_runtime_start_toad_town(PBRuntime *runtime);
 bool pb_runtime_update(PBRuntime *runtime);
 void pb_runtime_shutdown(PBRuntime *runtime);

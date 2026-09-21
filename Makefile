@@ -116,7 +116,9 @@ all: fetch-upstream m13-runtime-lib $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 	@set -e; for symbol in boot_main step_game_loop gfx_draw_frame \
 		Graphics_ThreadUpdate update_player update_player_input \
-		update_cameras pb_runtime_start_toad_town Graphics_PushFrame; do \
+		update_cameras pb_runtime_begin_toad_town \
+		pb_runtime_continue_startup pb_runtime_start_toad_town \
+		Graphics_PushFrame is_debug_panic; do \
 		$(DEVKITARM)/bin/arm-none-eabi-nm --defined-only "$(TARGET).elf" | \
 			awk '{ print $$3 }' | grep -qx "$$symbol" || { \
 				echo "missing final runtime symbol: $$symbol"; exit 1; \
@@ -219,7 +221,7 @@ m13-core-check: m13-runtime-lib
 				exit 1; \
 			}; \
 	done
-	@set -e; for symbol in printf puts __printf_chk; do \
+	@set -e; for symbol in printf puts __printf_chk is_debug_panic; do \
 		if $(DEVKITARM)/bin/arm-none-eabi-nm \
 			--defined-only "$(M13_RUNTIME_LIB)" | \
 			awk '{ print $$3 }' | grep -qx "$$symbol"; then \
@@ -227,6 +229,11 @@ m13-core-check: m13-runtime-lib
 			exit 1; \
 		fi; \
 	done
+	@$(DEVKITARM)/bin/arm-none-eabi-nm \
+		--defined-only "$(M13_RUNTIME_LIB)" | \
+		awk '{ print $$3 }' | grep -qx pb_upstream_is_debug_panic || { \
+		echo "missing namespaced upstream panic symbol"; exit 1; \
+	}
 	@test -s "$(M13_RUNTIME_LIB)"
 	@mkdir -p "$(M13_RUNTIME_BUILD)"
 	@$(CC) -c tests/test_runtime_upstream_consumer.c \

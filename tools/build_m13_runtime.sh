@@ -39,7 +39,8 @@ while IFS= read -r source; do
             # boot_main, but namespace only its libc interposition symbols.
             source_cflags="-Dprintf=pb_runtime_isv_printf \
                 -Dputs=pb_runtime_isv_puts \
-                -D__printf_chk=pb_runtime_isv_printf_chk"
+                -D__printf_chk=pb_runtime_isv_printf_chk \
+                -Dis_debug_panic=pb_upstream_is_debug_panic"
             ;;
     esac
     # Deliberate word splitting: source_cflags contains compiler switches
