@@ -262,6 +262,12 @@ class RuntimeDisplayListRenderer {
   public:
     explicit RuntimeDisplayListRenderer(GfxRenderingAPI3DS *renderingApi)
         : api(renderingApi) {
+        /*
+         * PaperBoat emits many small triangles. Keep one bounded CPU staging
+         * allocation for the lifetime of the renderer instead of repeatedly
+         * growing std::vector storage in the hot path.
+         */
+        batch.reserve(kBatchTriangleLimit * 3U * 11U);
         ResetFrameState();
     }
 
@@ -1106,9 +1112,18 @@ class RuntimeDisplayListRenderer {
     }
 
     TextureCacheEntry *AcquireTexture(const Tile &tile) {
+        /*
+         * TMEM is addressed in 64-bit words (0..511).  Treating every
+         * non-zero TMEM address as one shared slot aliases unrelated Paper
+         * Mario textures: later loads overwrite earlier bindings and surfaces
+         * can render black, duplicated, or with the wrong material.  Preserve
+         * the exact TMEM destination selected by gDPSetTile/gDPLoad*.
+         */
+        const size_t tmemIndex =
+            std::min<size_t>(tile.tmem, loadedTextures.size() - 1U);
         const TextureSource &source =
-            loadedTextures[tile.tmem != 0U ? 1U : 0U].data != nullptr
-                ? loadedTextures[tile.tmem != 0U ? 1U : 0U]
+            loadedTextures[tmemIndex].data != nullptr
+                ? loadedTextures[tmemIndex]
                 : textureToLoad;
         uint32_t type = source.resourceType != 0U
                             ? source.resourceType
@@ -1125,6 +1140,9 @@ class RuntimeDisplayListRenderer {
             height = ((tile.lowerT - tile.upperT) >> 2U) + 1U;
         }
         if (width == 0U) width = source.imageWidth;
+        /* Match DecodeTexture's final fallback exactly so cache lookup and
+         * insertion use the same dimensions. */
+        if (height == 0U) height = 1U;
         const uint32_t key = TextureKey(
             source, tile, palette, static_cast<uint16_t>(width),
             static_cast<uint16_t>(height), type);
@@ -1430,7 +1448,9 @@ class RuntimeDisplayListRenderer {
     void LoadTexture(size_t tileIndex, uint32_t word0 = 0U,
                      uint32_t word1 = 0U, bool loadTile = false) {
         if (tileIndex >= tiles.size()) return;
-        const size_t tmemIndex = tiles[tileIndex].tmem != 0U ? 1U : 0U;
+        const size_t tmemIndex =
+            std::min<size_t>(tiles[tileIndex].tmem,
+                             loadedTextures.size() - 1U);
         TextureSource loaded = textureToLoad;
         const uint32_t upperS = (word0 >> 12U) & 0xFFFU;
         const uint32_t upperT = word0 & 0xFFFU;
@@ -2268,7 +2288,8 @@ class RuntimeDisplayListRenderer {
     std::array<LoadedVertex, kMaxVertices> vertices = {};
     std::array<Tile, 8U> tiles = {};
     TextureSource textureToLoad = {};
-    std::array<TextureSource, 2U> loadedTextures = {};
+    /* N64 RDP TMEM contains 512 64-bit words. */
+    std::array<TextureSource, 512U> loadedTextures = {};
     std::array<const uint8_t *, 16U> paletteBanks = {};
     const uint8_t *paletteFull = nullptr;
     std::array<uintptr_t, 16U> segmentPointers = {};
