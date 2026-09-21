@@ -51,7 +51,8 @@ while IFS= read -r source; do
     objects="$objects $object"
 done < "$source_list"
 
-for generated in runtime_world_mac runtime_game_modes runtime_nusys_overrides; do
+for generated in runtime_world_mac runtime_game_modes runtime_nusys_overrides \
+        runtime_heap_storage; do
     object="$object_dir/$generated.o"
     echo "  M13 generated/$generated.c"
     "$compiler" "$@" -c "$generated_dir/$generated.c" -o "$object"

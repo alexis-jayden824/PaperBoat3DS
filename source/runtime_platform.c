@@ -18,6 +18,7 @@
 extern void init_game_globals(void);
 extern void Graphics_ThreadUpdate(void);
 extern s8 gGameStepDelayCount;
+extern b32 PB3DS_RuntimeHeapStorageAligned(void);
 
 static PBRuntime *active_runtime;
 static uint64_t runtime_time;
@@ -276,7 +277,13 @@ bool pb_runtime_continue_startup(PBRuntime *runtime) {
         case PB_START_DEFAULTS: runtime_set_engine_defaults(); break;
         case PB_START_FLASH: fio_init_flash(); break;
         case PB_START_INPUT: clear_input(); break;
-        case PB_START_GENERAL_HEAP: general_heap_create(); break;
+        case PB_START_GENERAL_HEAP:
+            if (!PB3DS_RuntimeHeapStorageAligned()) {
+                runtime_fail(runtime, "upstream heap storage is misaligned");
+            } else {
+                general_heap_create();
+            }
+            break;
         case PB_START_RENDER_TASKS: clear_render_tasks(); break;
         case PB_START_WORKERS: clear_worker_list(); break;
         case PB_START_SCRIPTS: clear_script_list(); break;

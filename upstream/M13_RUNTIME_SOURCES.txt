@@ -310,11 +310,9 @@ src/entity/model/CymbalPlant_anim.c
 src/entity/model/PinkFlower_anim.c
 src/msg_draw.c
 src/draw_img_util.c
-src/heaps3.c
 src/world_use_item.c
 src/cam_mode_unused_confined.c
 src/101b90_len_8f0.c
-src/heaps2.c
 src/general_heap_create_obfuscated.c
 src/cam_mode_unused_leading.c
 src/8a860_len_3f30.c

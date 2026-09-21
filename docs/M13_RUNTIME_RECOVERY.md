@@ -161,3 +161,21 @@ ELF.
 This isolation does not by itself close M13: the native test must reach
 `Upstream: active`, and movement and presentation must still pass the existing
 side-by-side acceptance gates.
+
+The first `0.13.4-m13r4` device log isolated the stop to
+`clear_script_list()`: the first upstream virtual-entity allocation asserted.
+The resource index and the preceding eight startup stages had all completed.
+The linked ARM11 ELF then exposed the platform difference: PaperBoat's general
+heap byte array was located at `0x0057364c`, but its allocator requires the
+storage symbol itself to be 16-byte aligned. `_heap_create()` wrote its header
+at the aligned address `0x00573650`; `_heap_malloc()` subsequently started at
+the original symbol and therefore saw an empty heap. Desktop linkers happened
+to satisfy the unstated alignment assumption, which is why host traces passed.
+
+`0.13.5-m13r5` replaces only the four upstream heap-storage definitions with
+equivalent 16-byte-aligned definitions for the 3DS runtime closure. Startup
+also checks the invariant before creating the general heap, and every native
+build rejects a final ELF whose general, sprite, collision, or battle heap is
+misaligned or incorrectly sized. The check rejects the recorded r4 ELF, so
+the regression is tied to the exact target binary failure rather than a host
+approximation.

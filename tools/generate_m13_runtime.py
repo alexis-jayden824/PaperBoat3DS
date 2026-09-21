@@ -140,6 +140,37 @@ NUSYS_ABI_SIGNATURES = {
 }
 
 
+HEAP_STORAGE = r'''#include "common.h"
+
+/*
+ * PaperBoat's allocator aligns the address passed to _heap_create(), but its
+ * malloc/free entry points subsequently use the storage symbol itself as the
+ * first HeapNode.  The original N64 linker and the desktop toolchains place
+ * these arrays on a 16-byte boundary.  devkitARM only promises byte alignment
+ * for u8 arrays, so make that allocator precondition explicit here.
+ */
+BSS u8 heap_generalHead[GENERAL_HEAP_SIZE] ALIGNED(16);
+BSS u8 heap_spriteHead[SPRITE_HEAP_SIZE] ALIGNED(16);
+BSS u16 gFrameBuf0[FRAME_BUFFER_SIZE / 2];
+BSS u16 gFrameBuf1[FRAME_BUFFER_SIZE / 2];
+BSS u16 gFrameBuf2[FRAME_BUFFER_SIZE / 2];
+
+#ifdef SHIFT
+BSS u8 WorldEntityHeapBottom[WORLD_ENTITY_HEAP_SIZE];
+#endif
+BSS u8 WorldEntityHeapBase[0x10];
+BSS u8 heap_collisionHead[COLLISION_HEAP_SIZE] ALIGNED(16);
+BSS u8 heap_battleHead[BATTLE_HEAP_SIZE] ALIGNED(16);
+
+b32 PB3DS_RuntimeHeapStorageAligned(void) {
+    return (((uintptr_t) heap_generalHead & 0xFU) == 0U) &&
+           (((uintptr_t) heap_spriteHead & 0xFU) == 0U) &&
+           (((uintptr_t) heap_collisionHead & 0xFU) == 0U) &&
+           (((uintptr_t) heap_battleHead & 0xFU) == 0U);
+}
+'''
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("upstream", type=Path)
@@ -161,6 +192,23 @@ def main() -> int:
             )
         nusys = nusys.replace(upstream_signature, platform_signature)
 
+    # These definitions are replaced as one unit so a future upstream storage
+    # change cannot silently bypass the 3DS allocator-alignment contract.
+    heaps3 = (args.upstream / "src/heaps3.c").read_text(encoding="utf-8")
+    heaps2 = (args.upstream / "src/heaps2.c").read_text(encoding="utf-8")
+    heap_contract = {
+        "heap_generalHead": "BSS u8 heap_generalHead[GENERAL_HEAP_SIZE];",
+        "heap_spriteHead": "BSS u8 heap_spriteHead[SPRITE_HEAP_SIZE];",
+        "heap_collisionHead": "BSS u8 heap_collisionHead[COLLISION_HEAP_SIZE];",
+        "heap_battleHead": "BSS u8 heap_battleHead[BATTLE_HEAP_SIZE];",
+    }
+    for symbol, declaration in heap_contract.items():
+        source = heaps3 if symbol in {"heap_generalHead", "heap_spriteHead"} else heaps2
+        if source.count(declaration) != 1:
+            raise SystemExit(
+                f"pinned heap storage declaration changed: {declaration}"
+            )
+
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "runtime_world_mac.c").write_text(
         source.split(marker, 1)[0] + WORLD_SUFFIX.lstrip(), encoding="utf-8"
@@ -170,6 +218,9 @@ def main() -> int:
     )
     (args.output / "runtime_nusys_overrides.c").write_text(
         nusys, encoding="utf-8"
+    )
+    (args.output / "runtime_heap_storage.c").write_text(
+        HEAP_STORAGE, encoding="utf-8"
     )
     return 0
 

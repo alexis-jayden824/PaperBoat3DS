@@ -114,6 +114,8 @@ export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 all: fetch-upstream m13-runtime-lib $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@NM="$(DEVKITARM)/bin/arm-none-eabi-nm" \
+		sh tools/check_m13_heap_alignment.sh "$(TARGET).elf"
 	@set -e; for symbol in boot_main step_game_loop gfx_draw_frame \
 		Graphics_ThreadUpdate update_player update_player_input \
 		update_cameras pb_runtime_begin_toad_town \
