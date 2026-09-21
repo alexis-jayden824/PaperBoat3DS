@@ -1758,7 +1758,26 @@ class RuntimeDisplayListRenderer {
                     commandCount++;
                     const void *data = ResourceGetDataByCrc(hash);
                     if (data == nullptr) stats.missing_resources++;
-                    if (type == G_MV_LIGHT && data != nullptr) {
+                    if (type == G_MV_VIEWPORT && data != nullptr) {
+                        /*
+                         * Hash-backed display lists use the same N64 Vp
+                         * resource as direct G_MOVEMEM.  Ignoring it leaves
+                         * the previous viewport active, so subsequent passes
+                         * are projected into stale rectangles and appear as
+                         * duplicated/striped fragments.
+                         */
+                        const N64Viewport *viewport =
+                            static_cast<const N64Viewport *>(data);
+                        viewportWidth =
+                            2.0f * viewport->scale[0] / 4.0f;
+                        viewportHeight =
+                            2.0f * viewport->scale[1] / 4.0f;
+                        viewportX = kScreenInset +
+                            viewport->translate[0] / 4.0f -
+                            viewportWidth * 0.5f;
+                        viewportY = viewport->translate[1] / 4.0f -
+                            viewportHeight * 0.5f;
+                    } else if (type == G_MV_LIGHT && data != nullptr) {
                         const int light = static_cast<int>(offset) / 24 - 2;
                         if (light >= 0 &&
                             static_cast<size_t>(light) < lights.size()) {
