@@ -154,6 +154,9 @@ static bool test_textured_quad_orientation(void) {
 
     /* Regression for the M11 Folium capture: bottom gets min V, top max V. */
     CHECK(quad.bottom_v < quad.top_v);
+    CHECK(pb_renderer_n64_texture_v(0.0f, 30U, 32U) == 30.0f / 32.0f);
+    CHECK(pb_renderer_n64_texture_v(30.0f, 30U, 32U) == 0.0f);
+    CHECK(pb_renderer_n64_texture_v(0.0f, 33U, 32U) == 0.0f);
     CHECK(!pb_renderer_textured_quad(NULL, 0.0f, 0.0f, 8.0f, 8.0f,
                                      8, 8, 8, 8));
     CHECK(!pb_renderer_textured_quad(&quad, 0.0f, 0.0f, 0.0f, 8.0f,

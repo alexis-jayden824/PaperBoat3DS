@@ -14,11 +14,15 @@ typedef struct {
     PBArchive *archive;
     PBMemoryMonitor *memory;
     PBRuntimeResource *head;
+    PBRuntimeResource **loaded_buckets;
+    size_t loaded_bucket_count;
+    size_t loaded_bucket_allocation;
     PBO2RIndexEntry *index;
     size_t index_count;
     size_t index_allocation;
     size_t count;
     size_t hits;
+    size_t lookup_probes;
     PBO2RResult archive_error;
     const char *error;
 } PBRuntimeResources;

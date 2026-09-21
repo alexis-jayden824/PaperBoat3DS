@@ -13,10 +13,14 @@ typedef struct {
     uint64_t commands;
     uint64_t display_lists;
     uint64_t texture_fallbacks;
+    uint64_t depth_target_clears;
+    uint64_t copy_rectangles;
     uint32_t unknown_commands;
     uint32_t missing_resources;
     uint32_t malformed_lists;
     uint32_t max_call_depth;
+    uint32_t commands_last_frame;
+    uint32_t commands_peak_frame;
     uint8_t last_unknown_opcode;
 } PBRuntimeGfxStats;
 

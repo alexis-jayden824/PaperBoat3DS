@@ -180,6 +180,15 @@ bool pb_renderer_textured_quad(PBTexturedQuad *quad, float left,
     return true;
 }
 
+float pb_renderer_n64_texture_v(float n64_v, uint16_t source_height,
+                                uint16_t texture_height) {
+    if (source_height == 0U || texture_height == 0U ||
+        source_height > texture_height) {
+        return 0.0f;
+    }
+    return ((float)source_height - n64_v) / (float)texture_height;
+}
+
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target) {
     if (logical == NULL || target == NULL || logical->width == 0 ||

@@ -49,6 +49,8 @@ int main(int argc, char **argv) {
     pb_runtime_resources_bind(&resources);
     assert(pb_runtime_resources_prepare(&resources));
     assert(resources.index != NULL && resources.index_count != 0);
+    assert(resources.loaded_buckets != NULL &&
+           resources.loaded_bucket_count != 0);
     const size_t index_used = memory.snapshot.class_used[PB_MEMORY_SCENE];
     assert(pb_runtime_resource_exists("__OTR__le/blob"));
     assert(!pb_runtime_resource_exists("absent"));
@@ -114,7 +116,11 @@ int main(int argc, char **argv) {
     const uint64_t raster_hash = test_path_crc64(raster_name);
     uint8_t *raster_data = ResourceGetDataByCrc(raster_hash);
     assert(raster_data != NULL && raster_data[0] == 'x');
+    const size_t probes_before_cached_crc = resources.lookup_probes;
+    const size_t hits_before_cached_crc = resources.hits;
     assert(strcmp(ResourceGetNameByCrc(raster_hash), raster_name) == 0);
+    assert(resources.hits == hits_before_cached_crc + 1);
+    assert(resources.lookup_probes - probes_before_cached_crc < 8);
     assert(resources.count == player_resource_count + 1);
 
     /* The same out-of-range image offset remains invalid for an NPC sprite,
@@ -126,7 +132,9 @@ int main(int argc, char **argv) {
     free(npc);
     pb_runtime_resources_clear(&resources);
     assert(resources.count == 0 && resources.head == NULL &&
-           resources.index == NULL && resources.index_count == 0);
+           resources.index == NULL && resources.index_count == 0 &&
+           resources.loaded_buckets == NULL &&
+           resources.loaded_bucket_count == 0);
     assert(memory.snapshot.class_used[PB_MEMORY_SCENE] == 0);
     assert(ResourceGetDataByName("le/blob") == NULL);
     pb_runtime_resources_bind(&resources);

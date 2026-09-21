@@ -192,7 +192,7 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.5-m13r5` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.6-m13r6` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
@@ -210,6 +210,12 @@ repeat it on the New 3DS XL/LL when the console is available. In addition:
 6. Confirm `unk`, `miss`, `Fall`, `bad`, renderer rejects, frame failures,
    stream overflows, and memory failures remain zero, then preserve the exact
    build SHA, both-screen captures, and `PaperBoat3DS.log`.
+
+For r6, also photograph the `Step`, `Cmd/frame`, `Zclear`, `probe`, and
+`pause` fields before pausing, while paused, and after resuming. The world
+background must be present, all sprite/UI texturing must be upright, and the
+update count must continue advancing in pause mode. A static pause frame is
+not an acceptance pass even if the first menu labels appear.
 
 This validates only the M13 Toad Town route. Audio, saves, battles, and later
 chapter coverage remain blocked until its presentation and movement pass.

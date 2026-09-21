@@ -23,12 +23,17 @@ typedef struct {
     uint64_t updates;
     uint64_t frames_submitted;
     uint64_t held_frames;
+    uint64_t last_update_ms;
+    uint64_t max_update_ms;
+    uint32_t slow_updates;
     uint32_t unsupported_mode;
     uint32_t platform_warnings;
     int32_t game_mode;
     int32_t area_id;
     int32_t map_id;
     int32_t entry_id;
+    int8_t pause_step;
+    int8_t pause_delay;
     float player_x;
     float player_y;
     float player_z;

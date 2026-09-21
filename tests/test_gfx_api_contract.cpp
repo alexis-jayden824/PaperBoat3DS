@@ -147,6 +147,49 @@ static bool testRuntimeDisplayList(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFE000000), UINT32_C(0x12340000) } },
+        { .words = { UINT32_C(0xFF100007), UINT32_C(0x12340000) } },
+        { .words = { UINT32_C(0xF7000000), UINT32_C(0xFFFFFFFF) } },
+        { .words = { UINT32_C(0xF6008008), 0U } },
+        { .words = { UINT32_C(0xFF100007), UINT32_C(0x56780000) } },
+        { .words = { UINT32_C(0xF6008008), 0U } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0x3C000000), UINT32_C(0x00080008) } },
+        { .words = { 0U, 0U } },
+        { .words = { UINT32_C(0x00200020), UINT32_C(0x00080008) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 3U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 6U);
+    CHECK(afterRuntime->depth_target_clears ==
+          beforeRuntime.depth_target_clears + 1U);
+    CHECK(afterRuntime->copy_rectangles ==
+          beforeRuntime.copy_rectangles + 1U);
+    CHECK(afterRuntime->commands_last_frame ==
+          sizeof(displayList) / sizeof(displayList[0]));
+    CHECK(afterRuntime->commands_peak_frame >=
+          afterRuntime->commands_last_frame);
+    return true;
+}
+
 static bool testExactInterface() {
     PB3DS::GfxRenderingAPI3DS api(nullptr);
     CHECK(std::strcmp(api.GetName(), "PICA200 (citro3d)") == 0);
@@ -289,6 +332,7 @@ static bool testCBoundary() {
     CHECK(stats->frames_presented == 7);
     CHECK(stats->draw_calls == 16);
     CHECK(testRuntimeDisplayList(api));
+    CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

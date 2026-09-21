@@ -179,3 +179,34 @@ build rejects a final ELF whose general, sprite, collision, or battle heap is
 misaligned or incorrectly sized. The check rejects the recorded r4 ELF, so
 the regression is tied to the exact target binary failure rather than a host
 approximation.
+
+## r6 renderer and frame-time recovery
+
+The r5 device recording proves that the linked upstream runtime now reaches
+and updates Toad Town. It also exposes three independent M13 blockers rather
+than an M14 content gap:
+
+- The world updates only about three to four times per second. Display-list
+  resource commands repeatedly scanned every loaded resource and recomputed a
+  CRC64 for every name. The cost grew with the scene and again when pause
+  resources loaded.
+- The background disappears behind black while foreground models remain. The
+  interpreter ignored `G_SETZIMG` and `G_SETCIMG`, so Paper Mario's normal
+  color-image switch to the Z buffer turned its depth clear into a black color
+  rectangle over the already-drawn background.
+- Sprites, dialogue glyphs, model textures, and pause labels all have the same
+  vertical inversion. N64 top-down texture rows were passed directly to the
+  bottom-origin PICA texture coordinates.
+
+`0.13.6-m13r6` adds a loaded-resource hash table with cached CRC64 values,
+tracks color/depth image targets, implements depth-target fills, applies N64
+copy-cycle rectangle stepping and inclusive edges, honors rectangle tile and
+flip state, implements image rectangles, converts scissor coordinates, and
+maps N64 T coordinates into the PICA texture orientation. A bounded display
+list command budget prevents a malformed pause list from looking like an
+unbounded freeze. Per-update timing, command-count, depth-clear, lookup-probe,
+and pause-step diagnostics remain visible or logged for the next device test.
+
+These corrections remain part of M13. M14 cannot begin until an r6-or-later
+device recording shows a complete Toad Town background, correctly oriented
+sprites and UI, responsive upstream movement, and repeatable pause/resume.

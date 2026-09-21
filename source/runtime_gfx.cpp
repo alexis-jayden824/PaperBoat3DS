@@ -87,6 +87,8 @@ constexpr uint8_t G_SETPRIMCOLOR = 0xFA;
 constexpr uint8_t G_SETENVCOLOR = 0xFB;
 constexpr uint8_t G_SETCOMBINE = 0xFC;
 constexpr uint8_t G_SETTIMG = 0xFD;
+constexpr uint8_t G_SETZIMG = 0xFE;
+constexpr uint8_t G_SETCIMG = 0xFF;
 
 constexpr uint32_t G_ZBUFFER = 0x00000001U;
 constexpr uint32_t G_FOG = 0x00010000U;
@@ -99,6 +101,9 @@ constexpr uint32_t Z_UPD = 0x20U;
 constexpr uint32_t ZMODE_DEC = 0xC00U;
 constexpr uint32_t FORCE_BL = 0x4000U;
 constexpr uint32_t G_ZS_PRIM = 1U << 2U;
+constexpr uint32_t G_CYCLE_TYPE_MASK = 3U << 20U;
+constexpr uint32_t G_CYCLE_COPY = 2U << 20U;
+constexpr uint32_t G_CYCLE_FILL = 3U << 20U;
 constexpr uint8_t G_MW_NUMLIGHT = 0x02;
 constexpr uint8_t G_MW_SEGMENT = 0x06;
 constexpr uint8_t G_MW_FOG = 0x08;
@@ -110,7 +115,9 @@ constexpr size_t kMaxVertices = 80U;
 constexpr size_t kMaxMatrixStack = 12U;
 constexpr size_t kBatchTriangleLimit = 384U;
 constexpr size_t kRuntimeTextureLimit = PB_GFX_MAX_TEXTURES - 12U;
-constexpr size_t kCommandBudget = 2000000U;
+/* Normal Toad Town frames are below 10k commands.  Bound malformed/custom
+ * lists so a device reports a failed frame instead of appearing frozen. */
+constexpr size_t kCommandBudget = 250000U;
 constexpr unsigned int kCallDepthLimit = 48U;
 constexpr float kScreenInset = 40.0f;
 
@@ -279,6 +286,10 @@ class RuntimeDisplayListRenderer {
         const bool flushed = Flush();
         api->EndFrame();
         stats.commands += commandCount;
+        stats.commands_last_frame = static_cast<uint32_t>(commandCount);
+        stats.commands_peak_frame = std::max(
+            stats.commands_peak_frame,
+            static_cast<uint32_t>(commandCount));
         if (interpreted && flushed && !malformed) {
             stats.frames_rendered++;
         } else if (malformed) {
@@ -446,6 +457,9 @@ class RuntimeDisplayListRenderer {
         batchTriangles = 0U;
         batchTextured = false;
         batchTexture = 0U;
+        depthImageAddress = 0U;
+        colorImageAddress = 0U;
+        colorTargetIsDepth = false;
     }
 
     const void *Resolve(uintptr_t address) const {
@@ -999,7 +1013,8 @@ class RuntimeDisplayListRenderer {
                                        tile->shiftT) -
                 static_cast<float>(tile->upperT) / 4.0f;
             batch.push_back(s / texture->textureWidth);
-            batch.push_back(t / texture->textureHeight);
+            batch.push_back(pb_renderer_n64_texture_v(
+                t, texture->sourceHeight, texture->textureHeight));
         }
         const Color color = ShadeForVertex(vertex);
         batch.push_back(static_cast<float>(color.red) / 255.0f);
@@ -1064,7 +1079,8 @@ class RuntimeDisplayListRenderer {
 
     bool EmitRectangle(float left, float top, float right, float bottom,
                        float upperS, float upperT, float lowerS,
-                       float lowerT, bool textured) {
+                       float lowerT, bool textured,
+                       bool flipTexture = false) {
         if (right <= left || bottom <= top) return true;
         if (!Flush()) return false;
         const float screenLeft = kScreenInset + left;
@@ -1072,14 +1088,30 @@ class RuntimeDisplayListRenderer {
         const float screenBottom = PB_RENDER_TOP_HEIGHT - bottom;
         const float screenTop = PB_RENDER_TOP_HEIGHT - top;
         const float depth = primDepth;
-        LoadedVertex rectangle[6] = {
-            RectangleVertex(screenLeft, screenBottom, upperS, lowerT, depth),
-            RectangleVertex(screenRight, screenBottom, lowerS, lowerT, depth),
-            RectangleVertex(screenRight, screenTop, lowerS, upperT, depth),
-            RectangleVertex(screenRight, screenTop, lowerS, upperT, depth),
-            RectangleVertex(screenLeft, screenTop, upperS, upperT, depth),
-            RectangleVertex(screenLeft, screenBottom, upperS, lowerT, depth),
-        };
+        LoadedVertex rectangle[6] = {};
+        if (flipTexture) {
+            rectangle[0] = RectangleVertex(screenLeft, screenBottom,
+                                            lowerS, upperT, depth);
+            rectangle[1] = RectangleVertex(screenRight, screenBottom,
+                                            lowerS, lowerT, depth);
+            rectangle[2] = RectangleVertex(screenRight, screenTop,
+                                            upperS, lowerT, depth);
+            rectangle[3] = rectangle[2];
+            rectangle[4] = RectangleVertex(screenLeft, screenTop,
+                                            upperS, upperT, depth);
+            rectangle[5] = rectangle[0];
+        } else {
+            rectangle[0] = RectangleVertex(screenLeft, screenBottom,
+                                            upperS, lowerT, depth);
+            rectangle[1] = RectangleVertex(screenRight, screenBottom,
+                                            lowerS, lowerT, depth);
+            rectangle[2] = RectangleVertex(screenRight, screenTop,
+                                            lowerS, upperT, depth);
+            rectangle[3] = rectangle[2];
+            rectangle[4] = RectangleVertex(screenLeft, screenTop,
+                                            upperS, upperT, depth);
+            rectangle[5] = rectangle[0];
+        }
         if (!BeginBatch(textured)) return false;
         const Tile *tile = textured ? &tiles[firstTile & 7U] : nullptr;
         TextureCacheEntry *texture = nullptr;
@@ -1660,7 +1692,9 @@ class RuntimeDisplayListRenderer {
                         static_cast<int>((word1 >> 12U) & 0xFFFU) / 4;
                     const int bottom = static_cast<int>(word1 & 0xFFFU) / 4;
                     api->SetScissor(static_cast<int>(kScreenInset) + left,
-                                    top, std::max(0, right - left),
+                                    static_cast<int>(PB_RENDER_TOP_HEIGHT) -
+                                        bottom,
+                                    std::max(0, right - left),
                                     std::max(0, bottom - top));
                     break;
                 }
@@ -1676,22 +1710,40 @@ class RuntimeDisplayListRenderer {
                     const PBRuntimeGfx &texture = displayList[++index];
                     const PBRuntimeGfx &delta = displayList[++index];
                     commandCount += 2U;
-                    const float right = ((word0 >> 12U) & 0xFFFU) / 4.0f;
-                    const float bottom = (word0 & 0xFFFU) / 4.0f;
+                    float right = ((word0 >> 12U) & 0xFFFU) / 4.0f;
+                    float bottom = (word0 & 0xFFFU) / 4.0f;
                     const float left = ((word1 >> 12U) & 0xFFFU) / 4.0f;
                     const float top = (word1 & 0xFFFU) / 4.0f;
+                    const uint8_t savedTile = firstTile;
+                    firstTile = static_cast<uint8_t>((word1 >> 24U) & 7U);
                     const float upperS =
                         static_cast<int16_t>(texture.words.w1 >> 16U) / 32.0f;
                     const float upperT =
                         static_cast<int16_t>(texture.words.w1) / 32.0f;
-                    const float deltaS =
-                        static_cast<int16_t>(delta.words.w1 >> 16U) / 1024.0f;
-                    const float deltaT =
-                        static_cast<int16_t>(delta.words.w1) / 1024.0f;
-                    const float lowerS = upperS + (right - left) * deltaS;
-                    const float lowerT = upperT + (bottom - top) * deltaT;
-                    if (!EmitRectangle(left, top, right, bottom,
-                                       upperS, upperT, lowerS, lowerT, true)) {
+                    int16_t deltaSRaw =
+                        static_cast<int16_t>(delta.words.w1 >> 16U);
+                    int16_t deltaTRaw =
+                        static_cast<int16_t>(delta.words.w1);
+                    const bool copyCycle =
+                        (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY;
+                    if (copyCycle) {
+                        deltaSRaw = static_cast<int16_t>(deltaSRaw >> 2U);
+                        right += 1.0f;
+                        bottom += 1.0f;
+                        stats.copy_rectangles++;
+                    }
+                    const float deltaS = deltaSRaw / 1024.0f;
+                    const float deltaT = deltaTRaw / 1024.0f;
+                    const bool flip = opcode == G_TEXRECTFLIP;
+                    const float lowerS = upperS +
+                        (flip ? -(bottom - top) : (right - left)) * deltaS;
+                    const float lowerT = upperT +
+                        (flip ? -(right - left) : (bottom - top)) * deltaT;
+                    const bool emitted = EmitRectangle(
+                        left, top, right, bottom, upperS, upperT,
+                        lowerS, lowerT, true, flip);
+                    firstTile = savedTile;
+                    if (!emitted) {
                         return false;
                     }
                     break;
@@ -1701,8 +1753,8 @@ class RuntimeDisplayListRenderer {
                     const auto signed24 = [](uint32_t value) {
                         return static_cast<int32_t>(value << 8U) >> 8U;
                     };
-                    const float right = signed24(word0 & 0xFFFFFFU) / 4.0f;
-                    const float bottom = signed24(word1 & 0xFFFFFFU) / 4.0f;
+                    float right = signed24(word0 & 0xFFFFFFU) / 4.0f;
+                    float bottom = signed24(word1 & 0xFFFFFFU) / 4.0f;
                     const PBRuntimeGfx &corner = displayList[++index];
                     const PBRuntimeGfx &texture = displayList[++index];
                     commandCount += 2U;
@@ -1712,25 +1764,44 @@ class RuntimeDisplayListRenderer {
                     const float top =
                         signed24(static_cast<uint32_t>(corner.words.w1)) /
                         4.0f;
+                    const uint8_t savedTile = firstTile;
+                    firstTile = static_cast<uint8_t>(
+                        (static_cast<uint32_t>(corner.words.w0) >> 24U) & 7U);
                     const float upperS =
                         static_cast<int16_t>(texture.words.w0 >> 16U) / 32.0f;
                     const float upperT =
                         static_cast<int16_t>(texture.words.w0) / 32.0f;
-                    const float deltaS =
-                        static_cast<int16_t>(texture.words.w1 >> 16U) / 1024.0f;
+                    int16_t deltaSRaw =
+                        static_cast<int16_t>(texture.words.w1 >> 16U);
                     const float deltaT =
                         static_cast<int16_t>(texture.words.w1) / 1024.0f;
-                    if (!EmitRectangle(left, top, right, bottom, upperS,
-                                       upperT,
-                                       upperS + (right - left) * deltaS,
-                                       upperT + (bottom - top) * deltaT,
-                                       true)) {
+                    if ((otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY) {
+                        deltaSRaw = static_cast<int16_t>(deltaSRaw >> 2U);
+                        right += 1.0f;
+                        bottom += 1.0f;
+                        stats.copy_rectangles++;
+                    }
+                    const float deltaS = deltaSRaw / 1024.0f;
+                    const bool emitted = EmitRectangle(
+                        left, top, right, bottom, upperS, upperT,
+                        upperS + (right - left) * deltaS,
+                        upperT + (bottom - top) * deltaT, true);
+                    firstTile = savedTile;
+                    if (!emitted) {
                         return false;
                     }
                     break;
                 }
                 case G_FILLRECT: {
                     Flush();
+                    if (colorTargetIsDepth) {
+                        api->ClearFramebuffer(false, true);
+                        stats.depth_target_clears++;
+                        break;
+                    }
+                    const bool inclusiveEdge =
+                        (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY ||
+                        (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_FILL;
                     const uint16_t color = static_cast<uint16_t>(fillColor);
                     primColor = {
                         ExpandFive(color >> 11U), ExpandFive(color >> 6U),
@@ -1739,8 +1810,10 @@ class RuntimeDisplayListRenderer {
                     };
                     if (!EmitRectangle(((word1 >> 12U) & 0xFFFU) / 4.0f,
                                        (word1 & 0xFFFU) / 4.0f,
-                                       ((word0 >> 12U) & 0xFFFU) / 4.0f,
-                                       (word0 & 0xFFFU) / 4.0f,
+                                       ((word0 >> 12U) & 0xFFFU) / 4.0f +
+                                           (inclusiveEdge ? 1.0f : 0.0f),
+                                       (word0 & 0xFFFU) / 4.0f +
+                                           (inclusiveEdge ? 1.0f : 0.0f),
                                        0.0f, 0.0f, 0.0f, 0.0f, false)) {
                         return false;
                     }
@@ -1748,13 +1821,26 @@ class RuntimeDisplayListRenderer {
                 }
                 case G_FILLWIDERECT: {
                     Flush();
+                    if (colorTargetIsDepth) {
+                        api->ClearFramebuffer(false, true);
+                        stats.depth_target_clears++;
+                        index++;
+                        commandCount++;
+                        break;
+                    }
                     const auto signed24 = [](uint32_t value) {
                         return static_cast<int32_t>(value << 8U) >> 8U;
                     };
-                    const float right = signed24(word0 & 0xFFFFFFU) / 4.0f;
-                    const float bottom = signed24(word1 & 0xFFFFFFU) / 4.0f;
+                    float right = signed24(word0 & 0xFFFFFFU) / 4.0f;
+                    float bottom = signed24(word1 & 0xFFFFFFU) / 4.0f;
                     const PBRuntimeGfx &corner = displayList[++index];
                     commandCount++;
+                    const uint32_t cycle =
+                        otherModeHigh & G_CYCLE_TYPE_MASK;
+                    if (cycle == G_CYCLE_COPY || cycle == G_CYCLE_FILL) {
+                        right += 1.0f;
+                        bottom += 1.0f;
+                    }
                     if (!EmitRectangle(
                             signed24(static_cast<uint32_t>(corner.words.w0)) /
                                 4.0f,
@@ -1781,9 +1867,63 @@ class RuntimeDisplayListRenderer {
                     index++;
                     commandCount++;
                     break;
-                case G_IMAGERECT:
-                    index += 2U;
+                case G_IMAGERECT: {
+                    const PBRuntimeGfx &upper = displayList[++index];
+                    const PBRuntimeGfx &lower = displayList[++index];
                     commandCount += 2U;
+                    const uint8_t savedTile = firstTile;
+                    firstTile = static_cast<uint8_t>(word0 & 7U);
+                    Tile &imageTile = tiles[firstTile];
+                    const uint16_t imageWidth =
+                        static_cast<uint16_t>(word1 >> 16U);
+                    const uint16_t imageHeight =
+                        static_cast<uint16_t>(word1);
+                    imageTile.upperS = 0U;
+                    imageTile.upperT = 0U;
+                    imageTile.lowerS = imageWidth == 0U
+                        ? 0U
+                        : static_cast<uint16_t>((imageWidth - 1U) * 4U);
+                    imageTile.lowerT = imageHeight == 0U
+                        ? 0U
+                        : static_cast<uint16_t>((imageHeight - 1U) * 4U);
+                    imageTile.shiftS = 0U;
+                    imageTile.shiftT = 0U;
+                    imageTile.clampS = 0U;
+                    imageTile.clampT = 0U;
+                    const float left =
+                        static_cast<int16_t>(upper.words.w0 >> 16U) / 4.0f;
+                    const float top =
+                        static_cast<int16_t>(upper.words.w0) / 4.0f;
+                    const float right =
+                        static_cast<int16_t>(lower.words.w0 >> 16U) / 4.0f;
+                    const float bottom =
+                        static_cast<int16_t>(lower.words.w0) / 4.0f;
+                    const float upperS =
+                        static_cast<int16_t>(upper.words.w1 >> 16U);
+                    const float upperT =
+                        static_cast<int16_t>(upper.words.w1);
+                    const float lowerS =
+                        static_cast<int16_t>(lower.words.w1 >> 16U);
+                    const float lowerT =
+                        static_cast<int16_t>(lower.words.w1);
+                    const bool emitted = EmitRectangle(
+                        left, top, right, bottom, upperS, upperT,
+                        lowerS, lowerT, true);
+                    firstTile = savedTile;
+                    if (!emitted) return false;
+                    break;
+                }
+                case G_SETZIMG:
+                    Flush();
+                    depthImageAddress = command.words.w1;
+                    colorTargetIsDepth = colorImageAddress != 0U &&
+                                         colorImageAddress == depthImageAddress;
+                    break;
+                case G_SETCIMG:
+                    Flush();
+                    colorImageAddress = command.words.w1;
+                    colorTargetIsDepth = depthImageAddress != 0U &&
+                                         colorImageAddress == depthImageAddress;
                     break;
                 case G_COPYFB:
                 case G_PUSH_SHADER:
@@ -1804,8 +1944,6 @@ class RuntimeDisplayListRenderer {
                 case 0x3E:
                 case 0x3F:
                 case 0x40:
-                case 0xFE:
-                case 0xFF:
                     break;
                 default:
                     if (unknownCommands[opcode]++ == 0U) {
@@ -1868,6 +2006,9 @@ class RuntimeDisplayListRenderer {
     std::array<uint32_t, 256U> unknownCommands = {};
     bool malformed = false;
     bool depthClearPending = false;
+    uintptr_t depthImageAddress = 0U;
+    uintptr_t colorImageAddress = 0U;
+    bool colorTargetIsDepth = false;
     std::vector<float> batch;
     size_t batchTriangles = 0U;
     bool batchTextured = false;

@@ -194,6 +194,9 @@ bool pb_renderer_textured_quad(PBTexturedQuad *quad, float left,
                                uint16_t texture_height,
                                uint16_t source_width,
                                uint16_t source_height);
+/* N64 texture rows are top-to-bottom; PICA's logical V axis is bottom-to-top. */
+float pb_renderer_n64_texture_v(float n64_v, uint16_t source_height,
+                                uint16_t texture_height);
 
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target);

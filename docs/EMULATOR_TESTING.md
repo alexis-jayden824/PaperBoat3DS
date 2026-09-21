@@ -231,7 +231,7 @@ input, or Old 3DS performance behavior.
 
 ## M13 core overworld gameplay
 
-Use the private bundle marked `0.13.5-m13r5` with the same owner-generated O2R
+Use the private bundle marked `0.13.6-m13r6` with the same owner-generated O2R
 files installed in Folium's virtual SD.
 
 1. Enter file select and confirm a slot. The bottom screen must advance through
@@ -253,6 +253,11 @@ files installed in Folium's virtual SD.
    checker texture as a failure and photograph both screens immediately.
 6. Exercise the `mac_00`/`mac_01` exits if reachable in the candidate, then
    exit with L+R+START and preserve the SHA, captures, and log.
+
+For r6, capture the bottom-screen `Step`, `Cmd/frame`, `Zclear`, `probe`, and
+`pause` fields immediately before START, on the pause menu, and after resume.
+The test fails if the update count stops, if the Toad Town background is black,
+or if any sprite, glyph, UI label, or model texture is vertically inverted.
 
 If startup does not finish, photograph the numbered stage and preserve the
 complete log. A `runtime-panic` line is a captured upstream assertion; a final

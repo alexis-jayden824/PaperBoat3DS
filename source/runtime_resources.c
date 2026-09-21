@@ -4,6 +4,7 @@
 #include <string.h>
 
 #define RESOURCE_LIMIT 4096U
+#define LOADED_BUCKET_COUNT 1024U
 #define ENTRY_LIMIT PB_MIB(2)
 #define TYPE_BLOB 0x4F424C42U
 #define TYPE_VERTEX 0x4F565458U
@@ -12,7 +13,9 @@
 
 struct PBRuntimeResource {
     PBRuntimeResource *next;
+    PBRuntimeResource *next_loaded;
     char name[PB_O2R_NAME_CAPACITY];
+    uint64_t name_hash;
     void *data;
     size_t size, payload_size, allocation;
     uint32_t type, texture_type;
@@ -26,6 +29,25 @@ static uint32_t word(const uint8_t *p, bool big) {
                      ((uint32_t)p[2] << 8) | p[3]
                : ((uint32_t)p[3] << 24) | ((uint32_t)p[2] << 16) |
                      ((uint32_t)p[1] << 8) | p[0];
+}
+
+static uint64_t resource_name_hash(const char *name) {
+    uint64_t hash = UINT64_MAX;
+    for (const uint8_t *p = (const uint8_t *)name; *p != 0U; p++) {
+        hash ^= (uint64_t)*p << 56U;
+        for (unsigned int bit = 0U; bit < 8U; bit++) {
+            hash = (hash & (UINT64_C(1) << 63U)) != 0U
+                       ? (hash << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
+                       : hash << 1U;
+        }
+    }
+    return hash;
+}
+
+static size_t loaded_bucket(const PBRuntimeResources *r, uint64_t hash) {
+    return r->loaded_bucket_count != 0U
+               ? (size_t)(hash % r->loaded_bucket_count)
+               : 0U;
 }
 
 /* The second word-pair of these commands is payload, never an opcode. */
@@ -74,6 +96,22 @@ bool pb_runtime_resources_prepare(PBRuntimeResources *r) {
         r->error = "resource index build failed";
         return false;
     }
+    r->loaded_bucket_allocation =
+        LOADED_BUCKET_COUNT * sizeof(*r->loaded_buckets);
+    r->loaded_buckets = pb_memory_alloc(r->memory, PB_MEMORY_SCENE,
+                                        r->loaded_bucket_allocation);
+    if (r->loaded_buckets == NULL) {
+        pb_memory_free(r->memory, PB_MEMORY_SCENE, r->index,
+                       r->index_allocation);
+        r->index = NULL;
+        r->index_count = 0U;
+        r->index_allocation = 0U;
+        r->loaded_bucket_allocation = 0U;
+        r->error = "loaded resource lookup memory budget";
+        return false;
+    }
+    memset(r->loaded_buckets, 0, r->loaded_bucket_allocation);
+    r->loaded_bucket_count = LOADED_BUCKET_COUNT;
     return true;
 }
 
@@ -87,6 +125,13 @@ void pb_runtime_resources_clear(PBRuntimeResources *r) {
         pb_memory_free(r->memory, PB_MEMORY_SCENE, entry, sizeof(*entry));
     }
     r->count = 0;
+    if (r->loaded_buckets != NULL) {
+        pb_memory_free(r->memory, PB_MEMORY_SCENE, r->loaded_buckets,
+                       r->loaded_bucket_allocation);
+        r->loaded_buckets = NULL;
+    }
+    r->loaded_bucket_count = 0U;
+    r->loaded_bucket_allocation = 0U;
     if (r->index != NULL) {
         pb_memory_free(r->memory, PB_MEMORY_SCENE, r->index,
                        r->index_allocation);
@@ -94,6 +139,8 @@ void pb_runtime_resources_clear(PBRuntimeResources *r) {
     }
     r->index_count = 0U;
     r->index_allocation = 0U;
+    r->hits = 0U;
+    r->lookup_probes = 0U;
 }
 
 uint8_t GameEngine_OTRSigCheck(const char *data) {
@@ -210,8 +257,21 @@ static const char *normalize_name(PBRuntimeResources *r, const char *name) {
 
 static PBRuntimeResource *find_loaded(PBRuntimeResources *r,
                                       const char *name) {
+    const uint64_t hash = resource_name_hash(name);
+    if (r->loaded_buckets != NULL && r->loaded_bucket_count != 0U) {
+        for (PBRuntimeResource *entry =
+                 r->loaded_buckets[loaded_bucket(r, hash)];
+             entry != NULL; entry = entry->next_loaded) {
+            r->lookup_probes++;
+            if (entry->name_hash == hash && strcmp(name, entry->name) == 0) {
+                return entry;
+            }
+        }
+        return NULL;
+    }
     for (PBRuntimeResource *entry = r->head; entry != NULL;
          entry = entry->next) {
+        r->lookup_probes++;
         if (strcmp(name, entry->name) == 0) return entry;
     }
     return NULL;
@@ -265,8 +325,14 @@ static PBRuntimeResource *load_entry(PBRuntimeResources *r, const char *name,
     }
     const size_t length = strlen(name);
     memcpy(entry->name, name, length + 1U);
+    entry->name_hash = resource_name_hash(name);
     entry->next = r->head;
     r->head = entry;
+    if (r->loaded_buckets != NULL && r->loaded_bucket_count != 0U) {
+        const size_t bucket = loaded_bucket(r, entry->name_hash);
+        entry->next_loaded = r->loaded_buckets[bucket];
+        r->loaded_buckets[bucket] = entry;
+    }
     r->count++;
     return entry;
 }
@@ -296,17 +362,24 @@ void *ResourceGetDataByName(const char *name) { PBRuntimeResource *e = get(name)
 static PBRuntimeResource *get_by_crc(uint64_t crc) {
     PBRuntimeResources *r = bound_resources;
     if (r == NULL || r->archive == NULL) return NULL;
-    for (PBRuntimeResource *e = r->head; e != NULL; e = e->next) {
-        uint64_t hash = UINT64_MAX;
-        for (const uint8_t *p = (const uint8_t *)e->name; *p != 0; p++) {
-            hash ^= (uint64_t)*p << 56U;
-            for (unsigned int bit = 0U; bit < 8U; bit++) {
-                hash = (hash & (UINT64_C(1) << 63U)) != 0U
-                           ? (hash << 1U) ^ UINT64_C(0x42F0E1EBA9EA3693)
-                           : hash << 1U;
+    if (r->loaded_buckets != NULL && r->loaded_bucket_count != 0U) {
+        for (PBRuntimeResource *e =
+                 r->loaded_buckets[loaded_bucket(r, crc)];
+             e != NULL; e = e->next_loaded) {
+            r->lookup_probes++;
+            if (e->name_hash == crc) {
+                r->hits++;
+                return e;
             }
         }
-        if (hash == crc) return e;
+    } else {
+        for (PBRuntimeResource *e = r->head; e != NULL; e = e->next) {
+            r->lookup_probes++;
+            if (e->name_hash == crc) {
+                r->hits++;
+                return e;
+            }
+        }
     }
     PBO2REntry archive_entry;
     r->archive_error = r->index != NULL && r->index_count != 0U

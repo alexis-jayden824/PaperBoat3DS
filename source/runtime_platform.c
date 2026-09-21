@@ -1,4 +1,5 @@
 #include "pb3ds/runtime.h"
+#include "pb3ds/compat.h"
 
 #include <math.h>
 #include <setjmp.h>
@@ -18,6 +19,8 @@
 extern void init_game_globals(void);
 extern void Graphics_ThreadUpdate(void);
 extern s8 gGameStepDelayCount;
+extern s8 StepPauseDelay;
+extern s8 StepPauseState;
 extern b32 PB3DS_RuntimeHeapStorageAligned(void);
 
 static PBRuntime *active_runtime;
@@ -341,6 +344,18 @@ bool pb_runtime_update(PBRuntime *runtime) {
     if (runtime == NULL || runtime != active_runtime ||
         runtime->state != PB_RUNTIME_ACTIVE) return false;
     runtime->frame_submitted = false;
+    const int32_t mode_before = get_game_mode();
+    const int8_t pause_step_before = StepPauseState;
+    const int8_t pause_delay_before = StepPauseDelay;
+    if (runtime->log != NULL && mode_before == GAME_MODE_PAUSE &&
+        (pause_step_before != runtime->stats.pause_step ||
+         pause_delay_before != runtime->stats.pause_delay)) {
+        pb_log_write(runtime->log, PB_LOG_INFO, "pause-step",
+                     "update=%llu step=%d delay=%d",
+                     (unsigned long long)runtime->stats.updates + 1U,
+                     (int)pause_step_before, (int)pause_delay_before);
+    }
+    const uint64_t update_started_ms = pb_platform_time_ms();
     runtime_panic_armed = true;
     if (setjmp(runtime_panic_jump) != 0) {
         runtime_panic_armed = false;
@@ -350,18 +365,39 @@ bool pb_runtime_update(PBRuntime *runtime) {
         return false;
     }
     Graphics_ThreadUpdate();
+    const uint64_t update_elapsed_ms =
+        pb_platform_time_ms() - update_started_ms;
     runtime_panic_armed = false;
     runtime->stats.updates++;
+    runtime->stats.last_update_ms = update_elapsed_ms;
+    if (update_elapsed_ms > runtime->stats.max_update_ms) {
+        runtime->stats.max_update_ms = update_elapsed_ms;
+    }
+    if (update_elapsed_ms >= 100U) runtime->stats.slow_updates++;
     runtime->stats.game_mode = get_game_mode();
     runtime->stats.area_id = gGameStatusPtr->areaID;
     runtime->stats.map_id = gGameStatusPtr->mapID;
     runtime->stats.entry_id = gGameStatusPtr->entryID;
+    runtime->stats.pause_step = StepPauseState;
+    runtime->stats.pause_delay = StepPauseDelay;
     runtime->stats.player_x = gPlayerStatus.pos.x;
     runtime->stats.player_y = gPlayerStatus.pos.y;
     runtime->stats.player_z = gPlayerStatus.pos.z;
     runtime->stats.player_speed = gPlayerStatus.curSpeed;
     runtime->stats.player_action = gPlayerStatus.actionState;
     if (!runtime->frame_submitted) runtime->stats.held_frames++;
+    if (runtime->log != NULL && update_elapsed_ms >= 500U) {
+        pb_log_write(runtime->log, PB_LOG_WARNING, "slow-update",
+                     "update=%llu elapsed_ms=%llu mode_before=%ld "
+                     "mode_after=%ld pause_step=%d pause_delay=%d "
+                     "frame=%s",
+                     (unsigned long long)runtime->stats.updates,
+                     (unsigned long long)update_elapsed_ms,
+                     (long)mode_before, (long)runtime->stats.game_mode,
+                     (int)runtime->stats.pause_step,
+                     (int)runtime->stats.pause_delay,
+                     runtime->frame_submitted ? "submitted" : "held");
+    }
     return runtime->state != PB_RUNTIME_FAILED;
 }
 

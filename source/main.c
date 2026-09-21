@@ -130,23 +130,28 @@ static void print_bottom_screen(PrintConsole *console,
     }
     if (runtime->state != PB_RUNTIME_INACTIVE) {
         printf("\x1b[6;2HMap: mac_%02ld entry:%ld slot:%u\n",
-               (long)runtime->stats.map_id,
+               (long)(runtime->stats.map_id > 0
+                          ? runtime->stats.map_id - 1
+                          : runtime->stats.map_id),
                (long)runtime->stats.entry_id,
                (unsigned int)title_flow->selected_slot + 1U);
         printf("\x1b[7;2HUpstream: %s\n",
                pb_runtime_state_name(runtime->state));
         printf("\x1b[8;2Hboot_main linked; game loop active\n");
-        printf("\x1b[9;2HResources:%lu hits:%lu\n",
+        printf("\x1b[9;2HRes:%lu hit:%lu probe:%lu\n",
                (unsigned long)runtime->resources.count,
-               (unsigned long)runtime->resources.hits);
+               (unsigned long)runtime->resources.hits,
+               (unsigned long)runtime->resources.lookup_probes);
         printf("\x1b[10;2HUpdates:%llu frames:%llu held:%llu\n",
                (unsigned long long)runtime->stats.updates,
                (unsigned long long)runtime->stats.frames_submitted,
                (unsigned long long)runtime->stats.held_frames);
-        printf("\x1b[11;2HMode:%ld block:%lu warnings:%lu\n",
+        printf("\x1b[11;2HMode:%ld block:%lu warn:%lu pause:%d/%d\n",
                (long)runtime->stats.game_mode,
                (unsigned long)runtime->stats.unsupported_mode,
-               (unsigned long)runtime->stats.platform_warnings);
+               (unsigned long)runtime->stats.platform_warnings,
+               (int)runtime->stats.pause_step,
+               (int)runtime->stats.pause_delay);
         printf("\x1b[12;2HPos:%5.0f,%4.0f,%5.0f spd:%3.1f\n",
                (double)runtime->stats.player_x,
                (double)runtime->stats.player_y,
@@ -154,6 +159,10 @@ static void print_bottom_screen(PrintConsole *console,
                (double)runtime->stats.player_speed);
         printf("\x1b[13;2HPlayer action:%d\n",
                (int)runtime->stats.player_action);
+        printf("\x1b[14;2HStep:%llums max:%llums slow:%lu\n",
+               (unsigned long long)runtime->stats.last_update_ms,
+               (unsigned long long)runtime->stats.max_update_ms,
+               (unsigned long)runtime->stats.slow_updates);
         if (runtime->state == PB_RUNTIME_FAILED) {
             printf("\x1b[12;2HError: %.30s\n",
                    runtime->error != NULL ? runtime->error : "unknown");
@@ -181,6 +190,11 @@ static void print_bottom_screen(PrintConsole *console,
                    (unsigned long long)runtime_gfx_stats->display_lists,
                    (unsigned long)runtime_gfx_stats->max_call_depth,
                    (unsigned long)runtime_gfx_stats->malformed_lists);
+            printf("\x1b[27;2HCmd/frame:%lu peak:%lu Zclear:%llu\n",
+                   (unsigned long)runtime_gfx_stats->commands_last_frame,
+                   (unsigned long)runtime_gfx_stats->commands_peak_frame,
+                   (unsigned long long)
+                       runtime_gfx_stats->depth_target_clears);
         }
         printf("\x1b[19;2HSystem: %s  %s\n",
                state->model_query_ok
