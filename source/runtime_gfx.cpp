@@ -1326,9 +1326,11 @@ class RuntimeDisplayListRenderer {
         if (right <= left || bottom <= top) return true;
         if (pauseFrame && textured) {
             const Tile &tile = tiles[firstTile & 7U];
+            const size_t tmemIndex =
+                std::min<size_t>(tile.tmem, loadedTextures.size() - 1U);
             const TextureSource &source =
-                loadedTextures[tile.tmem != 0U ? 1U : 0U].data != nullptr
-                    ? loadedTextures[tile.tmem != 0U ? 1U : 0U]
+                loadedTextures[tmemIndex].data != nullptr
+                    ? loadedTextures[tmemIndex]
                     : textureToLoad;
             /* PaperBoat's pause path samples the CPU z-buffer sentinel in 40
              * strips. It is not framebuffer data on 3DS. Keep the previous
