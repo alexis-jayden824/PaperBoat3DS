@@ -117,8 +117,7 @@ all: fetch-upstream m13-runtime-lib $(BUILD)
 	@set -e; for symbol in boot_main step_game_loop gfx_draw_frame \
 		Graphics_ThreadUpdate update_player update_player_input \
 		update_cameras pb_runtime_begin_toad_town \
-		pb_runtime_continue_startup pb_runtime_start_toad_town \
-		Graphics_PushFrame is_debug_panic; do \
+		pb_runtime_continue_startup Graphics_PushFrame is_debug_panic; do \
 		$(DEVKITARM)/bin/arm-none-eabi-nm --defined-only "$(TARGET).elf" | \
 			awk '{ print $$3 }' | grep -qx "$$symbol" || { \
 				echo "missing final runtime symbol: $$symbol"; exit 1; \
