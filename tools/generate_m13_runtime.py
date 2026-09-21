@@ -203,8 +203,12 @@ def main() -> int:
         "heap_battleHead": "BSS u8 heap_battleHead[BATTLE_HEAP_SIZE];",
     }
     for symbol, declaration in heap_contract.items():
-        source = heaps3 if symbol in {"heap_generalHead", "heap_spriteHead"} else heaps2
-        if source.count(declaration) != 1:
+        heap_source = (
+            heaps3
+            if symbol in {"heap_generalHead", "heap_spriteHead"}
+            else heaps2
+        )
+        if heap_source.count(declaration) != 1:
             raise SystemExit(
                 f"pinned heap storage declaration changed: {declaration}"
             )
