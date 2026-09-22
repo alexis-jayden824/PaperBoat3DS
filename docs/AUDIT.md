@@ -149,7 +149,9 @@ path/hash lookup, matrices, vertices, nested lists, tiles, texture loads,
 palettes, combine/other modes, alpha and blend state, fog, scissor, rectangles,
 and depth state. Generated map units retain only the `mac_00`/`mac_01`
 transition pair, and standard depth/constant fog now reaches native PICA200 fog
-state with independent semantic/legacy diagnostics.
+state with independent semantic/legacy diagnostics. Key center/scale and signed
+K4/K5 convert constants also reach the semantic TEV backend, with a separate
+semantic/legacy counter for route evidence.
 
 An owner-only 400-update host trace submitted 379 real frames, moved the
 upstream player, and entered/exited the upstream pause mode. Across 2,647,677

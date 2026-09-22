@@ -192,7 +192,7 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.11-m13r11` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.12-m13r12` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
@@ -213,16 +213,19 @@ repeat it on the New 3DS XL/LL when the console is available. In addition:
    stream overflows, and memory failures remain zero, then preserve the exact
    build SHA, both-screen captures, and `PaperBoat3DS.log`.
 
-For r11, also photograph the `Step`, `Cmd/f`, `CC`, `2C`, `Fog`, `probe`, and `pause` fields
-before pausing, while paused, and after resuming. `CC` is
+For r12, also photograph the `Step`, `Cmd/f`, `CC`, `2C`, `Fog`, `Key/conv`,
+`probe`, and `pause` fields before pausing, while paused, and after resuming.
+`CC` is
 semantic-TEV/legacy-CPU batch count, while `2C` counts two-cycle batches routed
 through the semantic backend. `Fog` reports semantic/legacy fog batches.
 Preserve all values; `2C` must increase when the route exercises two-cycle
 materials, and semantic fog must increase when fogged materials render.
 Standard depth and constant fog must not increment legacy fog; report any
 legacy fog as a vertex-alpha migration case. The general legacy count can
-remain nonzero for key/convert state that has not migrated. Verify that
-the world background and complete building surfaces are present, Mario/NPCs
+remain nonzero for other measured migration boundaries. `Key/conv` reports
+semantic/legacy key-and-convert-constant batches; report both values, and treat
+a nonzero legacy value as a renderer migration failure for that material.
+Verify that the world background and complete building surfaces are present, Mario/NPCs
 remain whole while crossing other objects, and the warmed-up `last` update
 time is normally at or below 40 ms without the slow-update count continually
 increasing. All sprite/UI texturing must remain upright and the update count

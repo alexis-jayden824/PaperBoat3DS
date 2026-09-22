@@ -16,8 +16,10 @@ typedef struct {
     uint64_t semantic_combiner_batches;
     uint64_t semantic_two_cycle_batches;
     uint64_t semantic_fog_batches;
+    uint64_t semantic_key_convert_batches;
     uint64_t legacy_combiner_fallbacks;
     uint64_t legacy_fog_fallbacks;
+    uint64_t legacy_key_convert_fallbacks;
     uint64_t depth_target_clears;
     uint64_t copy_rectangles;
     uint32_t unknown_commands;

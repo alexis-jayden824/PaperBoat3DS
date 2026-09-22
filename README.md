@@ -16,7 +16,9 @@ side-by-side Folium/hardware presentation acceptance are still required. The
 r11 candidate additionally bounds the recovery slice to `mac_00`/`mac_01` and
 routes standard depth/constant fog through native PICA200 fog state; those
 changes remain device-validation candidates rather than an M13 completion
-claim.
+claim. The r12 candidate adds semantic key-center/key-scale and signed K4/K5
+convert constants while retaining explicit telemetry for any remaining legacy
+route.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.

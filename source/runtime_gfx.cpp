@@ -72,6 +72,9 @@ constexpr uint8_t G_RDPLOADSYNC = 0xE6;
 constexpr uint8_t G_RDPPIPESYNC = 0xE7;
 constexpr uint8_t G_RDPTILESYNC = 0xE8;
 constexpr uint8_t G_RDPFULLSYNC = 0xE9;
+constexpr uint8_t G_SETKEYGB = 0xEA;
+constexpr uint8_t G_SETKEYR = 0xEB;
+constexpr uint8_t G_SETCONVERT = 0xEC;
 constexpr uint8_t G_SETSCISSOR = 0xED;
 constexpr uint8_t G_SETPRIMDEPTH = 0xEE;
 constexpr uint8_t G_RDPSETOTHERMODE = 0xEF;
@@ -130,6 +133,17 @@ constexpr size_t kRuntimeTextureLimit = PB_GFX_MAX_TEXTURES - 12U;
 constexpr size_t kCommandBudget = 250000U;
 constexpr unsigned int kCallDepthLimit = 48U;
 constexpr float kScreenInset = 40.0f;
+
+constexpr int16_t SignExtendNine(uint32_t value) {
+    value &= 0x1FFU;
+    return value >= 0x100U
+               ? static_cast<int16_t>(static_cast<int32_t>(value) - 0x200)
+               : static_cast<int16_t>(value);
+}
+static_assert(SignExtendNine(0x0FFU) == 255 &&
+                  SignExtendNine(0x100U) == -256 &&
+                  SignExtendNine(0x1E0U) == -32,
+              "RDP signed-nine-bit conversion changed");
 
 constexpr uint64_t PackFormula(uint8_t a, uint8_t b, uint8_t c, uint8_t d,
                                unsigned int shift) {
@@ -499,6 +513,9 @@ class RuntimeDisplayListRenderer {
         primColor = {};
         envColor = {};
         primLodFraction = 0U;
+        keyCenter = {};
+        keyScale = {};
+        convertK.fill(0);
         fogColor = { 0U, 0U, 0U, 0U };
         blendColor = {};
         fillColor = 0U;
@@ -829,10 +846,37 @@ class RuntimeDisplayListRenderer {
                     uniforms->inputs[input][1] = primLod;
                     uniforms->inputs[input][2] = primLod;
                     break;
+                case PB_FAST3D_INPUT_KEY_CENTER:
+                    uniforms->inputs[input][0] =
+                        static_cast<float>(keyCenter.red) / 255.0f;
+                    uniforms->inputs[input][1] =
+                        static_cast<float>(keyCenter.green) / 255.0f;
+                    uniforms->inputs[input][2] =
+                        static_cast<float>(keyCenter.blue) / 255.0f;
+                    break;
+                case PB_FAST3D_INPUT_KEY_SCALE:
+                    uniforms->inputs[input][0] =
+                        static_cast<float>(keyScale.red) / 255.0f;
+                    uniforms->inputs[input][1] =
+                        static_cast<float>(keyScale.green) / 255.0f;
+                    uniforms->inputs[input][2] =
+                        static_cast<float>(keyScale.blue) / 255.0f;
+                    break;
+                case PB_FAST3D_INPUT_CONVERT_K4:
+                case PB_FAST3D_INPUT_CONVERT_K5: {
+                    const size_t coefficient =
+                        combiner.input_mapping[0][input] ==
+                                PB_FAST3D_INPUT_CONVERT_K4
+                            ? 4U
+                            : 5U;
+                    const float value =
+                        static_cast<float>(convertK[coefficient]) / 255.0f;
+                    uniforms->inputs[input][0] = value;
+                    uniforms->inputs[input][1] = value;
+                    uniforms->inputs[input][2] = value;
+                    break;
+                }
                 default:
-                    /* Key/convert registers are not decoded by the temporary
-                     * display-list walker yet.  Keep them on its measured
-                     * legacy path instead of inventing a constant. */
                     return false;
             }
 
@@ -855,6 +899,19 @@ class RuntimeDisplayListRenderer {
         return true;
     }
 
+    static bool UsesKeyConvert(const PBFast3DCombiner &combiner) {
+        for (size_t input = 0U; input < PB_FAST3D_COMBINER_INPUTS; input++) {
+            const uint8_t mapping = combiner.input_mapping[0][input];
+            if (mapping == PB_FAST3D_INPUT_KEY_CENTER ||
+                mapping == PB_FAST3D_INPUT_KEY_SCALE ||
+                mapping == PB_FAST3D_INPUT_CONVERT_K4 ||
+                mapping == PB_FAST3D_INPUT_CONVERT_K5) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     FogSource CurrentFogSource() const {
         const uint8_t blendSource =
             static_cast<uint8_t>((otherModeLow >> 30U) & 3U);
@@ -871,8 +928,7 @@ class RuntimeDisplayListRenderer {
 
     bool BuildSemanticBatch(const DecodedCombiner &decoded,
                             SemanticBatch *semantic) {
-        if (semantic == nullptr || api == nullptr ||
-            CurrentFogSource() == FogSource::VertexAlpha) {
+        if (semantic == nullptr || api == nullptr) {
             return false;
         }
         *semantic = {};
@@ -881,7 +937,10 @@ class RuntimeDisplayListRenderer {
             options |= pb_gfx_shader_option(PB_GFX_OPT_TWO_CYCLE);
         }
         if (!pb_fast3d_generate_combiner(&semantic->combiner, combineWord0,
-                                         combineWord1, options) ||
+                                         combineWord1, options)) {
+            return false;
+        }
+        if (CurrentFogSource() == FogSource::VertexAlpha ||
             !FillSemanticUniforms(semantic->combiner,
                                   &semantic->uniforms)) {
             return false;
@@ -921,8 +980,14 @@ class RuntimeDisplayListRenderer {
             case 4U: return shade;
             case 5U: return ToFloatColor(envColor);
             case 6U:
-                return slot == 1U ? FloatColor{} : white;
+                if (slot == 1U) return ToFloatColor(keyCenter);
+                if (slot == 2U) return ToFloatColor(keyScale);
+                return white;
             case 7U:
+                if (slot == 1U) {
+                    return ScalarColor(
+                        static_cast<float>(convertK[4]) / 255.0f);
+                }
                 return slot == 2U ? ScalarColor(combined.alpha)
                                   : FloatColor{};
             case 8U:
@@ -933,7 +998,10 @@ class RuntimeDisplayListRenderer {
             case 13U:
             case 14U: return white;
             case 15U:
-                return slot == 2U ? white : FloatColor{};
+                return slot == 2U
+                           ? ScalarColor(
+                                 static_cast<float>(convertK[5]) / 255.0f)
+                           : FloatColor{};
             case 31U:
             default: return {};
         }
@@ -1387,9 +1455,12 @@ class RuntimeDisplayListRenderer {
         batchShaderUsesShade = true;
         batchShaderUsesAlpha = true;
         batchFogSource = CurrentFogSource();
-        SemanticBatch semantic;
+        SemanticBatch semantic = {};
         const bool semanticCandidate = !fill && !copyCycle;
-        if (semanticCandidate && BuildSemanticBatch(combiner, &semantic)) {
+        const bool semanticAccepted =
+            semanticCandidate && BuildSemanticBatch(combiner, &semantic);
+        const bool usesKeyConvert = UsesKeyConvert(semantic.combiner);
+        if (semanticAccepted) {
             batchSemantic = true;
             batchShaderUsesTexture0 = semantic.combiner.used_textures[0];
             batchShaderUsesTexture1 = semantic.combiner.used_textures[1];
@@ -1402,10 +1473,16 @@ class RuntimeDisplayListRenderer {
             if (batchFogSource != FogSource::None) {
                 stats.semantic_fog_batches++;
             }
+            if (usesKeyConvert) {
+                stats.semantic_key_convert_batches++;
+            }
         } else if (semanticCandidate) {
             stats.legacy_combiner_fallbacks++;
             if (batchFogSource != FogSource::None) {
                 stats.legacy_fog_fallbacks++;
+            }
+            if (usesKeyConvert) {
+                stats.legacy_key_convert_fallbacks++;
             }
         }
         batchTextured = textured;
@@ -2210,6 +2287,28 @@ class RuntimeDisplayListRenderer {
                     otherModeHigh = word0 & 0xFFFFFFU;
                     otherModeLow = word1;
                     break;
+                case G_SETKEYR:
+                    Flush();
+                    keyCenter.red = static_cast<uint8_t>(word1 >> 8U);
+                    keyScale.red = static_cast<uint8_t>(word1);
+                    break;
+                case G_SETKEYGB:
+                    Flush();
+                    keyCenter.green = static_cast<uint8_t>(word1 >> 24U);
+                    keyScale.green = static_cast<uint8_t>(word1 >> 16U);
+                    keyCenter.blue = static_cast<uint8_t>(word1 >> 8U);
+                    keyScale.blue = static_cast<uint8_t>(word1);
+                    break;
+                case G_SETCONVERT:
+                    Flush();
+                    convertK[0] = SignExtendNine((word0 >> 13U) & 0x1FFU);
+                    convertK[1] = SignExtendNine((word0 >> 4U) & 0x1FFU);
+                    convertK[2] = SignExtendNine(
+                        ((word0 & 0xFU) << 5U) | ((word1 >> 27U) & 0x1FU));
+                    convertK[3] = SignExtendNine((word1 >> 18U) & 0x1FFU);
+                    convertK[4] = SignExtendNine((word1 >> 9U) & 0x1FFU);
+                    convertK[5] = SignExtendNine(word1 & 0x1FFU);
+                    break;
                 case G_SETPRIMCOLOR:
                     Flush();
                     primLodFraction = static_cast<uint8_t>(word0);
@@ -2580,6 +2679,9 @@ class RuntimeDisplayListRenderer {
     Color primColor = {};
     Color envColor = {};
     uint8_t primLodFraction = 0U;
+    Color keyCenter = {};
+    Color keyScale = {};
+    std::array<int16_t, 6U> convertK = {};
     Color fogColor = {};
     Color blendColor = {};
     uint32_t fillColor = 0U;

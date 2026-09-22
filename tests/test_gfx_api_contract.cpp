@@ -322,6 +322,53 @@ static bool testRuntimeDepthFogUsesSemanticCombiner(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeKeyConvertUsesSemanticCombiner(PBGfxApi3DS *api) {
+    /* Cycle 0: (SHADE - CENTER) * SCALE + ENVIRONMENT.
+     * Cycle 1: (COMBINED - K4) * K5 + PRIMITIVE.
+     * This consumes all four key/convert inputs through the pinned Fast3D
+     * mapping and deliberately includes a negative signed-nine-bit K5. */
+    constexpr uint32_t combineWord0 =
+        UINT32_C(0xFC000000) | (UINT32_C(4) << 20U) |
+        (UINT32_C(6) << 15U) | (UINT32_C(7) << 12U) |
+        (UINT32_C(7) << 9U) | UINT32_C(15);
+    constexpr uint32_t combineWord1 =
+        (UINT32_C(6) << 28U) | (UINT32_C(7) << 24U) |
+        (UINT32_C(7) << 21U) | (UINT32_C(7) << 18U) |
+        (UINT32_C(5) << 15U) | (UINT32_C(7) << 12U) |
+        (UINT32_C(6) << 9U) | (UINT32_C(3) << 6U) |
+        (UINT32_C(7) << 3U) | UINT32_C(6);
+    constexpr uint32_t negativeK5 = UINT32_C(0x1E0); /* -32 in s9. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xEB000000), UINT32_C(0x00002080) } },
+        { .words = { UINT32_C(0xEA000000), UINT32_C(0x406080A0) } },
+        { .words = { UINT32_C(0xEC000000),
+                     (UINT32_C(92) << 9U) | negativeK5 } },
+        { .words = { UINT32_C(0xFA000000), UINT32_C(0x204060FF) } },
+        { .words = { UINT32_C(0xFB000000), UINT32_C(0x8090A0FF) } },
+        { .words = { UINT32_C(0xEF100000), 0U } },
+        { .words = { combineWord0, combineWord1 } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->unknown_commands == before.unknown_commands);
+    CHECK(after->semantic_combiner_batches ==
+          before.semantic_combiner_batches + 1U);
+    CHECK(after->semantic_two_cycle_batches ==
+          before.semantic_two_cycle_batches + 1U);
+    CHECK(after->semantic_key_convert_batches ==
+          before.semantic_key_convert_batches + 1U);
+    CHECK(after->legacy_combiner_fallbacks ==
+          before.legacy_combiner_fallbacks);
+    CHECK(after->legacy_key_convert_fallbacks ==
+          before.legacy_key_convert_fallbacks);
+    return true;
+}
+
 static bool testRuntimeTwoCycleBindsBothTiles(PBGfxApi3DS *api) {
     static uint8_t texture0[8U * 8U * 2U] = {};
     static uint8_t texture1[8U * 8U * 2U] = {};
@@ -557,6 +604,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
     CHECK(testRuntimeDepthFogUsesSemanticCombiner(api));
+    CHECK(testRuntimeKeyConvertUsesSemanticCombiner(api));
     CHECK(testRuntimeTwoCycleBindsBothTiles(api));
     CHECK(testRuntimeTwoCycleUsesBaseTileWithoutLod(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));

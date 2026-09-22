@@ -204,6 +204,11 @@ static void print_bottom_screen(PrintConsole *console,
                        runtime_gfx_stats->semantic_fog_batches,
                    (unsigned long long)
                        runtime_gfx_stats->legacy_fog_fallbacks);
+            printf("\x1b[29;2HKey/conv semantic:%llu legacy:%llu\n",
+                   (unsigned long long)
+                       runtime_gfx_stats->semantic_key_convert_batches,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_key_convert_fallbacks);
         }
         printf("\x1b[19;2HSystem: %s  %s\n",
                state->model_query_ok
@@ -226,7 +231,6 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned long)(memory->class_peak[PB_MEMORY_SCENE] / 1024));
         printf("\x1b[26;2HSD log: %s\n",
                pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
-        printf("\x1b[28;2HUpstream controls and pause active\n");
         printf("\x1b[30;2HL+R+START exits checkpoint\n");
         return;
     }
@@ -689,6 +693,8 @@ int main(int argc, char **argv) {
                      "commands=%llu lists=%llu semantic_combiner_batches=%llu "
                      "semantic_two_cycle_batches=%llu "
                      "semantic_fog_batches=%llu legacy_fog_fallbacks=%llu "
+                     "semantic_key_convert_batches=%llu "
+                     "legacy_key_convert_fallbacks=%llu "
                      "legacy_combiner_fallbacks=%llu texture_fallbacks=%llu "
                      "unknown=%lu missing=%lu malformed=%lu",
                      (unsigned long long)runtime_gfx_stats->commands,
@@ -701,6 +707,10 @@ int main(int argc, char **argv) {
                          runtime_gfx_stats->semantic_fog_batches,
                      (unsigned long long)
                          runtime_gfx_stats->legacy_fog_fallbacks,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_key_convert_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_key_convert_fallbacks,
                      (unsigned long long)
                          runtime_gfx_stats->legacy_combiner_fallbacks,
                      (unsigned long long)runtime_gfx_stats->texture_fallbacks,

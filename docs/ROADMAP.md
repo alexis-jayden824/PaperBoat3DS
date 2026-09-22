@@ -160,7 +160,9 @@ the final ELF. Host execution reaches `mac_00`, movement, and pause/resume with
 zero unknown commands or texture fallbacks. Native CI now links and packages
 the final ARM11 candidate. The r11 recovery bounds map triggers to the accepted
 `mac_00`/`mac_01` slice and routes standard depth/constant fog through native
-PICA200 fog state, with separate semantic/legacy diagnostics. Device/emulator
+PICA200 fog state, with separate semantic/legacy diagnostics. The r12 recovery
+also decodes Fast3D key/convert registers and routes `CENTER`, `SCALE`, `K4`,
+and `K5` constants through semantic TEV programs. Device/emulator
 visual and movement acceptance remain open. See
 `docs/M13_RUNTIME_RECOVERY.md` and `docs/M13_OVERWORLD.md`.
 

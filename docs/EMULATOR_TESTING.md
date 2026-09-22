@@ -231,7 +231,7 @@ input, or Old 3DS performance behavior.
 
 ## M13 core overworld gameplay
 
-Use the private bundle marked `0.13.11-m13r11` with the same owner-generated O2R
+Use the private bundle marked `0.13.12-m13r12` with the same owner-generated O2R
 files installed in Folium's virtual SD.
 
 1. Enter file select and confirm a slot. The bottom screen must advance through
@@ -256,15 +256,18 @@ files installed in Folium's virtual SD.
    out-of-scope map or produce `Map not found: kmr_20`. Exit with L+R+START and
    preserve the SHA, captures, and log.
 
-For r11, capture the bottom-screen `Step`, `Cmd/f`, `CC`, `2C`, `Fog`, `probe`, and `pause`
-fields immediately before START, on the pause menu, and after resume. `CC`
+For r12, capture the bottom-screen `Step`, `Cmd/f`, `CC`, `2C`, `Fog`,
+`Key/conv`, `probe`, and `pause` fields immediately before START, on the pause
+menu, and after resume. `CC`
 reports semantic TEV batches first and temporary CPU fallbacks second; `2C`
 reports semantic two-cycle batches. The latter must increase when affected
 materials render. `Fog` reports semantic/legacy fog batches; the semantic value
 must increase when fogged materials render, while standard depth and constant
 fog must not increment the legacy value. Report any legacy fog as a remaining
-vertex-alpha case. The general legacy value can remain nonzero for key/convert
-state and must be reported rather than treated as proof of completion.
+vertex-alpha case. The general legacy value can remain nonzero for unrelated
+migration boundaries. `Key/conv` reports semantic/legacy
+key-and-convert-constant batches; report both values, and treat a nonzero
+legacy value as a renderer migration failure for that material.
 The test fails if the update count stops, if the Toad Town background or major
 building surfaces are black, if Mario/NPC layers are cut apart, or if any
 sprite, glyph, UI label, or model texture is vertically inverted.

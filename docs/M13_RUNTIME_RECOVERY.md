@@ -345,8 +345,9 @@ evaluator into the semantic backend. The runtime classifies the pinned Fast3D
 blender source, selects fog or blend RGB as required, applies Fast3D's standard
 shade-alpha rule, builds a PICA200 fog visibility LUT from the N64 fog
 multiplier/offset, and binds native fog state per batch. Vertex-alpha-driven
-fog remains an explicit legacy fallback. The bottom screen and shutdown log now report
-`Fog semantic/legacy` independently from the general `CC` and `2C` counters.
+fog remains an explicit legacy fallback. The bottom screen and shutdown log
+now report `Fog semantic/legacy` independently from the general `CC` and `2C`
+counters.
 
 Host tests prove the map boundary, fog-LUT endpoints and monotonicity, and a
 real fogged display-list route with one semantic fog batch and no legacy or
@@ -357,3 +358,28 @@ working `mac_00`/`mac_01` transitions, no `kmr_20` panic, increasing semantic
 fog where fogged materials render, and zero error counters before M13 can
 close. Key/convert constants, LOD, vertex-alpha fog, saturation-sensitive TEV
 programs, and broader maps remain measured migration boundaries.
+
+## r12 key/convert semantic inputs
+
+`0.13.12-m13r12` removes another CPU-combiner approximation from the accepted
+route. The display-list walker now decodes `G_SETKEYR`, `G_SETKEYGB`, and
+`G_SETCONVERT`, including signed nine-bit K coefficients. Fast3D `CENTER`,
+`SCALE`, `K4`, and `K5` operands are normalized exactly like the pinned
+interpreter and supplied to the semantic TEV compiler as per-draw constants.
+The legacy evaluator consumes the same state if a different boundary still
+forces a fallback.
+
+A real two-cycle display-list regression exercises
+`(SHADE - CENTER) * SCALE + ENVIRONMENT` followed by
+`(COMBINED - K4) * K5 + PRIMITIVE`, including a negative K5 value. It must
+produce one semantic two-cycle key/convert batch, no unknown command, and no
+legacy fallback. The bottom screen and shutdown log report
+`Key/conv semantic/legacy`; the previously overwritten fog diagnostic is also
+kept visible.
+
+This closes the key/convert constant-input fallback, not the complete RDP
+chroma-key or YUV conversion pipeline: key-width thresholding and K0-K3 texture
+conversion are not claimed. LOD, vertex-alpha fog, saturation-sensitive TEV
+programs, and broader maps remain explicit migration boundaries. M13 still
+requires a side-by-side r12 playtest showing complete Toad Town materials,
+sprites, UI, pause/resume, and zero error counters.
