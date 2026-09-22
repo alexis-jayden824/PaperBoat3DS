@@ -506,7 +506,7 @@ class RuntimeDisplayListRenderer {
         batch.clear();
         batchTriangles = 0U;
         batchTextured = false;
-        batchHasTexture = false;
+        batchHasTexture = {};
         batchFill = false;
         batchTextureReplace = false;
         batchSemantic = false;
@@ -515,6 +515,7 @@ class RuntimeDisplayListRenderer {
         batchShaderUsesShade = true;
         batchShaderUsesAlpha = true;
         batchCombiner = {};
+        batchTextureTiles = {};
         batchTextureInfo = {};
         fillRectangleColor = {};
         depthImageAddress = 0U;
@@ -847,15 +848,16 @@ class RuntimeDisplayListRenderer {
     bool BuildSemanticBatch(const DecodedCombiner &decoded,
                             SemanticBatch *semantic) {
         if (semantic == nullptr || api == nullptr ||
-            (geometryMode & G_FOG) != 0U || decoded.cycleCount != 1U) {
+            (geometryMode & G_FOG) != 0U) {
             return false;
         }
         *semantic = {};
-        const uint64_t options =
-            pb_gfx_shader_option(PB_GFX_OPT_ALPHA);
+        uint64_t options = pb_gfx_shader_option(PB_GFX_OPT_ALPHA);
+        if (decoded.cycleCount == 2U) {
+            options |= pb_gfx_shader_option(PB_GFX_OPT_TWO_CYCLE);
+        }
         if (!pb_fast3d_generate_combiner(&semantic->combiner, combineWord0,
                                          combineWord1, options) ||
-            semantic->combiner.used_textures[1] ||
             !FillSemanticUniforms(semantic->combiner,
                                   &semantic->uniforms)) {
             return false;
@@ -867,7 +869,20 @@ class RuntimeDisplayListRenderer {
                 semantic->combiner.shader_id0,
                 semantic->combiner.shader_id1);
         }
-        return api->ShaderIsSupported(semantic->shader);
+        if (!api->ShaderIsSupported(semantic->shader)) {
+            return false;
+        }
+
+        /* The backend deliberately reserves both texture streams for a
+         * textured two-cycle program because cycle two swaps TEXEL0/TEXEL1.
+         * Consume its final layout instead of assuming GenerateCC's narrower
+         * per-operand usage is also the vertex contract. */
+        bool usedTextures[PB_GFX_TEXTURE_UNITS] = {};
+        api->ShaderGetInfo(semantic->shader, nullptr, usedTextures);
+        for (size_t unit = 0U; unit < PB_GFX_TEXTURE_UNITS; unit++) {
+            semantic->combiner.used_textures[unit] = usedTextures[unit];
+        }
+        return true;
     }
 
     FloatColor RgbCombinerSource(uint8_t value, size_t slot,
@@ -1201,7 +1216,7 @@ class RuntimeDisplayListRenderer {
         textures.erase(oldest);
     }
 
-    TextureCacheEntry *FallbackTexture() {
+    TextureCacheEntry *FallbackTexture(size_t uploadUnit) {
         for (TextureCacheEntry &entry : textures) {
             if (entry.source == this) {
                 entry.lastUse = ++textureUseClock;
@@ -1222,14 +1237,14 @@ class RuntimeDisplayListRenderer {
                 pixel[3] = 255U;
             }
         }
-        api->SelectTexture(0, id);
+        api->SelectTexture(static_cast<int>(uploadUnit), id);
         api->UploadTexture(pixels.data(), 8U, 8U);
         textures.push_back({ this, nullptr, nullptr, id, 0U, 8U, 8U, 8U,
                              8U, ++textureUseClock });
         return &textures.back();
     }
 
-    TextureCacheEntry *AcquireTexture(const Tile &tile) {
+    TextureCacheEntry *AcquireTexture(const Tile &tile, size_t uploadUnit) {
         /*
          * TMEM is addressed in 64-bit words (0..511).  Treating every
          * non-zero TMEM address as one shared slot aliases unrelated Paper
@@ -1279,7 +1294,7 @@ class RuntimeDisplayListRenderer {
                            &textureHeight, &sourceWidth, &sourceHeight,
                            &type)) {
             stats.texture_fallbacks++;
-            return FallbackTexture();
+            return FallbackTexture(uploadUnit);
         }
         if (textures.size() >= kRuntimeTextureLimit) EvictOldestTexture();
         uint32_t id = api->NewTexture();
@@ -1288,7 +1303,7 @@ class RuntimeDisplayListRenderer {
             id = api->NewTexture();
         }
         if (id == 0U) return nullptr;
-        api->SelectTexture(0, id);
+        api->SelectTexture(static_cast<int>(uploadUnit), id);
         api->UploadTexture(rgba.data(), textureWidth, textureHeight);
         textures.push_back({
             source.data, palette, source.path, id,
@@ -1297,6 +1312,16 @@ class RuntimeDisplayListRenderer {
             ++textureUseClock,
         });
         return &textures.back();
+    }
+
+    uint8_t EffectiveTextureTile(size_t unit) const {
+        const uint8_t base = firstTile & 7U;
+        /* Match the pinned Fast3D path. TEXEL1 normally consumes the tile
+         * following TEXEL0. Without LOD support, draws whose base tile is in
+         * the non-mipmap range (2..7) bind that same tile to both units. */
+        return unit == 1U && base < 2U
+                   ? static_cast<uint8_t>(base + 1U)
+                   : base;
     }
 
     bool BeginBatch(bool textureRequested, bool fill = false) {
@@ -1311,7 +1336,8 @@ class RuntimeDisplayListRenderer {
         }
         if (!Flush()) return false;
         batchFill = fill;
-        batchHasTexture = false;
+        batchHasTexture = {};
+        batchTextureTiles = {};
         batchTextureInfo = {};
         batchCombiner = combiner;
         batchSemantic = false;
@@ -1328,6 +1354,9 @@ class RuntimeDisplayListRenderer {
             batchShaderUsesShade = semantic.combiner.uses_shade;
             textured = batchShaderUsesTexture0 || batchShaderUsesTexture1;
             stats.semantic_combiner_batches++;
+            if (semantic.combiner.two_cycle) {
+                stats.semantic_two_cycle_batches++;
+            }
         } else if (semanticCandidate) {
             stats.legacy_combiner_fallbacks++;
         }
@@ -1354,16 +1383,26 @@ class RuntimeDisplayListRenderer {
             (otherModeLow & ZMODE_DEC) == ZMODE_DEC, cullKeepSign,
             useAlpha, textured, alphaReference);
         if (textured) {
-            Tile &tile = tiles[firstTile & 7U];
-            TextureCacheEntry *texture = AcquireTexture(tile);
-            if (texture == nullptr) return false;
-            batchTextureInfo = *texture;
-            batchHasTexture = true;
-            api->SelectTexture(0, texture->id);
             const bool linear = ((otherModeHigh >> 12U) & 3U) != 0U;
             api->SetTextureFilter(linear ? Fast::FILTER_LINEAR
                                          : Fast::FILTER_NONE);
-            api->SetSamplerParameters(0, linear, tile.clampS, tile.clampT);
+            const bool usedUnits[PB_GFX_TEXTURE_UNITS] = {
+                batchSemantic ? batchShaderUsesTexture0 : true,
+                batchSemantic ? batchShaderUsesTexture1 : false,
+            };
+            for (size_t unit = 0U; unit < PB_GFX_TEXTURE_UNITS; unit++) {
+                if (!usedUnits[unit]) continue;
+                const uint8_t tileIndex = EffectiveTextureTile(unit);
+                const Tile &tile = tiles[tileIndex];
+                TextureCacheEntry *texture = AcquireTexture(tile, unit);
+                if (texture == nullptr) return false;
+                batchTextureTiles[unit] = tile;
+                batchTextureInfo[unit] = *texture;
+                batchHasTexture[unit] = true;
+                api->SelectTexture(static_cast<int>(unit), texture->id);
+                api->SetSamplerParameters(static_cast<int>(unit), linear,
+                                          tile.clampS, tile.clampT);
+            }
         }
         if (batchSemantic) {
             api->SetCombinerUniforms(semantic.uniforms);
@@ -1384,7 +1423,7 @@ class RuntimeDisplayListRenderer {
         return true;
     }
 
-    void AppendVertex(const LoadedVertex &vertex, const Tile *tile) {
+    void AppendVertex(const LoadedVertex &vertex) {
         const float clipW = std::fabs(vertex.clipW) < 0.0001f
                                 ? std::copysign(0.0001f, vertex.clipW)
                                 : vertex.clipW;
@@ -1393,27 +1432,25 @@ class RuntimeDisplayListRenderer {
         batch.push_back(vertex.depth * clipW);
         batch.push_back(clipW);
         batch.push_back(0.0f);
-        if (tile != nullptr && batchHasTexture &&
-            batchShaderUsesTexture0) {
+        const bool usedUnits[PB_GFX_TEXTURE_UNITS] = {
+            batchShaderUsesTexture0,
+            batchShaderUsesTexture1,
+        };
+        for (size_t unit = 0U; unit < PB_GFX_TEXTURE_UNITS; unit++) {
+            if (!usedUnits[unit] || !batchHasTexture[unit]) continue;
+            const Tile &tile = batchTextureTiles[unit];
+            const TextureCacheEntry &texture = batchTextureInfo[unit];
             const float s =
                 ShiftTextureCoordinate(vertex.textureS / 32.0f,
-                                       tile->shiftS) -
-                static_cast<float>(tile->upperS) / 4.0f;
+                                       tile.shiftS) -
+                static_cast<float>(tile.upperS) / 4.0f;
             const float t =
                 ShiftTextureCoordinate(vertex.textureT / 32.0f,
-                                       tile->shiftT) -
-                static_cast<float>(tile->upperT) / 4.0f;
-            batch.push_back(s / batchTextureInfo.textureWidth);
+                                       tile.shiftT) -
+                static_cast<float>(tile.upperT) / 4.0f;
+            batch.push_back(s / texture.textureWidth);
             batch.push_back(pb_renderer_n64_texture_v(
-                t, batchTextureInfo.sourceHeight,
-                batchTextureInfo.textureHeight));
-        }
-        if (batchShaderUsesTexture1) {
-            /* The upstream interpreter supplies an independent second UV
-             * pair.  The compatibility walker intentionally keeps two-cycle
-             * draws on its legacy path until it can bind that second tile. */
-            batch.push_back(0.0f);
-            batch.push_back(0.0f);
+                t, texture.sourceHeight, texture.textureHeight));
         }
         if (batchShaderUsesShade) {
             const Color color = batchSemantic ? vertex.color
@@ -1447,9 +1484,8 @@ class RuntimeDisplayListRenderer {
         }
         const bool textured = DecodeCombiner().use.texture;
         if (!BeginBatch(textured)) return false;
-        const Tile *tile = textured ? &tiles[firstTile & 7U] : nullptr;
         for (const LoadedVertex *vertex : triangle) {
-            AppendVertex(*vertex, tile);
+            AppendVertex(*vertex);
         }
         batchTriangles++;
         if (batchTriangles >= kBatchTriangleLimit) return Flush();
@@ -1521,9 +1557,8 @@ class RuntimeDisplayListRenderer {
             rectangle[5] = rectangle[0];
         }
         if (!BeginBatch(textured, fill)) return false;
-        const Tile *tile = textured ? &tiles[firstTile & 7U] : nullptr;
         for (const LoadedVertex &vertex : rectangle) {
-            AppendVertex(vertex, tile);
+            AppendVertex(vertex);
         }
         batchTriangles += 2U;
         return Flush();
@@ -2504,7 +2539,7 @@ class RuntimeDisplayListRenderer {
     std::vector<float> batch;
     size_t batchTriangles = 0U;
     bool batchTextured = false;
-    bool batchHasTexture = false;
+    std::array<bool, PB_GFX_TEXTURE_UNITS> batchHasTexture = {};
     bool batchFill = false;
     bool batchTextureReplace = false;
     bool batchSemantic = false;
@@ -2513,7 +2548,8 @@ class RuntimeDisplayListRenderer {
     bool batchShaderUsesShade = true;
     bool batchShaderUsesAlpha = true;
     DecodedCombiner batchCombiner = {};
-    TextureCacheEntry batchTextureInfo = {};
+    std::array<Tile, PB_GFX_TEXTURE_UNITS> batchTextureTiles = {};
+    std::array<TextureCacheEntry, PB_GFX_TEXTURE_UNITS> batchTextureInfo = {};
     Color fillRectangleColor = {};
     std::vector<TextureCacheEntry> textures;
     uint64_t textureUseClock = 0U;

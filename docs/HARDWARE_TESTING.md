@@ -192,7 +192,7 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.9-m13r9` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.10-m13r10` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
@@ -211,11 +211,12 @@ repeat it on the New 3DS XL/LL when the console is available. In addition:
    stream overflows, and memory failures remain zero, then preserve the exact
    build SHA, both-screen captures, and `PaperBoat3DS.log`.
 
-For r9, also photograph the `Step`, `Cmd/f`, `CC`, `probe`, and `pause` fields
+For r10, also photograph the `Step`, `Cmd/f`, `CC`, `2C`, `probe`, and `pause` fields
 before pausing, while paused, and after resuming. `CC` is
-semantic-TEV/legacy-CPU batch count; preserve both values because the second
-is expected to remain nonzero until fog and the temporary walker's second-tile
-path migrate. Verify that
+semantic-TEV/legacy-CPU batch count, while `2C` counts two-cycle batches routed
+through the semantic backend. Preserve all three values; `2C` must increase
+when the route exercises two-cycle materials, while the legacy count can remain
+nonzero for fog and key/convert state that has not migrated. Verify that
 the world background and complete building surfaces are present, Mario/NPCs
 remain whole while crossing other objects, and the warmed-up `last` update
 time is normally at or below 40 ms without the slow-update count continually

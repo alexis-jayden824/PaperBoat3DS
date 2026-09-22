@@ -289,3 +289,34 @@ both totals. The r9 playtest must compare the formerly black background and
 building materials, record both counters before/pause/after resume, and keep
 renderer rejects at zero. A nonzero legacy count is expected at this stage;
 it identifies the next semantics to move rather than closing M13.
+
+## r10 two-cycle texture routing
+
+`0.13.10-m13r10` moves the compatibility walker's two-cycle batches across
+the r9 semantic boundary. The TEV compiler already represented both RDP
+cycles, including the physical TEXEL0/TEXEL1 swap in cycle two; r9 could not
+exercise that program because it only uploaded the first render tile and
+filled the second UV stream with zeroes.
+
+The runtime now follows the pinned Fast3D texture contract for both units:
+
+- texture unit 0 uses the selected render tile;
+- texture unit 1 uses the following render tile when the base is tile 0 or 1;
+- without the still-pending LOD path, base tiles 2 through 7 are sampled by
+  both units, matching Fast3D's non-mipmap fallback;
+- each unit independently resolves TMEM, palette, dimensions, wrapping,
+  filtering, tile shift/origin, vertical orientation, and normalized UVs.
+
+Shader-reported texture usage is treated as the final vertex-stream contract,
+so a two-cycle program cannot request two UV pairs while the walker emits only
+one. Host coverage submits two independent 8x8 TMEM loads through a real
+two-cycle rectangle and requires two uploads, one semantic batch, one
+two-cycle semantic batch, no legacy fallback, and no renderer rejection.
+
+The bottom screen adds `2C`, the number of two-cycle batches accepted by the
+semantic path; the shutdown log records `semantic_two_cycle_batches`. A
+playtest should show that value increasing in affected world, sprite-shading,
+or pause passes while `Reject` and `Fall` remain zero. Fog, key/convert
+registers, LOD, and TEV saturation-sensitive programs still retain measured
+fallback or device-validation boundaries. This checkpoint therefore advances
+the renderer replacement but does not complete it or close M13.

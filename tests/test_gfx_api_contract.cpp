@@ -258,6 +258,95 @@ static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeTwoCycleBindsBothTiles(PBGfxApi3DS *api) {
+    static uint8_t texture0[8U * 8U * 2U] = {};
+    static uint8_t texture1[8U * 8U * 2U] = {};
+    /* Cycle 0 replaces with TEXEL0. Cycle 1 multiplies COMBINED by
+     * TEXEL0, which Fast3D maps to physical texture unit 1 in that cycle.
+     * Render tiles 0 and 1 point at independent TMEM loads. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture0) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture1) } },
+        { .words = { UINT32_C(0xF5100020), UINT32_C(0x01000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x01000000) } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0101C01C) } },
+        { .words = { UINT32_C(0xEF100000), 0U } },
+        { .words = { UINT32_C(0xFCFFFE01), UINT32_C(0xFF04F3FF) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 2U);
+    CHECK(afterBridge->texture_bytes ==
+          beforeBridge.texture_bytes + 2U * 8U * 8U * 4U);
+    CHECK(afterBridge->rejected_commands == beforeBridge.rejected_commands);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->semantic_combiner_batches ==
+          beforeRuntime.semantic_combiner_batches + 1U);
+    CHECK(afterRuntime->semantic_two_cycle_batches ==
+          beforeRuntime.semantic_two_cycle_batches + 1U);
+    CHECK(afterRuntime->legacy_combiner_fallbacks ==
+          beforeRuntime.legacy_combiner_fallbacks);
+    return true;
+}
+
+static bool testRuntimeTwoCycleUsesBaseTileWithoutLod(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* Pinned Fast3D reuses base tiles 2..7 for unit 1 when no LOD path is
+     * available. Both TEV texture units must therefore bind this one upload. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100040), UINT32_C(0x02000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x02000000) } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0201C01C) } },
+        { .words = { UINT32_C(0xEF100000), 0U } },
+        { .words = { UINT32_C(0xFCFFFE01), UINT32_C(0xFF04F3FF) } },
+        { .words = { UINT32_C(0xE4020020), UINT32_C(0x02000000) } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes ==
+          beforeBridge.texture_bytes + 8U * 8U * 4U);
+    CHECK(afterBridge->rejected_commands == beforeBridge.rejected_commands);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->semantic_combiner_batches ==
+          beforeRuntime.semantic_combiner_batches + 1U);
+    CHECK(afterRuntime->semantic_two_cycle_batches ==
+          beforeRuntime.semantic_two_cycle_batches + 1U);
+    CHECK(afterRuntime->legacy_combiner_fallbacks ==
+          beforeRuntime.legacy_combiner_fallbacks);
+    return true;
+}
+
 static bool testExactInterface() {
     PB3DS::GfxRenderingAPI3DS api(nullptr);
     CHECK(std::strcmp(api.GetName(), "PICA200 (citro3d)") == 0);
@@ -403,6 +492,8 @@ static bool testCBoundary() {
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
+    CHECK(testRuntimeTwoCycleBindsBothTiles(api));
+    CHECK(testRuntimeTwoCycleUsesBaseTileWithoutLod(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

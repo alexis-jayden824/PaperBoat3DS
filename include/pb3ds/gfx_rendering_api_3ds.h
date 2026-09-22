@@ -14,6 +14,7 @@ typedef struct {
     uint64_t display_lists;
     uint64_t texture_fallbacks;
     uint64_t semantic_combiner_batches;
+    uint64_t semantic_two_cycle_batches;
     uint64_t legacy_combiner_fallbacks;
     uint64_t depth_target_clears;
     uint64_t copy_rectangles;

@@ -190,13 +190,15 @@ static void print_bottom_screen(PrintConsole *console,
                    (unsigned long long)runtime_gfx_stats->display_lists,
                    (unsigned long)runtime_gfx_stats->max_call_depth,
                    (unsigned long)runtime_gfx_stats->malformed_lists);
-            printf("\x1b[27;2HCmd/f:%lu pk:%lu CC:%llu/%llu\n",
+            printf("\x1b[27;2HCmd/f:%lu pk:%lu CC:%llu/%llu 2C:%llu\n",
                    (unsigned long)runtime_gfx_stats->commands_last_frame,
                    (unsigned long)runtime_gfx_stats->commands_peak_frame,
                    (unsigned long long)
                        runtime_gfx_stats->semantic_combiner_batches,
                    (unsigned long long)
-                       runtime_gfx_stats->legacy_combiner_fallbacks);
+                       runtime_gfx_stats->legacy_combiner_fallbacks,
+                   (unsigned long long)
+                       runtime_gfx_stats->semantic_two_cycle_batches);
         }
         printf("\x1b[19;2HSystem: %s  %s\n",
                state->model_query_ok
@@ -680,12 +682,15 @@ int main(int argc, char **argv) {
     if (runtime_gfx_stats != NULL) {
         pb_log_write(&log, PB_LOG_INFO, "runtime-gfx-shutdown",
                      "commands=%llu lists=%llu semantic_combiner_batches=%llu "
+                     "semantic_two_cycle_batches=%llu "
                      "legacy_combiner_fallbacks=%llu texture_fallbacks=%llu "
                      "unknown=%lu missing=%lu malformed=%lu",
                      (unsigned long long)runtime_gfx_stats->commands,
                      (unsigned long long)runtime_gfx_stats->display_lists,
                      (unsigned long long)
                          runtime_gfx_stats->semantic_combiner_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_two_cycle_batches,
                      (unsigned long long)
                          runtime_gfx_stats->legacy_combiner_fallbacks,
                      (unsigned long long)runtime_gfx_stats->texture_fallbacks,
