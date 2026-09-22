@@ -320,6 +320,10 @@ class RuntimeDisplayListRenderer {
         depthClearPending = false;
         api->SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
         api->SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+        stats.scissor_x = 0;
+        stats.scissor_y = 0;
+        stats.scissor_w = PB_RENDER_TOP_WIDTH;
+        stats.scissor_h = PB_RENDER_TOP_HEIGHT;
         const bool interpreted = RunList(displayList, 0U);
         const bool flushed = Flush();
         api->EndFrame();
@@ -516,6 +520,10 @@ class RuntimeDisplayListRenderer {
         viewportY = 0.0f;
         viewportWidth = 320.0f;
         viewportHeight = 240.0f;
+        stats.game_viewport_x = static_cast<int32_t>(viewportX);
+        stats.game_viewport_y = static_cast<int32_t>(viewportY);
+        stats.game_viewport_w = static_cast<uint32_t>(viewportWidth);
+        stats.game_viewport_h = static_cast<uint32_t>(viewportHeight);
         primColor = {};
         envColor = {};
         primLodFraction = 0U;
@@ -2143,8 +2151,33 @@ class RuntimeDisplayListRenderer {
                         viewportX = kScreenInset +
                             viewport->translate[0] / 4.0f -
                             viewportWidth * 0.5f;
-                        viewportY = viewport->translate[1] / 4.0f -
+                        /*
+                         * viewport->translate[1] carries the Fast3D camera's
+                         * vtrans[1], i.e. 4 * (viewportStartY + viewportH/2)
+                         * in the RDP/framebuffer's top-left-origin
+                         * convention (Y=0 at the screen's top edge). Every
+                         * other vertical mapping in this interpreter --
+                         * EmitRectangle's screenTop/screenBottom and
+                         * G_SETSCISSOR's scissor_y -- explicitly flips via
+                         * "PB_RENDER_TOP_HEIGHT - y" to reach this engine's
+                         * bottom-left-origin screen space (Y=240 at the top,
+                         * matching the Mtx_OrthoTilt(0,400,0,240,...,true)
+                         * projection set up in pb_renderer_3ds_create).
+                         * Full-screen viewports hide the mismatch because
+                         * both conventions yield zero; asymmetric partial-
+                         * height viewports otherwise land in the wrong half
+                         * of the screen and clip geometry or sprites. */
+                        viewportY = static_cast<float>(PB_RENDER_TOP_HEIGHT) -
+                            viewport->translate[1] / 4.0f -
                             viewportHeight * 0.5f;
+                        stats.game_viewport_x =
+                            static_cast<int32_t>(viewportX);
+                        stats.game_viewport_y =
+                            static_cast<int32_t>(viewportY);
+                        stats.game_viewport_w =
+                            static_cast<uint32_t>(viewportWidth);
+                        stats.game_viewport_h =
+                            static_cast<uint32_t>(viewportHeight);
                     } else if (type == G_MV_LIGHT && data != nullptr) {
                         const int light = static_cast<int>(offset) / 24 - 2;
                         if (light >= 0 &&
@@ -2181,8 +2214,20 @@ class RuntimeDisplayListRenderer {
                         viewportX = kScreenInset +
                             viewport->translate[0] / 4.0f -
                             viewportWidth * 0.5f;
-                        viewportY = viewport->translate[1] / 4.0f -
+                        /* Hash-backed viewport resources use the same
+                         * top-left-origin N64 encoding as direct G_MOVEMEM;
+                         * convert it to the renderer's bottom-left space. */
+                        viewportY = static_cast<float>(PB_RENDER_TOP_HEIGHT) -
+                            viewport->translate[1] / 4.0f -
                             viewportHeight * 0.5f;
+                        stats.game_viewport_x =
+                            static_cast<int32_t>(viewportX);
+                        stats.game_viewport_y =
+                            static_cast<int32_t>(viewportY);
+                        stats.game_viewport_w =
+                            static_cast<uint32_t>(viewportWidth);
+                        stats.game_viewport_h =
+                            static_cast<uint32_t>(viewportHeight);
                     } else if (type == G_MV_LIGHT && data != nullptr) {
                         const int light = static_cast<int>(offset) / 24 - 2;
                         if (light >= 0 &&
@@ -2454,11 +2499,16 @@ class RuntimeDisplayListRenderer {
                     const int right =
                         static_cast<int>((word1 >> 12U) & 0xFFFU) / 4;
                     const int bottom = static_cast<int>(word1 & 0xFFFU) / 4;
-                    api->SetScissor(static_cast<int>(kScreenInset) + left,
-                                    static_cast<int>(PB_RENDER_TOP_HEIGHT) -
-                                        bottom,
-                                    std::max(0, right - left),
-                                    std::max(0, bottom - top));
+                    stats.scissor_x = static_cast<int>(kScreenInset) + left;
+                    stats.scissor_y =
+                        static_cast<int>(PB_RENDER_TOP_HEIGHT) - bottom;
+                    stats.scissor_w =
+                        static_cast<uint32_t>(std::max(0, right - left));
+                    stats.scissor_h =
+                        static_cast<uint32_t>(std::max(0, bottom - top));
+                    api->SetScissor(stats.scissor_x, stats.scissor_y,
+                                    static_cast<int>(stats.scissor_w),
+                                    static_cast<int>(stats.scissor_h));
                     break;
                 }
                 case G_SETPRIMDEPTH:

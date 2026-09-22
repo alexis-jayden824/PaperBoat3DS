@@ -443,3 +443,20 @@ These are targeted corrections for all three observed symptoms, not a claim
 that M13 or the TEV migration is complete. Hardware acceptance still requires
 an intact backdrop and sprites, repeated pause/resume without a crash, zero
 retirement failures/rejections, and comparison against PaperBoat/N64 output.
+
+## r15 partial-height viewport origin correction
+
+`0.13.15-m13r15` corrects the Y origin used when `G_MOVEMEM` installs a Fast3D
+camera viewport. N64 viewport translation is expressed from the framebuffer's
+top edge, while the PICA200 projection used by this renderer is bottom-left
+origin. Full-screen viewports hid the mismatch, but asymmetric partial-height
+camera shots could be placed in the opposite vertical region and cut sprites
+or geometry off at the screen edge. Direct and hash-backed viewport resources
+now perform the same explicit vertical conversion used by rectangles and
+scissors.
+
+The runtime HUD and shutdown log also report the active game viewport as `Vp`
+and scissor as `Sc`. A regression display list uses a 320x100 viewport and
+requires the converted Y origin to be 140. This is a focused clipping fix on
+top of r14's texture-lifetime and combiner work; M13 remains open pending
+side-by-side and repeated-pause validation on real hardware.

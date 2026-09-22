@@ -197,6 +197,15 @@ static void print_bottom_screen(PrintConsole *console,
                        ? renderer_stats->retired_texture_peak : 0U),
                    (unsigned long)(renderer_stats != NULL
                        ? renderer_stats->texture_retire_failures : 0U));
+            printf("\x1b[20;2HVp:%ld,%ld %lux%lu Sc:%ld,%ld %lux%lu\n",
+                   (long)runtime_gfx_stats->game_viewport_x,
+                   (long)runtime_gfx_stats->game_viewport_y,
+                   (unsigned long)runtime_gfx_stats->game_viewport_w,
+                   (unsigned long)runtime_gfx_stats->game_viewport_h,
+                   (long)runtime_gfx_stats->scissor_x,
+                   (long)runtime_gfx_stats->scissor_y,
+                   (unsigned long)runtime_gfx_stats->scissor_w,
+                   (unsigned long)runtime_gfx_stats->scissor_h);
             printf("\x1b[27;2HCmd/f:%lu pk:%lu CC:%llu/%llu 2C:%llu\n",
                    (unsigned long)runtime_gfx_stats->commands_last_frame,
                    (unsigned long)runtime_gfx_stats->commands_peak_frame,
@@ -219,12 +228,11 @@ static void print_bottom_screen(PrintConsole *console,
                    (unsigned long long)
                        runtime_gfx_stats->legacy_unsafe_modulate_batches);
         }
-        printf("\x1b[19;2HSystem: %s  %s\n",
+        printf("\x1b[19;2HSys:%s %s K:%08lX\n",
                state->model_query_ok
                    ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
                    : "unknown",
-               lifecycle_name(state->lifecycle));
-        printf("\x1b[20;2HKernel: %08lX\n",
+               lifecycle_name(state->lifecycle),
                (unsigned long)state->kernel_version);
         printf("\x1b[21;2HInput: %s N64:%04X\n",
                input->waiting_for_neutral ? "WAIT" : "active",
@@ -708,7 +716,9 @@ int main(int argc, char **argv) {
                      "legacy_unsafe_modulate_batches=%llu "
                      "texture_fallbacks=%llu "
                      "texture_evictions=%llu "
-                     "unknown=%lu missing=%lu malformed=%lu",
+                     "unknown=%lu missing=%lu malformed=%lu "
+                     "game_viewport=%ld,%ld,%lu,%lu "
+                     "scissor=%ld,%ld,%lu,%lu",
                      (unsigned long long)runtime_gfx_stats->commands,
                      (unsigned long long)runtime_gfx_stats->display_lists,
                      (unsigned long long)
@@ -731,7 +741,15 @@ int main(int argc, char **argv) {
                      (unsigned long long)runtime_gfx_stats->texture_evictions,
                      (unsigned long)runtime_gfx_stats->unknown_commands,
                      (unsigned long)runtime_gfx_stats->missing_resources,
-                     (unsigned long)runtime_gfx_stats->malformed_lists);
+                     (unsigned long)runtime_gfx_stats->malformed_lists,
+                     (long)runtime_gfx_stats->game_viewport_x,
+                     (long)runtime_gfx_stats->game_viewport_y,
+                     (unsigned long)runtime_gfx_stats->game_viewport_w,
+                     (unsigned long)runtime_gfx_stats->game_viewport_h,
+                     (long)runtime_gfx_stats->scissor_x,
+                     (long)runtime_gfx_stats->scissor_y,
+                     (unsigned long)runtime_gfx_stats->scissor_w,
+                     (unsigned long)runtime_gfx_stats->scissor_h);
     }
     if (renderer_stats != NULL) {
         pb_log_write(&log, PB_LOG_INFO, "renderer-shutdown",

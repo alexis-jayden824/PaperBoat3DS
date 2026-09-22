@@ -147,6 +147,34 @@ static bool testRuntimeDisplayList(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeMovememViewportUsesBottomLeftOrigin(PBGfxApi3DS *api) {
+    /* An N64 Vp_t as delivered by G_MOVEMEM/G_MV_VIEWPORT: scale/translate
+     * are int16_t[4], quarter-pixel translate, half-pixel*2 scale. This uses
+     * a deliberately asymmetric partial-height viewport, where the old and
+     * corrected origin conversions do not coincidentally agree. */
+    struct N64ViewportTest {
+        int16_t scale[4];
+        int16_t translate[4];
+    };
+    static const N64ViewportTest viewport = {
+        { 640, 200, 0, 0 },
+        { 640, 200, 0, 0 },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xDC000008),
+                     reinterpret_cast<uintptr_t>(&viewport) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->game_viewport_x == 40);
+    CHECK(after->game_viewport_y == 140);
+    CHECK(after->game_viewport_w == 320U);
+    CHECK(after->game_viewport_h == 100U);
+    return true;
+}
+
 static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
     static uint8_t texture[8U * 8U * 2U] = {};
     const PBRuntimeGfx displayList[] = {
@@ -744,6 +772,7 @@ static bool testCBoundary() {
     CHECK(stats->frames_presented == 7);
     CHECK(stats->draw_calls == 16);
     CHECK(testRuntimeDisplayList(api));
+    CHECK(testRuntimeMovememViewportUsesBottomLeftOrigin(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeSplitCi8Palette(api));

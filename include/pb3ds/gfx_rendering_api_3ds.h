@@ -31,6 +31,25 @@ typedef struct {
     uint32_t commands_last_frame;
     uint32_t commands_peak_frame;
     uint8_t last_unknown_opcode;
+    /* Diagnostics for the "sprites/geometry cut off" class of report: the
+     * most recently established CPU-side game viewport (used to convert
+     * transformed vertices to screen pixels in LoadVertices) and the most
+     * recently established GPU scissor rect (from G_SETSCISSOR, or the
+     * full-screen default applied at the start of every frame), both in
+     * logical 400x240 top-screen pixel space. A scissor or viewport height
+     * smaller than PB_RENDER_TOP_HEIGHT (240), or a nonzero y, here at the
+     * moment a cut-off sprite is on screen pinpoints whether the clipping
+     * comes from one of these versus somewhere else (e.g. vertex position
+     * math). Populated every time either is set; read at any moment (e.g.
+     * from the on-screen debug HUD) to see the value active for that frame. */
+    int32_t game_viewport_x;
+    int32_t game_viewport_y;
+    uint32_t game_viewport_w;
+    uint32_t game_viewport_h;
+    int32_t scissor_x;
+    int32_t scissor_y;
+    uint32_t scissor_w;
+    uint32_t scissor_h;
 } PBRuntimeGfxStats;
 
 #ifdef __cplusplus
