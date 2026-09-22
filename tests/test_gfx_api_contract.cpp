@@ -420,6 +420,48 @@ static bool testRuntimeKeyConvertUsesSemanticCombiner(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeLegacyUnsafeModulateSkipsTexture(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* Vertex-alpha fog forces the legacy path. This one-cycle formula is
+     * (TEXEL0 - ENVIRONMENT) * SHADE + ENVIRONMENT, which cannot be rebuilt
+     * by multiplying the CPU's white-substituted result by TEXEL0. */
+    constexpr uint32_t combineWord0 =
+        UINT32_C(0xFC000000) | (UINT32_C(1) << 20U) |
+        (UINT32_C(4) << 15U);
+    constexpr uint32_t combineWord1 =
+        (UINT32_C(5) << 28U) | (UINT32_C(5) << 15U);
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0xC0000000) } },
+        { .words = { UINT32_C(0xFB000000), UINT32_C(0x804020FF) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { combineWord0, combineWord1 } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->semantic_combiner_batches ==
+          before.semantic_combiner_batches);
+    CHECK(after->legacy_combiner_fallbacks ==
+          before.legacy_combiner_fallbacks + 1U);
+    CHECK(after->legacy_fog_fallbacks ==
+          before.legacy_fog_fallbacks + 1U);
+    CHECK(after->legacy_unsafe_modulate_batches ==
+          before.legacy_unsafe_modulate_batches + 1U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes);
+    return true;
+}
+
 static bool testRuntimeTwoCycleBindsBothTiles(PBGfxApi3DS *api) {
     static uint8_t texture0[8U * 8U * 2U] = {};
     static uint8_t texture1[8U * 8U * 2U] = {};
@@ -506,6 +548,57 @@ static bool testRuntimeTwoCycleUsesBaseTileWithoutLod(PBGfxApi3DS *api) {
           beforeRuntime.semantic_two_cycle_batches + 1U);
     CHECK(afterRuntime->legacy_combiner_fallbacks ==
           beforeRuntime.legacy_combiner_fallbacks);
+    return true;
+}
+
+static bool testRuntimeTextureEvictionFrame(PBGfxApi3DS *api) {
+    constexpr size_t textureCount = PB_GFX_MAX_TEXTURES;
+    constexpr size_t commandsPerTexture = 8U;
+    static uint8_t textures[textureCount][8U * 8U * 2U] = {};
+    static PBRuntimeGfx displayList[2U +
+                                    textureCount * commandsPerTexture + 1U];
+    size_t command = 0U;
+    displayList[command++].words = { UINT32_C(0xEF200000), 0U };
+    displayList[command++].words = {
+        UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C)
+    };
+    for (size_t texture = 0U; texture < textureCount; texture++) {
+        textures[texture][0] = static_cast<uint8_t>(texture);
+        displayList[command++].words = {
+            UINT32_C(0xFD100007),
+            reinterpret_cast<uintptr_t>(textures[texture])
+        };
+        displayList[command++].words = { UINT32_C(0xF5100000), 0U };
+        displayList[command++].words = { UINT32_C(0xF3000000), 0U };
+        displayList[command++].words = { UINT32_C(0xF5100000), 0U };
+        displayList[command++].words = {
+            UINT32_C(0xF2000000), UINT32_C(0x0001C01C)
+        };
+        displayList[command++].words = { UINT32_C(0xE4020020), 0U };
+        displayList[command++].words = { UINT32_C(0xE1000000), 0U };
+        displayList[command++].words = {
+            UINT32_C(0xF1000000), UINT32_C(0x04000400)
+        };
+    }
+    displayList[command++].words = { UINT32_C(0xDF000000), 0U };
+    CHECK(command == sizeof(displayList) / sizeof(displayList[0]));
+
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls ==
+          beforeBridge.draw_calls + textureCount);
+    CHECK(afterBridge->triangles ==
+          beforeBridge.triangles + textureCount * 2U);
+    CHECK(afterBridge->rejected_commands == beforeBridge.rejected_commands);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->texture_evictions >
+          beforeRuntime.texture_evictions);
     return true;
 }
 
@@ -657,8 +750,10 @@ static bool testCBoundary() {
     CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
     CHECK(testRuntimeDepthFogUsesSemanticCombiner(api));
     CHECK(testRuntimeKeyConvertUsesSemanticCombiner(api));
+    CHECK(testRuntimeLegacyUnsafeModulateSkipsTexture(api));
     CHECK(testRuntimeTwoCycleBindsBothTiles(api));
     CHECK(testRuntimeTwoCycleUsesBaseTileWithoutLod(api));
+    CHECK(testRuntimeTextureEvictionFrame(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

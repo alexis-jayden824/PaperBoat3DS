@@ -406,3 +406,40 @@ inspect the background, Mario/NPC sprites, pause world map, glyphs, and any
 palette-swapped surfaces. LOD, vertex-alpha fog, saturation-sensitive TEV
 programs, key-width/K0-K3 conversion, broader maps, and full device validation
 remain open M13 boundaries.
+
+## r14 frame-safe texture churn and clipped state
+
+Real-hardware testing of r13 reproduced the black Toad Town backdrop, visually
+cut sprites, and a system crash while opening Paper Mario's pause menu. That
+rules out a Folium-only presentation issue. The follow-up audit found that the
+runtime LRU cache deleted `C3D_Tex` allocations immediately during display-list
+translation even though already-recorded PICA commands in the same frame still
+referenced those allocations. A texture-heavy frame could therefore free and
+reuse the backdrop or an early sprite before the GPU consumed its draw, while
+pause-menu texture churn could escalate the same use-after-retire defect into a
+GPU/system failure.
+
+`0.13.14-m13r14` detaches evicted or replaced textures from the logical cache
+but retires their native allocations as a batch. The renderer submits the
+frame, synchronizes PICA once when a retirement batch exists, and only then
+calls `C3D_TexDelete`. A failed retirement-node allocation leaves the live
+texture intact instead of desynchronizing the native and Fast3D registries.
+The bottom screen reports runtime eviction attempts as `Ev` and native
+retirements as `Rt total/peak/fail`; the failure component must remain zero. A
+192-source display-list regression exercises intra-frame LRU eviction under
+ASan/UBSan without renderer rejection.
+
+The supplied clipping/legacy-combiner patch is included in the same candidate.
+Partially off-screen viewport and scissor requests are intersected with the
+400x240 target so an animated pause clip cannot leave unrelated stale state;
+fully off-screen rectangles still reject. The duplicate per-frame framebuffer
+clear is removed. For legacy CPU-combiner batches, the GPU samples a texture
+only when the fallback can reconstruct a pure texel modulation. Unsafe
+subtractive/additive formulas now keep the CPU approximation rather than
+multiplying it by a real texel a second time and crushing the result toward
+black; `Unsafe` counts those measured fallbacks.
+
+These are targeted corrections for all three observed symptoms, not a claim
+that M13 or the TEV migration is complete. Hardware acceptance still requires
+an intact backdrop and sprites, repeated pause/resume without a crash, zero
+retirement failures/rejections, and comparison against PaperBoat/N64 output.

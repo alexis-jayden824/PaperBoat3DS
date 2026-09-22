@@ -205,8 +205,8 @@ bool NativeSampler(PBRenderer3DS *renderer, uint32_t id,
                    PBTextureWrap wrapT) {
     return pb_renderer_3ds_set_sampler(renderer, id, filter, wrapS, wrapT);
 }
-void NativeDelete(PBRenderer3DS *renderer, uint32_t id) {
-    pb_renderer_3ds_delete_texture(renderer, id);
+bool NativeDelete(PBRenderer3DS *renderer, uint32_t id) {
+    return pb_renderer_3ds_delete_texture(renderer, id);
 }
 bool NativeCombiner(PBRenderer3DS *renderer, const PBGfxCombinerPlan &plan,
                     const float inputs[6][4]) {
@@ -260,7 +260,9 @@ bool NativeSampler(PBRenderer3DS *, uint32_t, PBTextureFilter,
                    PBTextureWrap, PBTextureWrap) {
     return true;
 }
-void NativeDelete(PBRenderer3DS *, uint32_t) {}
+bool NativeDelete(PBRenderer3DS *, uint32_t) {
+    return true;
+}
 bool NativeCombiner(PBRenderer3DS *, const PBGfxCombinerPlan &plan,
                     const float inputs[6][4]) {
     PBGfxTevProgram program = {};
@@ -1022,11 +1024,18 @@ void GfxRenderingAPI3DS::SelectTextureFb(int fbId, int tile) {
 }
 
 void GfxRenderingAPI3DS::DeleteTexture(uint32_t texId) {
-    if (mImpl == nullptr ||
-        !pb_gfx_bridge_delete_texture(&mImpl->bridge, texId)) {
+    if (mImpl == nullptr) {
         return;
     }
-    NativeDelete(mImpl->renderer, texId);
+    if (pb_gfx_bridge_find_texture(&mImpl->bridge, texId) == nullptr) {
+        (void)pb_gfx_bridge_delete_texture(&mImpl->bridge, texId);
+        return;
+    }
+    if (!NativeDelete(mImpl->renderer, texId)) {
+        mImpl->Reject();
+        return;
+    }
+    (void)pb_gfx_bridge_delete_texture(&mImpl->bridge, texId);
 }
 
 void GfxRenderingAPI3DS::SetTextureFilter(Fast::FilteringMode mode) {

@@ -182,14 +182,21 @@ static void print_bottom_screen(PrintConsole *console,
                    (unsigned long)graphics_stats->rejected_commands);
         }
         if (runtime_gfx_stats != NULL) {
-            printf("\x1b[17;2HDL cmd:%llu unk:%lu miss:%lu\n",
+            printf("\x1b[17;2HDL:%llu unk:%lu miss:%lu Ev:%llu\n",
                    (unsigned long long)runtime_gfx_stats->commands,
                    (unsigned long)runtime_gfx_stats->unknown_commands,
-                   (unsigned long)runtime_gfx_stats->missing_resources);
-            printf("\x1b[18;2HLists:%llu depth:%lu bad:%lu\n",
+                   (unsigned long)runtime_gfx_stats->missing_resources,
+                   (unsigned long long)runtime_gfx_stats->texture_evictions);
+            printf("\x1b[18;2HLst:%llu d:%lu bad:%lu Rt:%llu/%lu/%lu\n",
                    (unsigned long long)runtime_gfx_stats->display_lists,
                    (unsigned long)runtime_gfx_stats->max_call_depth,
-                   (unsigned long)runtime_gfx_stats->malformed_lists);
+                   (unsigned long)runtime_gfx_stats->malformed_lists,
+                   (unsigned long long)(renderer_stats != NULL
+                       ? renderer_stats->texture_retirements : 0U),
+                   (unsigned long)(renderer_stats != NULL
+                       ? renderer_stats->retired_texture_peak : 0U),
+                   (unsigned long)(renderer_stats != NULL
+                       ? renderer_stats->texture_retire_failures : 0U));
             printf("\x1b[27;2HCmd/f:%lu pk:%lu CC:%llu/%llu 2C:%llu\n",
                    (unsigned long)runtime_gfx_stats->commands_last_frame,
                    (unsigned long)runtime_gfx_stats->commands_peak_frame,
@@ -204,11 +211,13 @@ static void print_bottom_screen(PrintConsole *console,
                        runtime_gfx_stats->semantic_fog_batches,
                    (unsigned long long)
                        runtime_gfx_stats->legacy_fog_fallbacks);
-            printf("\x1b[29;2HKey/conv semantic:%llu legacy:%llu\n",
+            printf("\x1b[29;2HKey/conv:%llu/%llu Unsafe:%llu\n",
                    (unsigned long long)
                        runtime_gfx_stats->semantic_key_convert_batches,
                    (unsigned long long)
-                       runtime_gfx_stats->legacy_key_convert_fallbacks);
+                       runtime_gfx_stats->legacy_key_convert_fallbacks,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_unsafe_modulate_batches);
         }
         printf("\x1b[19;2HSystem: %s  %s\n",
                state->model_query_ok
@@ -695,7 +704,10 @@ int main(int argc, char **argv) {
                      "semantic_fog_batches=%llu legacy_fog_fallbacks=%llu "
                      "semantic_key_convert_batches=%llu "
                      "legacy_key_convert_fallbacks=%llu "
-                     "legacy_combiner_fallbacks=%llu texture_fallbacks=%llu "
+                     "legacy_combiner_fallbacks=%llu "
+                     "legacy_unsafe_modulate_batches=%llu "
+                     "texture_fallbacks=%llu "
+                     "texture_evictions=%llu "
                      "unknown=%lu missing=%lu malformed=%lu",
                      (unsigned long long)runtime_gfx_stats->commands,
                      (unsigned long long)runtime_gfx_stats->display_lists,
@@ -713,7 +725,10 @@ int main(int argc, char **argv) {
                          runtime_gfx_stats->legacy_key_convert_fallbacks,
                      (unsigned long long)
                          runtime_gfx_stats->legacy_combiner_fallbacks,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_unsafe_modulate_batches,
                      (unsigned long long)runtime_gfx_stats->texture_fallbacks,
+                     (unsigned long long)runtime_gfx_stats->texture_evictions,
                      (unsigned long)runtime_gfx_stats->unknown_commands,
                      (unsigned long)runtime_gfx_stats->missing_resources,
                      (unsigned long)runtime_gfx_stats->malformed_lists);
@@ -723,7 +738,8 @@ int main(int argc, char **argv) {
                      "frames=%llu draws=%llu vertices=%llu frame_failures=%lu "
                      "command_peak_permille=%lu state_changes=%lu cached=%lu "
                      "rejected=%lu stream_peak_vertices=%lu "
-                     "stream_overflows=%lu",
+                     "stream_overflows=%lu texture_retirements=%llu "
+                     "retired_texture_peak=%lu texture_retire_failures=%lu",
                      (unsigned long long)renderer_stats->frames,
                      (unsigned long long)renderer_stats->draw_calls,
                      (unsigned long long)renderer_stats->vertices,
@@ -734,7 +750,10 @@ int main(int argc, char **argv) {
                      (unsigned long)renderer_stats->state_deduplicated,
                      (unsigned long)renderer_stats->rejected_commands,
                      (unsigned long)renderer_stats->stream_peak_vertices,
-                     (unsigned long)renderer_stats->stream_overflows);
+                     (unsigned long)renderer_stats->stream_overflows,
+                     (unsigned long long)renderer_stats->texture_retirements,
+                     (unsigned long)renderer_stats->retired_texture_peak,
+                     (unsigned long)renderer_stats->texture_retire_failures);
     }
     pb_log_write(&log, PB_LOG_INFO, "shutdown",
                  "application_free=%lu linear_free=%lu peak_application=%lu "

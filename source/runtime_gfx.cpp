@@ -312,9 +312,11 @@ class RuntimeDisplayListRenderer {
 #else
         pauseFrame = false;
 #endif
+        /* StartFrame performs this clear in the native renderer, honoring the
+         * preserve-color flag for pause frames. Avoid issuing the same full
+         * framebuffer clear twice on PICA200. */
         api->PreserveColorOnNextFrame(pauseFrame);
         api->StartFrame();
-        api->ClearFramebuffer(!pauseFrame, true);
         depthClearPending = false;
         api->SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
         api->SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
@@ -1027,6 +1029,35 @@ class RuntimeDisplayListRenderer {
         }
     }
 
+    /*
+     * The legacy CPU evaluator substitutes white for texture operands, then
+     * the legacy texture shader multiplies that approximation by TEXEL0.
+     * This reconstruction is only valid for one pure `(texel - 0) * c + 0`
+     * RGB term. For any subtractive, additive, multi-texture, or differently
+     * placed texture operand, applying another GPU texture multiply compounds
+     * the approximation and can drive the result toward black.
+     */
+    bool CombinerTextureSafeForModulate(
+        const DecodedCombiner &combiner) const {
+        size_t textureSlotCount = 0U;
+        bool pureModulate = true;
+        for (size_t cycleIndex = 0U; cycleIndex < combiner.cycleCount;
+             cycleIndex++) {
+            const CombinerCycle &cycle = combiner.cycles[cycleIndex];
+            for (size_t slot = 0U; slot < 4U; slot++) {
+                const uint8_t value = cycle.rgb[slot];
+                const bool isTexture = value == 1U || value == 2U ||
+                                       value == 8U || value == 9U;
+                if (!isTexture) continue;
+                textureSlotCount++;
+                const bool pureCycle = slot == 0U && cycle.rgb[1] == 31U &&
+                                       cycle.rgb[3] == 31U;
+                if (!pureCycle) pureModulate = false;
+            }
+        }
+        return textureSlotCount == 1U && pureModulate;
+    }
+
     FloatColor EvaluateCombiner(const LoadedVertex &vertex) const {
         FloatColor combined = {};
         const FloatColor shade = ToFloatColor(vertex.color);
@@ -1347,6 +1378,7 @@ class RuntimeDisplayListRenderer {
             });
         api->DeleteTexture(oldest->id);
         textures.erase(oldest);
+        stats.texture_evictions++;
     }
 
     TextureCacheEntry *FallbackTexture(size_t uploadUnit) {
@@ -1522,6 +1554,9 @@ class RuntimeDisplayListRenderer {
         batchTextured = textured;
         batchTextureReplace = !batchSemantic && textured &&
                               (!batchCombiner.use.texture || copyCycle);
+        const bool sampleTexture =
+            textured && (batchSemantic || batchTextureReplace ||
+                         CombinerTextureSafeForModulate(batchCombiner));
         const bool depthTest =
             ((geometryMode & G_ZBUFFER) != 0U ||
              (otherModeLow & G_ZS_PRIM) != 0U) &&
@@ -1553,7 +1588,7 @@ class RuntimeDisplayListRenderer {
             batchFogSource == FogSource::Constant
                 ? static_cast<int16_t>(fogColor.alpha)
                 : fogOffset);
-        if (textured) {
+        if (sampleTexture) {
             const bool linear = ((otherModeHigh >> 12U) & 3U) != 0U;
             api->SetTextureFilter(linear ? Fast::FILTER_LINEAR
                                          : Fast::FILTER_NONE);
@@ -1579,8 +1614,11 @@ class RuntimeDisplayListRenderer {
             api->SetCombinerUniforms(semantic.uniforms);
             api->LoadShader(semantic.shader);
         } else {
-            batchShaderUsesTexture0 = textured;
-            api->LoadShader(textured ? textureShader : shadeShader);
+            batchShaderUsesTexture0 = sampleTexture;
+            api->LoadShader(sampleTexture ? textureShader : shadeShader);
+            if (textured && !sampleTexture) {
+                stats.legacy_unsafe_modulate_batches++;
+            }
         }
         return true;
     }

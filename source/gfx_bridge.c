@@ -677,15 +677,37 @@ bool pb_gfx_bridge_end_frame(PBGfxBridge *bridge, bool presented) {
 
 static bool set_rectangle(PBViewport *destination, bool *valid, int x, int y,
                           int width, int height) {
-    if (destination == NULL || valid == NULL || x < 0 || y < 0 || width <= 0 ||
-        height <= 0 || x > (int)PB_RENDER_TOP_WIDTH - width ||
-        y > (int)PB_RENDER_TOP_HEIGHT - height) {
+    if (destination == NULL || valid == NULL || width <= 0 || height <= 0) {
         return false;
     }
-    destination->x = (uint16_t)x;
-    destination->y = (uint16_t)y;
-    destination->width = (uint16_t)width;
-    destination->height = (uint16_t)height;
+
+    /* Fast3D camera offsets and animated menu clips can extend a rectangle a
+     * few pixels beyond the logical screen. Intersect those requests with the
+     * visible target so a rejected update cannot leave a stale, wider clip
+     * rectangle bound for a later draw. Use widened arithmetic so extreme
+     * signed inputs cannot overflow while calculating the far edge. */
+    long long left = x;
+    long long top = y;
+    long long right = (long long)x + (long long)width;
+    long long bottom = (long long)y + (long long)height;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > (long long)PB_RENDER_TOP_WIDTH) {
+        right = (long long)PB_RENDER_TOP_WIDTH;
+    }
+    if (bottom > (long long)PB_RENDER_TOP_HEIGHT) {
+        bottom = (long long)PB_RENDER_TOP_HEIGHT;
+    }
+    if (left >= (long long)PB_RENDER_TOP_WIDTH ||
+        top >= (long long)PB_RENDER_TOP_HEIGHT || right <= left ||
+        bottom <= top) {
+        return false;
+    }
+
+    destination->x = (uint16_t)left;
+    destination->y = (uint16_t)top;
+    destination->width = (uint16_t)(right - left);
+    destination->height = (uint16_t)(bottom - top);
     *valid = true;
     return true;
 }

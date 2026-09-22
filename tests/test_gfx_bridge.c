@@ -238,8 +238,14 @@ static bool test_frame_and_rectangles(void) {
     CHECK(pb_gfx_bridge_set_scissor(&bridge, 40, 30, 320, 180));
     CHECK(bridge.viewport_valid);
     CHECK(bridge.scissor_valid);
-    CHECK(!pb_gfx_bridge_set_viewport(&bridge, -1, 0, 400, 240));
-    CHECK(!pb_gfx_bridge_set_scissor(&bridge, 399, 0, 2, 1));
+    CHECK(pb_gfx_bridge_set_viewport(&bridge, -1, 0, 400, 240));
+    CHECK(bridge.viewport.x == 0 && bridge.viewport.y == 0 &&
+          bridge.viewport.width == 399 && bridge.viewport.height == 240);
+    CHECK(pb_gfx_bridge_set_scissor(&bridge, 399, 0, 2, 1));
+    CHECK(bridge.scissor.x == 399 && bridge.scissor.y == 0 &&
+          bridge.scissor.width == 1 && bridge.scissor.height == 1);
+    CHECK(!pb_gfx_bridge_set_viewport(&bridge, 400, 0, 10, 10));
+    CHECK(!pb_gfx_bridge_set_scissor(&bridge, 0, 240, 10, 10));
     CHECK(pb_gfx_bridge_start_frame(&bridge));
     CHECK(!pb_gfx_bridge_start_frame(&bridge));
     CHECK(pb_gfx_bridge_end_frame(&bridge, true));

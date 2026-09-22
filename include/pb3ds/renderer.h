@@ -160,6 +160,9 @@ typedef struct {
     size_t stream_peak_vertices;
     uint32_t stream_overflows;
     size_t texture_bytes;
+    uint64_t texture_retirements;
+    uint32_t retired_texture_peak;
+    uint32_t texture_retire_failures;
     float command_buffer_peak;
 } PBRendererStats;
 
@@ -241,7 +244,7 @@ bool pb_renderer_3ds_set_sampler(PBRenderer3DS *renderer,
                                  PBTextureFilter filter,
                                  PBTextureWrap wrap_s,
                                  PBTextureWrap wrap_t);
-void pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
+bool pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
                                     uint32_t texture_id);
 bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
                                   int combiner_mode);

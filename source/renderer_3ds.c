@@ -36,12 +36,19 @@ typedef struct {
     bool sampler_set;
 } PBRendererTexture;
 
+typedef struct PBRendererRetiredTexture {
+    C3D_Tex texture;
+    struct PBRendererRetiredTexture *next;
+} PBRendererRetiredTexture;
+
 struct PBRenderer3DS {
     C3D_RenderTarget *target;
     DVLB_s *shader_dvlb;
     shaderProgram_s program;
     C3D_Mtx projection;
     PBRendererTexture textures[PB_GFX_MAX_TEXTURES];
+    PBRendererRetiredTexture *retired_textures;
+    uint32_t retired_texture_count;
     PBRenderStateCache state_cache;
     PBViewport scissor;
     PBRendererStats stats;
@@ -102,6 +109,58 @@ static PBRendererTexture *find_free_texture(PBRenderer3DS *renderer) {
         }
     }
     return NULL;
+}
+
+/*
+ * Citro3D records texture addresses in commands that execute after the CPU
+ * has finished walking PaperBoat's display list.  A runtime-cache eviction
+ * must therefore stop exposing the logical texture immediately without
+ * releasing its C3D_Tex allocation until the submitted frame is complete.
+ */
+static bool retire_texture(PBRenderer3DS *renderer, C3D_Tex *texture) {
+    if (renderer == NULL || texture == NULL) {
+        return false;
+    }
+    PBRendererRetiredTexture *retired = malloc(sizeof(*retired));
+    if (retired == NULL) {
+        renderer->stats.texture_retire_failures++;
+        return false;
+    }
+    retired->texture = *texture;
+    retired->next = renderer->retired_textures;
+    renderer->retired_textures = retired;
+    memset(texture, 0, sizeof(*texture));
+    renderer->retired_texture_count++;
+    renderer->stats.texture_retirements++;
+    if (renderer->retired_texture_count >
+        renderer->stats.retired_texture_peak) {
+        renderer->stats.retired_texture_peak =
+            renderer->retired_texture_count;
+    }
+    return true;
+}
+
+static void release_retired_textures(PBRenderer3DS *renderer) {
+    if (renderer == NULL) {
+        return;
+    }
+    PBRendererRetiredTexture *retired = renderer->retired_textures;
+    while (retired != NULL) {
+        PBRendererRetiredTexture *next = retired->next;
+        C3D_TexDelete(&retired->texture);
+        free(retired);
+        retired = next;
+    }
+    renderer->retired_textures = NULL;
+    renderer->retired_texture_count = 0U;
+}
+
+static void sync_and_release_retired_textures(PBRenderer3DS *renderer) {
+    if (renderer == NULL || renderer->retired_textures == NULL) {
+        return;
+    }
+    C3D_FrameSync();
+    release_retired_textures(renderer);
 }
 
 static void apply_pipeline(PBRenderer3DS *renderer) {
@@ -371,6 +430,9 @@ bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer) {
         renderer->frame_open) {
         return false;
     }
+    /* Delete resources retired after the previous FrameEnd only after its
+     * queued PICA work has completed. */
+    sync_and_release_retired_textures(renderer);
     if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) {
         renderer->stats.frame_failures++;
         return false;
@@ -417,6 +479,9 @@ bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer) {
     }
     C3D_FrameEnd(0);
     renderer->frame_open = false;
+    /* Evicted textures can still be referenced by this frame's command list.
+     * One synchronization releases the whole retirement batch safely. */
+    sync_and_release_retired_textures(renderer);
     renderer->stats.frames++;
     return true;
 }
@@ -424,6 +489,11 @@ bool pb_renderer_3ds_end_frame(PBRenderer3DS *renderer) {
 void pb_renderer_3ds_finish(PBRenderer3DS *renderer) {
     if (renderer != NULL && renderer->c3d_ready) {
         C3D_FrameSync();
+        /* FrameSync cannot cover commands that are still being recorded in
+         * an open frame. EndFrame owns that retirement batch. */
+        if (!renderer->frame_open) {
+            release_retired_textures(renderer);
+        }
     }
 }
 
@@ -532,8 +602,12 @@ bool pb_renderer_3ds_upload_texture(PBRenderer3DS *renderer,
     C3D_TexFlush(&new_texture);
 
     if (entry->allocated) {
-        renderer->stats.texture_bytes -= entry->texture.size;
-        C3D_TexDelete(&entry->texture);
+        const size_t old_texture_size = entry->texture.size;
+        if (!retire_texture(renderer, &entry->texture)) {
+            C3D_TexDelete(&new_texture);
+            return false;
+        }
+        renderer->stats.texture_bytes -= old_texture_size;
     }
     entry->id = texture_id;
     entry->texture = new_texture;
@@ -586,20 +660,28 @@ bool pb_renderer_3ds_set_sampler(PBRenderer3DS *renderer,
     return true;
 }
 
-void pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
+bool pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
                                     uint32_t texture_id) {
+    if (renderer == NULL) {
+        return false;
+    }
     PBRendererTexture *entry = find_texture(renderer, texture_id);
     if (entry == NULL) {
-        return;
+        /* Logical textures do not acquire native storage until upload. */
+        return true;
+    }
+    const size_t texture_size = entry->texture.size;
+    if (!retire_texture(renderer, &entry->texture)) {
+        return false;
     }
     for (size_t tile = 0; tile < PB_GFX_TEXTURE_UNITS; tile++) {
         if (renderer->bound_textures[tile] == texture_id) {
             renderer->bound_textures[tile] = 0U;
         }
     }
-    renderer->stats.texture_bytes -= entry->texture.size;
-    C3D_TexDelete(&entry->texture);
+    renderer->stats.texture_bytes -= texture_size;
     memset(entry, 0, sizeof(*entry));
+    return true;
 }
 
 bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
@@ -779,6 +861,7 @@ void pb_renderer_3ds_destroy(PBRenderer3DS *renderer) {
     }
     if (renderer->c3d_ready) {
         C3D_FrameSync();
+        release_retired_textures(renderer);
     }
     for (size_t index = 0; index < PB_GFX_MAX_TEXTURES; index++) {
         if (renderer->textures[index].allocated) {
