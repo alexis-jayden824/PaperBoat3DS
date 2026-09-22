@@ -156,6 +156,8 @@ m12-layout-test:
 		"$(BUILD)/m12-layout-tests"
 
 m13-world-test: fetch-upstream
+	@python3 tests/test_m13_runtime_generation.py \
+		tools/generate_m13_runtime.py "$(PAPERBOAT_ROOT)"
 	@HOST_CC="$(HOST_CC)" sh tools/test_world_boot.sh \
 		"$(BUILD)/m13-tests"
 	@HOST_CC="$(HOST_CC)" sh tools/test_world_scene.sh \

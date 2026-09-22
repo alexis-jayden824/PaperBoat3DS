@@ -171,6 +171,34 @@ b32 PB3DS_RuntimeHeapStorageAligned(void) {
 '''
 
 
+MAC_00_EXIT_TRIGGERS = r'''EvtScript N(EVS_BindExitTriggers) = {
+    BindTrigger(Ref(N(EVS_ExitWalk_mac_01_0)), TRIGGER_FLOOR_ABOVE, COLLIDER_deilie, 1, 0)
+    Return
+    End
+};'''
+
+
+MAC_01_EXIT_TRIGGERS = r'''EvtScript N(EVS_BindExitTriggers) = {
+    BindTrigger(Ref(N(EVS_ExitWalk_mac_00_1)), TRIGGER_FLOOR_ABOVE, COLLIDER_deiliw, 1, 0)
+    Return
+    End
+};'''
+
+
+def replace_script(source: str, script_name: str, replacement: str) -> str:
+    """Replace one pinned EVT script without accepting an upstream drift."""
+    marker = f"EvtScript N({script_name}) = {{"
+    start = source.find(marker)
+    if start < 0 or source.find(marker, start + 1) >= 0:
+        raise SystemExit(f"pinned script marker changed: {script_name}")
+    end_marker = "\n};"
+    end = source.find(end_marker, start)
+    if end < 0:
+        raise SystemExit(f"pinned script terminator changed: {script_name}")
+    end += len(end_marker)
+    return source[:start] + replacement + source[end:]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("upstream", type=Path)
@@ -213,6 +241,23 @@ def main() -> int:
                 f"pinned heap storage declaration changed: {declaration}"
             )
 
+    # M13 accepts only mac_00 and mac_01.  Keep their authentic shared exit,
+    # but do not bind triggers into chapter maps that are intentionally absent
+    # from the generated registry.  Leaving those triggers live turns a normal
+    # step onto mac_00's sewer pipe into an upstream "Map not found" panic.
+    mac_00_main = (
+        args.upstream / "src/world/area_mac/mac_00/main.c"
+    ).read_text(encoding="utf-8")
+    mac_01_main = (
+        args.upstream / "src/world/area_mac/mac_01/main.c"
+    ).read_text(encoding="utf-8")
+    mac_00_main = replace_script(
+        mac_00_main, "EVS_BindExitTriggers", MAC_00_EXIT_TRIGGERS
+    )
+    mac_01_main = replace_script(
+        mac_01_main, "EVS_BindExitTriggers", MAC_01_EXIT_TRIGGERS
+    )
+
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "runtime_world_mac.c").write_text(
         source.split(marker, 1)[0] + WORLD_SUFFIX.lstrip(), encoding="utf-8"
@@ -225,6 +270,12 @@ def main() -> int:
     )
     (args.output / "runtime_heap_storage.c").write_text(
         HEAP_STORAGE, encoding="utf-8"
+    )
+    (args.output / "runtime_mac_00_main.c").write_text(
+        mac_00_main, encoding="utf-8"
+    )
+    (args.output / "runtime_mac_01_main.c").write_text(
+        mac_01_main, encoding="utf-8"
     )
     return 0
 

@@ -15,7 +15,9 @@ typedef struct {
     uint64_t texture_fallbacks;
     uint64_t semantic_combiner_batches;
     uint64_t semantic_two_cycle_batches;
+    uint64_t semantic_fog_batches;
     uint64_t legacy_combiner_fallbacks;
+    uint64_t legacy_fog_fallbacks;
     uint64_t depth_target_clears;
     uint64_t copy_rectangles;
     uint32_t unknown_commands;
@@ -78,6 +80,9 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
                                   bool decal, int8_t cullKeepSign,
                                   bool useAlpha, bool alphaTest,
                                   uint8_t alphaReference);
+    void ConfigureRuntimeFog(bool enabled, uint8_t red, uint8_t green,
+                             uint8_t blue, int16_t fogMultiply,
+                             int16_t fogOffset);
     void DrawTriangles(float bufVbo[], size_t bufVboLen,
                        size_t bufVboNumTris) override;
     void Init() override;

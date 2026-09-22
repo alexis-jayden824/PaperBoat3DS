@@ -75,12 +75,14 @@ until Toad Town genuinely looks and feels correct on this upstream-driven path.
 
 The recovery candidate now builds a 379-source archive from the pinned
 PaperBoat revision. The application activates it after file confirmation,
-initializes the real game globals and engine data, enters `mac_00` entry 6
+initializes the real game globals and engine data, enters `mac_00` entry 1
 through `GAME_MODE_ENTER_DEMO_WORLD`, and advances frames through upstream
 `Graphics_ThreadUpdate`. That path calls `step_game_loop`,
 `gfx_task_background`, and `gfx_draw_frame`; `Graphics_PushFrame` sends their
 display list to the 3DS interpreter. `PBWorldScene` is absent from the default
-application loop.
+application loop. The generated M13 map units bind only the accepted
+`mac_00`/`mac_01` exits; transitions to maps outside this two-map slice remain
+disabled until their runtime closure is deliberately added.
 
 The desktop port also avoids calling `boot_main` directly because it installs
 NuSystem callbacks and never returns. The 3DS adapter preserves that boundary's
@@ -320,3 +322,38 @@ or pause passes while `Reject` and `Fall` remain zero. Fog, key/convert
 registers, LOD, and TEV saturation-sensitive programs still retain measured
 fallback or device-validation boundaries. This checkpoint therefore advances
 the renderer replacement but does not complete it or close M13.
+
+## r11 bounded-map and fog-semantic recovery
+
+The r10 device log did not show a pause-system failure. It captured
+`Map not found: kmr_20`: startup entry 6 placed Mario on the coordinates shared
+by the Toad Town sewer-pipe trigger, and the map script bound that trigger even
+though the deliberately bounded M13 registry contains only `mac_00` and
+`mac_01`. Pressing START happened near the same update; it was not the failing
+operation.
+
+`0.13.11-m13r11` starts at authentic `mac_00` entry 1 and generates bounded
+copies of both map main units. `mac_00` retains only its walk exit to `mac_01`,
+and `mac_01` retains only its walk exit to `mac_00`. Generation fails if the
+pinned upstream binding markers drift, and a host regression verifies that no
+other exit event is bound. This preserves upstream movement, map scripts, and
+the accepted transition while preventing an unsupported map request from
+becoming a runtime panic.
+
+r11 also moves standard depth fog and constant fog from the compatibility
+evaluator into the semantic backend. The runtime classifies the pinned Fast3D
+blender source, selects fog or blend RGB as required, applies Fast3D's standard
+shade-alpha rule, builds a PICA200 fog visibility LUT from the N64 fog
+multiplier/offset, and binds native fog state per batch. Vertex-alpha-driven
+fog remains an explicit legacy fallback. The bottom screen and shutdown log now report
+`Fog semantic/legacy` independently from the general `CC` and `2C` counters.
+
+Host tests prove the map boundary, fog-LUT endpoints and monotonicity, and a
+real fogged display-list route with one semantic fog batch and no legacy or
+renderer rejection. This directly targets the observed crash and black fogged
+materials, but it is not visual acceptance. The r11 Folium/device run must
+still show a complete Toad Town, intact sprites and UI, stable repeated pause,
+working `mac_00`/`mac_01` transitions, no `kmr_20` panic, increasing semantic
+fog where fogged materials render, and zero error counters before M13 can
+close. Key/convert constants, LOD, vertex-alpha fog, saturation-sensitive TEV
+programs, and broader maps remain measured migration boundaries.

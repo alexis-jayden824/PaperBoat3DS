@@ -53,6 +53,14 @@ struct PBRenderer3DS {
     int combiner_mode;
     PBGfxTevProgram combiner_program;
     bool combiner_program_valid;
+    C3D_FogLut fog_lut;
+    int16_t fog_multiply;
+    int16_t fog_offset;
+    uint8_t fog_red;
+    uint8_t fog_green;
+    uint8_t fog_blue;
+    bool fog_enabled;
+    bool fog_state_valid;
     bool preserve_color_next_frame;
     bool c3d_ready;
     bool program_ready;
@@ -621,6 +629,46 @@ bool pb_renderer_3ds_set_combiner_program(PBRenderer3DS *renderer,
     renderer->combiner_program = *program;
     renderer->combiner_program_valid = true;
     renderer->combiner_mode = -1;
+    return true;
+}
+
+bool pb_renderer_3ds_set_fog(PBRenderer3DS *renderer, bool enabled,
+                             uint8_t red, uint8_t green, uint8_t blue,
+                             int16_t fog_multiply, int16_t fog_offset) {
+    if (renderer == NULL) {
+        return false;
+    }
+    if (renderer->fog_state_valid && renderer->fog_enabled == enabled &&
+        (!enabled ||
+         (renderer->fog_red == red && renderer->fog_green == green &&
+          renderer->fog_blue == blue &&
+          renderer->fog_multiply == fog_multiply &&
+          renderer->fog_offset == fog_offset))) {
+        return true;
+    }
+
+    if (!enabled) {
+        C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+        C3D_FogLutBind(NULL);
+    } else {
+        float values[PB_RENDER_FOG_LUT_VALUES];
+        if (!pb_renderer_fast3d_fog_lut(values, fog_multiply, fog_offset)) {
+            return false;
+        }
+        FogLut_FromArray(&renderer->fog_lut, values);
+        C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
+        C3D_FogColor((uint32_t)red | ((uint32_t)green << 8U) |
+                     ((uint32_t)blue << 16U));
+        C3D_FogLutBind(&renderer->fog_lut);
+    }
+
+    renderer->fog_enabled = enabled;
+    renderer->fog_red = red;
+    renderer->fog_green = green;
+    renderer->fog_blue = blue;
+    renderer->fog_multiply = fog_multiply;
+    renderer->fog_offset = fog_offset;
+    renderer->fog_state_valid = true;
     return true;
 }
 

@@ -12,7 +12,11 @@ real world loop and display lists instead of the custom diagnostic scene. A
 private host trace enters `mac_00`, moves the upstream player, pauses/resumes,
 and renders 379 frames without an unknown command, missing resource, texture
 fallback, malformed list, or renderer rejection. Native ARM11 build and
-side-by-side Folium/hardware presentation acceptance are still required.
+side-by-side Folium/hardware presentation acceptance are still required. The
+r11 candidate additionally bounds the recovery slice to `mac_00`/`mac_01` and
+routes standard depth/constant fog through native PICA200 fog state; those
+changes remain device-validation candidates rather than an M13 completion
+claim.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.

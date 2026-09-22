@@ -189,6 +189,35 @@ float pb_renderer_n64_texture_v(float n64_v, uint16_t source_height,
     return ((float)source_height - n64_v) / (float)texture_height;
 }
 
+bool pb_renderer_fast3d_fog_lut(float values[PB_RENDER_FOG_LUT_VALUES],
+                                int16_t fog_multiply, int16_t fog_offset) {
+    if (values == NULL) {
+        return false;
+    }
+
+    float previous_visibility = 0.0f;
+    for (size_t index = 0; index <= 128U; index++) {
+        /* C3D's default depth map turns renderer.v.pica's clip Z into
+         * depth=(N64 clipZ/clipW + 1)/2.  PICA indexes its fog LUT with that
+         * depth, while Fast3D defines the fog factor in original N64 NDC. */
+        const float depth = (float)index / 128.0f;
+        const float ndc_z = depth * 2.0f - 1.0f;
+        float fog = (ndc_z * (float)fog_multiply + (float)fog_offset) /
+                    255.0f;
+        if (fog < 0.0f) fog = 0.0f;
+        if (fog > 1.0f) fog = 1.0f;
+        const float visibility = 1.0f - fog;
+        if (index < 128U) {
+            values[index] = visibility;
+        }
+        if (index > 0U) {
+            values[index + 127U] = visibility - previous_visibility;
+        }
+        previous_visibility = visibility;
+    }
+    return true;
+}
+
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target) {
     if (logical == NULL || target == NULL || logical->width == 0 ||

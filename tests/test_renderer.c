@@ -168,6 +168,33 @@ static bool test_textured_quad_orientation(void) {
     return true;
 }
 
+static bool nearly_equal(float left, float right) {
+    const float difference = left - right;
+    return difference > -0.0001f && difference < 0.0001f;
+}
+
+static bool test_fast3d_fog_lut(void) {
+    float values[PB_RENDER_FOG_LUT_VALUES];
+    CHECK(!pb_renderer_fast3d_fog_lut(NULL, 0, 0));
+    CHECK(pb_renderer_fast3d_fog_lut(values, 0, 0));
+    for (size_t index = 0; index < 128U; index++) {
+        CHECK(nearly_equal(values[index], 1.0f));
+        CHECK(nearly_equal(values[index + 128U], 0.0f));
+    }
+
+    /* factor=clamp((ndcZ*128+128)/255): visibility runs from 1 at
+     * NDC -1 to 0 at NDC +1.  The second half stores segment deltas. */
+    CHECK(pb_renderer_fast3d_fog_lut(values, 128, 128));
+    CHECK(nearly_equal(values[0], 1.0f));
+    CHECK(values[64] > 0.49f && values[64] < 0.51f);
+    CHECK(values[127] > 0.0f && values[127] < 0.02f);
+    CHECK(nearly_equal(values[127] + values[255], 0.0f));
+    for (size_t index = 128U; index < PB_RENDER_FOG_LUT_VALUES; index++) {
+        CHECK(values[index] <= 0.0f);
+    }
+    return true;
+}
+
 static PBRenderPipeline valid_pipeline(void) {
     const PBRenderPipeline pipeline = {
         .cull_mode = PB_CULL_BACK_CCW,
@@ -277,7 +304,8 @@ static bool test_buffer_contract_and_status(void) {
 int main(void) {
     if (!test_texture_formats() || !test_texture_swizzle() ||
         !test_viewport_rotation() || !test_textured_quad_orientation() ||
-        !test_pipeline_and_cache() || !test_buffer_contract_and_status()) {
+        !test_fast3d_fog_lut() || !test_pipeline_and_cache() ||
+        !test_buffer_contract_and_status()) {
         return EXIT_FAILURE;
     }
 

@@ -258,6 +258,70 @@ static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeDepthFogUsesSemanticCombiner(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* The fog blender used to reject every G_FOG draw from the semantic
+     * compiler.  This is a normal textured one-cycle material plus the exact
+     * Fast3D depth-fog state that must now reach PICA's fog LUT. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD9000000), UINT32_C(0x00010000) } },
+        { .words = { UINT32_C(0xDB080000), UINT32_C(0x00800080) } },
+        { .words = { UINT32_C(0xF8000000), UINT32_C(0x406080FF) } },
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0xC0000000) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->semantic_combiner_batches ==
+          before.semantic_combiner_batches + 1U);
+    CHECK(after->semantic_fog_batches == before.semantic_fog_batches + 1U);
+    CHECK(after->legacy_combiner_fallbacks ==
+          before.legacy_combiner_fallbacks);
+    CHECK(after->legacy_fog_fallbacks == before.legacy_fog_fallbacks);
+
+    /* Blend-color fog uses blend RGB with the fog register's alpha as a
+     * constant factor.  It is semantic even without the G_FOG geometry bit. */
+    const PBRuntimeGfx constantFogDisplayList[] = {
+        { .words = { UINT32_C(0xD9000000), 0U } },
+        { .words = { UINT32_C(0xF8000000), UINT32_C(0x00000080) } },
+        { .words = { UINT32_C(0xF9000000), UINT32_C(0x204060FF) } },
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0x80000000) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats beforeConstant =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, constantFogDisplayList));
+    after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->semantic_combiner_batches ==
+          beforeConstant.semantic_combiner_batches + 1U);
+    CHECK(after->semantic_fog_batches ==
+          beforeConstant.semantic_fog_batches + 1U);
+    CHECK(after->legacy_combiner_fallbacks ==
+          beforeConstant.legacy_combiner_fallbacks);
+    CHECK(after->legacy_fog_fallbacks ==
+          beforeConstant.legacy_fog_fallbacks);
+    return true;
+}
+
 static bool testRuntimeTwoCycleBindsBothTiles(PBGfxApi3DS *api) {
     static uint8_t texture0[8U * 8U * 2U] = {};
     static uint8_t texture1[8U * 8U * 2U] = {};
@@ -492,6 +556,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
+    CHECK(testRuntimeDepthFogUsesSemanticCombiner(api));
     CHECK(testRuntimeTwoCycleBindsBothTiles(api));
     CHECK(testRuntimeTwoCycleUsesBaseTileWithoutLod(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));

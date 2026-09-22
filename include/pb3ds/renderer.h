@@ -14,6 +14,7 @@ extern "C" {
 #define PB_RENDER_TARGET_HEIGHT 400U
 #define PB_RENDER_TEXTURE_MIN_DIMENSION 8U
 #define PB_RENDER_TEXTURE_MAX_DIMENSION 1024U
+#define PB_RENDER_FOG_LUT_VALUES 256U
 
 typedef enum {
     PB_TEXTURE_RGBA8 = 0x0,
@@ -201,6 +202,9 @@ bool pb_renderer_textured_quad(PBTexturedQuad *quad, float left,
 /* N64 texture rows are top-to-bottom; PICA's logical V axis is bottom-to-top. */
 float pb_renderer_n64_texture_v(float n64_v, uint16_t source_height,
                                 uint16_t texture_height);
+/* Build PICA visibility samples/deltas for Fast3D's clip-Z fog equation. */
+bool pb_renderer_fast3d_fog_lut(float values[PB_RENDER_FOG_LUT_VALUES],
+                                int16_t fog_multiply, int16_t fog_offset);
 
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target);
@@ -243,6 +247,9 @@ bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
                                   int combiner_mode);
 bool pb_renderer_3ds_set_combiner_program(PBRenderer3DS *renderer,
                                           const PBGfxTevProgram *program);
+bool pb_renderer_3ds_set_fog(PBRenderer3DS *renderer, bool enabled,
+                             uint8_t red, uint8_t green, uint8_t blue,
+                             int16_t fog_multiply, int16_t fog_offset);
 bool pb_renderer_3ds_draw_stream(PBRenderer3DS *renderer,
                                  const float *vertices,
                                  size_t float_count,

@@ -141,13 +141,15 @@ Paper Mario. It is retained only as diagnostic scaffolding and no longer runs
 after file confirmation.
 
 The recovery candidate builds the pinned PaperBoat closure, initializes the
-upstream engine, enters `mac_00` entry 6, and advances the real
+upstream engine, enters `mac_00` entry 1, and advances the real
 `step_game_loop`, `gfx_task_background`, and `gfx_draw_frame` path. Controller
 input reaches upstream player acceleration, collision, action, and camera
 state. PaperBoat's display lists reach a bounded 3DS interpreter with resource
 path/hash lookup, matrices, vertices, nested lists, tiles, texture loads,
 palettes, combine/other modes, alpha and blend state, fog, scissor, rectangles,
-and depth state.
+and depth state. Generated map units retain only the `mac_00`/`mac_01`
+transition pair, and standard depth/constant fog now reaches native PICA200 fog
+state with independent semantic/legacy diagnostics.
 
 An owner-only 400-update host trace submitted 379 real frames, moved the
 upstream player, and entered/exited the upstream pause mode. Across 2,647,677

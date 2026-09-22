@@ -161,10 +161,13 @@ static void runtime_finish_engine_data(void) {
 
 static void runtime_activate_toad_town(PBRuntime *runtime) {
     /* Keep the original gAreas numbering: Toad Town is area 1.  Its real map
-     * table keeps the original placeholder at index 0, so mac_00 is map 1. */
+     * table keeps the original placeholder at index 0, so mac_00 is map 1.
+     * Entry 1 is the authentic mac_01 -> mac_00 entrance.  The former debug
+     * entry 6 shares the kmr_20 sewer-pipe position and can immediately fire
+     * an exit into a map that is deliberately outside the M13 registry. */
     gGameStatusPtr->areaID = 1;
     gGameStatusPtr->mapID = 1;
-    gGameStatusPtr->entryID = 6;
+    gGameStatusPtr->entryID = 1;
     gGameStatusPtr->prevArea = 1;
     gGameStatusPtr->demoState = DEMO_STATE_NONE;
     runtime->stats.area_id = gGameStatusPtr->areaID;
@@ -176,7 +179,7 @@ static void runtime_activate_toad_town(PBRuntime *runtime) {
     runtime->state = PB_RUNTIME_ACTIVE;
     if (runtime->log != NULL) {
         pb_log_write(runtime->log, PB_LOG_INFO, "runtime",
-                     "upstream activated area=mac map=mac_00 entry=6 "
+                     "upstream activated area=mac map=mac_00 entry=1 "
                      "resources=%lu hits=%lu",
                      (unsigned long)runtime->resources.count,
                      (unsigned long)runtime->resources.hits);

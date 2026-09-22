@@ -26,6 +26,13 @@ rm -f "$archive"
 objects=
 while IFS= read -r source; do
     [ -n "$source" ] || continue
+    case "$source" in
+        src/world/area_mac/mac_00/main.c|src/world/area_mac/mac_01/main.c)
+            # Generated variants retain the accepted mac_00 <-> mac_01 exit
+            # while omitting triggers into maps outside the M13 registry.
+            continue
+            ;;
+    esac
     object_name=$(printf '%s' "$source" | sed 's|/|__|g; s|\.|_|g')
     object="$object_dir/$object_name.o"
     echo "  M13 $source"
@@ -52,7 +59,7 @@ while IFS= read -r source; do
 done < "$source_list"
 
 for generated in runtime_world_mac runtime_game_modes runtime_nusys_overrides \
-        runtime_heap_storage; do
+        runtime_heap_storage runtime_mac_00_main runtime_mac_01_main; do
     object="$object_dir/$generated.o"
     echo "  M13 generated/$generated.c"
     "$compiler" "$@" -c "$generated_dir/$generated.c" -o "$object"

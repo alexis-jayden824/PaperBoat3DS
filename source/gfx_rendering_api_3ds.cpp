@@ -214,6 +214,12 @@ bool NativeCombiner(PBRenderer3DS *renderer, const PBGfxCombinerPlan &plan,
     return pb_gfx_combiner_compile_tev(&plan, inputs, &program) &&
            pb_renderer_3ds_set_combiner_program(renderer, &program);
 }
+bool NativeFog(PBRenderer3DS *renderer, bool enabled, uint8_t red,
+               uint8_t green, uint8_t blue, int16_t fogMultiply,
+               int16_t fogOffset) {
+    return pb_renderer_3ds_set_fog(renderer, enabled, red, green, blue,
+                                   fogMultiply, fogOffset);
+}
 bool NativeDraw(PBRenderer3DS *renderer, const float *vertices,
                 size_t floatCount, size_t triangleCount,
                 const PBGfxCombinerPlan &plan) {
@@ -259,6 +265,12 @@ bool NativeCombiner(PBRenderer3DS *, const PBGfxCombinerPlan &plan,
                     const float inputs[6][4]) {
     PBGfxTevProgram program = {};
     return pb_gfx_combiner_compile_tev(&plan, inputs, &program);
+}
+bool NativeFog(PBRenderer3DS *, bool enabled, uint8_t, uint8_t, uint8_t,
+               int16_t fogMultiply, int16_t fogOffset) {
+    float values[PB_RENDER_FOG_LUT_VALUES];
+    return !enabled ||
+           pb_renderer_fast3d_fog_lut(values, fogMultiply, fogOffset);
 }
 bool NativeDraw(PBRenderer3DS *, const float *, size_t, size_t,
                 const PBGfxCombinerPlan &) {
@@ -828,6 +840,16 @@ void GfxRenderingAPI3DS::ConfigureRuntimePipeline(
     mImpl->pipeline.alpha_function = PB_COMPARE_GREATER;
     mImpl->pipeline.alpha_reference = alphaReference;
     (void)mImpl->ApplyPipeline();
+}
+
+void GfxRenderingAPI3DS::ConfigureRuntimeFog(
+    bool enabled, uint8_t red, uint8_t green, uint8_t blue,
+    int16_t fogMultiply, int16_t fogOffset) {
+    if (mImpl != nullptr &&
+        !NativeFog(mImpl->renderer, enabled, red, green, blue,
+                   fogMultiply, fogOffset)) {
+        mImpl->Reject();
+    }
 }
 
 void GfxRenderingAPI3DS::DrawTriangles(float bufVbo[], size_t bufVboLen,

@@ -102,6 +102,8 @@ constexpr uint32_t Z_UPD = 0x20U;
 constexpr uint32_t ZMODE_DEC = 0xC00U;
 constexpr uint32_t FORCE_BL = 0x4000U;
 constexpr uint32_t G_ZS_PRIM = 1U << 2U;
+constexpr uint8_t G_BL_CLR_BL = 2U;
+constexpr uint8_t G_BL_CLR_FOG = 3U;
 constexpr uint32_t G_CYCLE_TYPE_MASK = 3U << 20U;
 constexpr uint32_t G_CYCLE_2 = 1U << 20U;
 constexpr uint32_t G_CYCLE_COPY = 2U << 20U;
@@ -445,6 +447,13 @@ class RuntimeDisplayListRenderer {
         Fast::ShaderProgram *shader = nullptr;
     };
 
+    enum class FogSource : uint8_t {
+        None,
+        Depth,
+        Constant,
+        VertexAlpha,
+    };
+
     struct FloatColor {
         float red = 0.0f;
         float green = 0.0f;
@@ -514,6 +523,7 @@ class RuntimeDisplayListRenderer {
         batchShaderUsesTexture1 = false;
         batchShaderUsesShade = true;
         batchShaderUsesAlpha = true;
+        batchFogSource = FogSource::None;
         batchCombiner = {};
         batchTextureTiles = {};
         batchTextureInfo = {};
@@ -845,10 +855,24 @@ class RuntimeDisplayListRenderer {
         return true;
     }
 
+    FogSource CurrentFogSource() const {
+        const uint8_t blendSource =
+            static_cast<uint8_t>((otherModeLow >> 30U) & 3U);
+        if (blendSource == G_BL_CLR_BL) {
+            return FogSource::Constant;
+        }
+        if (blendSource != G_BL_CLR_FOG) {
+            return FogSource::None;
+        }
+        return (geometryMode & G_FOG) != 0U
+                   ? FogSource::Depth
+                   : FogSource::VertexAlpha;
+    }
+
     bool BuildSemanticBatch(const DecodedCombiner &decoded,
                             SemanticBatch *semantic) {
         if (semantic == nullptr || api == nullptr ||
-            (geometryMode & G_FOG) != 0U) {
+            CurrentFogSource() == FogSource::VertexAlpha) {
             return false;
         }
         *semantic = {};
@@ -967,30 +991,47 @@ class RuntimeDisplayListRenderer {
     }
 
     Color ShadeForVertex(const LoadedVertex &vertex) const {
+        const FogSource fogSource = CurrentFogSource();
+        LoadedVertex combinerVertex = vertex;
+        if (fogSource == FogSource::Depth ||
+            fogSource == FogSource::VertexAlpha) {
+            /* Fast3D carries the fog factor separately and forces the shade
+             * alpha consumed by the combiner to one for these fog modes. */
+            combinerVertex.color.alpha = 255U;
+        }
         FloatColor evaluated = batchFill
                                    ? ToFloatColor(fillRectangleColor)
                                    : (batchTextureReplace
                                           ? FloatColor{ 1.0f, 1.0f, 1.0f,
                                                         1.0f }
-                                          : EvaluateCombiner(vertex));
+                                          : EvaluateCombiner(combinerVertex));
         Color output = {
             static_cast<uint8_t>(evaluated.red * 255.0f + 0.5f),
             static_cast<uint8_t>(evaluated.green * 255.0f + 0.5f),
             static_cast<uint8_t>(evaluated.blue * 255.0f + 0.5f),
             static_cast<uint8_t>(evaluated.alpha * 255.0f + 0.5f),
         };
-        if ((geometryMode & G_FOG) != 0U) {
-            const float divisor = std::fabs(vertex.clipW) < 0.001f
-                                      ? std::copysign(0.001f, vertex.clipW)
-                                      : vertex.clipW;
-            const float factor = Clamp01(
-                (vertex.clipZ / divisor * fogMultiply + fogOffset) / 255.0f);
+        if (fogSource != FogSource::None) {
+            const Color &fogBlendColor =
+                fogSource == FogSource::Constant ? blendColor : fogColor;
+            float factor = 0.0f;
+            if (fogSource == FogSource::Depth) {
+                const float divisor = std::fabs(vertex.clipW) < 0.001f
+                                          ? std::copysign(0.001f, vertex.clipW)
+                                          : vertex.clipW;
+                factor = Clamp01((vertex.clipZ / divisor * fogMultiply +
+                                  fogOffset) / 255.0f);
+            } else if (fogSource == FogSource::Constant) {
+                factor = static_cast<float>(fogColor.alpha) / 255.0f;
+            } else {
+                factor = static_cast<float>(vertex.color.alpha) / 255.0f;
+            }
             output.red = static_cast<uint8_t>(
-                output.red * (1.0f - factor) + fogColor.red * factor);
+                output.red * (1.0f - factor) + fogBlendColor.red * factor);
             output.green = static_cast<uint8_t>(
-                output.green * (1.0f - factor) + fogColor.green * factor);
+                output.green * (1.0f - factor) + fogBlendColor.green * factor);
             output.blue = static_cast<uint8_t>(
-                output.blue * (1.0f - factor) + fogColor.blue * factor);
+                output.blue * (1.0f - factor) + fogBlendColor.blue * factor);
         }
         return output;
     }
@@ -1345,6 +1386,7 @@ class RuntimeDisplayListRenderer {
         batchShaderUsesTexture1 = false;
         batchShaderUsesShade = true;
         batchShaderUsesAlpha = true;
+        batchFogSource = CurrentFogSource();
         SemanticBatch semantic;
         const bool semanticCandidate = !fill && !copyCycle;
         if (semanticCandidate && BuildSemanticBatch(combiner, &semantic)) {
@@ -1357,8 +1399,14 @@ class RuntimeDisplayListRenderer {
             if (semantic.combiner.two_cycle) {
                 stats.semantic_two_cycle_batches++;
             }
+            if (batchFogSource != FogSource::None) {
+                stats.semantic_fog_batches++;
+            }
         } else if (semanticCandidate) {
             stats.legacy_combiner_fallbacks++;
+            if (batchFogSource != FogSource::None) {
+                stats.legacy_fog_fallbacks++;
+            }
         }
         batchTextured = textured;
         batchTextureReplace = !batchSemantic && textured &&
@@ -1382,6 +1430,18 @@ class RuntimeDisplayListRenderer {
             depthTest, depthWrite,
             (otherModeLow & ZMODE_DEC) == ZMODE_DEC, cullKeepSign,
             useAlpha, textured, alphaReference);
+        const bool semanticFog = batchSemantic &&
+                                 batchFogSource != FogSource::None;
+        const Color &fogBlendColor = batchFogSource == FogSource::Constant
+                                         ? blendColor
+                                         : fogColor;
+        api->ConfigureRuntimeFog(
+            semanticFog, fogBlendColor.red, fogBlendColor.green,
+            fogBlendColor.blue,
+            batchFogSource == FogSource::Constant ? 0 : fogMultiply,
+            batchFogSource == FogSource::Constant
+                ? static_cast<int16_t>(fogColor.alpha)
+                : fogOffset);
         if (textured) {
             const bool linear = ((otherModeHigh >> 12U) & 3U) != 0U;
             api->SetTextureFilter(linear ? Fast::FILTER_LINEAR
@@ -1453,8 +1513,11 @@ class RuntimeDisplayListRenderer {
                 t, texture.sourceHeight, texture.textureHeight));
         }
         if (batchShaderUsesShade) {
-            const Color color = batchSemantic ? vertex.color
-                                              : ShadeForVertex(vertex);
+            Color color = batchSemantic ? vertex.color
+                                        : ShadeForVertex(vertex);
+            if (batchSemantic && batchFogSource == FogSource::Depth) {
+                color.alpha = 255U;
+            }
             batch.push_back(static_cast<float>(color.red) / 255.0f);
             batch.push_back(static_cast<float>(color.green) / 255.0f);
             batch.push_back(static_cast<float>(color.blue) / 255.0f);
@@ -2547,6 +2610,7 @@ class RuntimeDisplayListRenderer {
     bool batchShaderUsesTexture1 = false;
     bool batchShaderUsesShade = true;
     bool batchShaderUsesAlpha = true;
+    FogSource batchFogSource = FogSource::None;
     DecodedCombiner batchCombiner = {};
     std::array<Tile, PB_GFX_TEXTURE_UNITS> batchTextureTiles = {};
     std::array<TextureCacheEntry, PB_GFX_TEXTURE_UNITS> batchTextureInfo = {};
