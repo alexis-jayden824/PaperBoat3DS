@@ -62,7 +62,20 @@ for generated in runtime_world_mac runtime_game_modes runtime_nusys_overrides \
         runtime_heap_storage runtime_mac_00_main runtime_mac_01_main; do
     object="$object_dir/$generated.o"
     echo "  M13 generated/$generated.c"
-    "$compiler" "$@" -c "$generated_dir/$generated.c" -o "$object"
+    generated_cflags=
+    case "$generated" in
+        runtime_mac_00_main)
+            generated_cflags="-I$paperboat_root/src/world/area_mac/mac_00"
+            ;;
+        runtime_mac_01_main)
+            generated_cflags="-I$paperboat_root/src/world/area_mac/mac_01"
+            ;;
+    esac
+    # The generated map copies no longer live beside their map-local headers.
+    # Deliberate word splitting supplies the one selected include switch.
+    # shellcheck disable=SC2086
+    "$compiler" "$@" $generated_cflags \
+        -c "$generated_dir/$generated.c" -o "$object"
     objects="$objects $object"
 done
 
