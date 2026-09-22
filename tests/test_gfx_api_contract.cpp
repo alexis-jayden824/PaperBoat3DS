@@ -223,6 +223,57 @@ static bool testRuntimeLoadTileSubregion(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeSplitCi8Palette(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U];
+    static uint8_t paletteLow[128U * 2U];
+    static uint8_t paletteHigh[128U * 2U];
+    std::memset(texture, 200, sizeof(texture));
+    for (size_t entry = 0U; entry < 128U; entry++) {
+        paletteLow[entry * 2U] = 0xFFU;
+        paletteLow[entry * 2U + 1U] = 0xFFU;
+        paletteHigh[entry * 2U] = 0x07U;
+        paletteHigh[entry * 2U + 1U] = 0xC1U;
+    }
+    /* CI8 TLUTs may be loaded as two unrelated 128-entry buffers. The runtime
+     * must stage both halves in TMEM instead of reading 512 bytes from the
+     * first pointer when a texel selects index 128..255. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD10007F),
+                     reinterpret_cast<uintptr_t>(paletteLow) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x071FC000) } },
+        { .words = { UINT32_C(0xFD10007F),
+                     reinterpret_cast<uintptr_t>(paletteHigh) } },
+        { .words = { UINT32_C(0xF5100180), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x071FC000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes + 256U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
 static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
     static uint8_t texture[8U * 8U * 2U] = {};
     /* Cycle 0 is TEXEL0; cycle 1 is SHADE. PaperBoat/Fast selects cycle 0
@@ -602,6 +653,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeDisplayList(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeLoadTileSubregion(api));
+    CHECK(testRuntimeSplitCi8Palette(api));
     CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
     CHECK(testRuntimeDepthFogUsesSemanticCombiner(api));
     CHECK(testRuntimeKeyConvertUsesSemanticCombiner(api));

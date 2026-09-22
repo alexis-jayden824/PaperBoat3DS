@@ -430,6 +430,10 @@ class RuntimeDisplayListRenderer {
         const void *path = nullptr;
         uint32_t id = 0U;
         uint32_t key = 0U;
+        uint64_t paletteHash = 0U;
+        uint32_t type = 0U;
+        uint32_t rowStrideTexels = 0U;
+        uint32_t offsetTexels = 0U;
         uint16_t sourceWidth = 0U;
         uint16_t sourceHeight = 0U;
         uint16_t textureWidth = 0U;
@@ -495,8 +499,8 @@ class RuntimeDisplayListRenderer {
         tiles = {};
         textureToLoad = {};
         loadedTextures = {};
-        paletteBanks.fill(nullptr);
-        paletteFull = nullptr;
+        paletteTmem.fill(0U);
+        paletteEntriesValid.fill(false);
         segmentPointers.fill(0U);
         lights = {};
         lightCount = 1U;
@@ -1127,12 +1131,32 @@ class RuntimeDisplayListRenderer {
 
     const uint8_t *PaletteFor(const Tile &tile, uint32_t type) const {
         if (type == PB_RESOURCE_TEXTURE_CI4) {
-            return paletteBanks[tile.palette & 0xFU];
+            const size_t firstEntry = (tile.palette & 0xFU) * 16U;
+            for (size_t entry = firstEntry; entry < firstEntry + 16U;
+                 entry++) {
+                if (!paletteEntriesValid[entry]) return nullptr;
+            }
+            return paletteTmem.data() + firstEntry * 2U;
         }
         if (type == PB_RESOURCE_TEXTURE_CI8) {
-            return paletteFull != nullptr ? paletteFull : paletteBanks[0];
+            if (!std::all_of(paletteEntriesValid.begin(),
+                             paletteEntriesValid.end(),
+                             [](bool valid) { return valid; })) {
+                return nullptr;
+            }
+            return paletteTmem.data();
         }
         return nullptr;
+    }
+
+    static uint64_t PaletteHash(const uint8_t *palette, uint32_t type) {
+        if (palette == nullptr) return 0U;
+        const size_t bytes = type == PB_RESOURCE_TEXTURE_CI4 ? 32U : 512U;
+        uint64_t hash = UINT64_C(1469598103934665603);
+        for (size_t index = 0U; index < bytes; index++) {
+            hash = (hash ^ palette[index]) * UINT64_C(1099511628211);
+        }
+        return hash;
     }
 
     bool DecodeTexture(const TextureSource &source, const Tile &tile,
@@ -1348,8 +1372,8 @@ class RuntimeDisplayListRenderer {
         }
         api->SelectTexture(static_cast<int>(uploadUnit), id);
         api->UploadTexture(pixels.data(), 8U, 8U);
-        textures.push_back({ this, nullptr, nullptr, id, 0U, 8U, 8U, 8U,
-                             8U, ++textureUseClock });
+        textures.push_back({ this, nullptr, nullptr, id, 0U, 0U, 0U, 0U,
+                             0U, 8U, 8U, 8U, 8U, ++textureUseClock });
         return &textures.back();
     }
 
@@ -1371,6 +1395,7 @@ class RuntimeDisplayListRenderer {
                             ? source.resourceType
                             : TextureTypeFor(tile.format, tile.size);
         const uint8_t *palette = PaletteFor(tile, type);
+        const uint64_t paletteHash = PaletteHash(palette, type);
         uint32_t width = source.loadedWidth;
         uint32_t height = source.loadedHeight;
         if (width == 0U) width = source.resourceWidth;
@@ -1385,12 +1410,20 @@ class RuntimeDisplayListRenderer {
         /* Match DecodeTexture's final fallback exactly so cache lookup and
          * insertion use the same dimensions. */
         if (height == 0U) height = 1U;
+        if (width > UINT16_MAX || height > UINT16_MAX) {
+            stats.texture_fallbacks++;
+            return FallbackTexture(uploadUnit);
+        }
         const uint32_t key = TextureKey(
             source, tile, palette, static_cast<uint16_t>(width),
             static_cast<uint16_t>(height), type);
         for (TextureCacheEntry &entry : textures) {
             if (entry.source == source.data && entry.palette == palette &&
-                entry.key == key) {
+                entry.key == key && entry.paletteHash == paletteHash &&
+                entry.type == type &&
+                entry.rowStrideTexels == source.rowStrideTexels &&
+                entry.offsetTexels == source.offsetTexels &&
+                entry.sourceWidth == width && entry.sourceHeight == height) {
                 entry.lastUse = ++textureUseClock;
                 return &entry;
             }
@@ -1417,6 +1450,7 @@ class RuntimeDisplayListRenderer {
         textures.push_back({
             source.data, palette, source.path, id,
             TextureKey(source, tile, palette, sourceWidth, sourceHeight, type),
+            paletteHash, type, source.rowStrideTexels, source.offsetTexels,
             sourceWidth, sourceHeight, textureWidth, textureHeight,
             ++textureUseClock,
         });
@@ -1813,18 +1847,25 @@ class RuntimeDisplayListRenderer {
     void LoadPalette(size_t tileIndex, size_t entries) {
         if (tileIndex >= tiles.size() || textureToLoad.data == nullptr) return;
         const Tile &tile = tiles[tileIndex];
-        const size_t firstBank =
-            tile.tmem >= 256U ? (tile.tmem - 256U) / 16U : 0U;
-        if (entries >= 256U && firstBank == 0U) {
-            paletteFull = textureToLoad.data;
+        if (tile.tmem < 256U) return;
+        const size_t firstEntry = tile.tmem - 256U;
+        if (firstEntry >= paletteEntriesValid.size() ||
+            entries > paletteEntriesValid.size() - firstEntry ||
+            entries > SIZE_MAX / 2U) {
+            return;
         }
-        for (size_t bank = firstBank;
-             bank < paletteBanks.size() &&
-             (bank - firstBank) * 16U < entries;
-             bank++) {
-            paletteBanks[bank] =
-                textureToLoad.data + (bank - firstBank) * 32U;
+        const size_t bytes = entries * 2U;
+        if (textureToLoad.payloadSize != 0U &&
+            bytes > textureToLoad.payloadSize) {
+            return;
         }
+        /* RDP TLUT is persistent 512-byte TMEM. CI8 palettes commonly arrive
+         * as two independent 128-entry loads; retaining source pointers makes
+         * the upper half an out-of-bounds read and corrupts dark/black texels. */
+        std::memmove(paletteTmem.data() + firstEntry * 2U,
+                     textureToLoad.data, bytes);
+        std::fill(paletteEntriesValid.begin() + firstEntry,
+                  paletteEntriesValid.begin() + firstEntry + entries, true);
     }
 
     void ApplyOtherMode(uint32_t *destination, uint32_t word0,
@@ -2215,9 +2256,14 @@ class RuntimeDisplayListRenderer {
                     Flush();
                     const size_t palette = word0 & 0xFFU;
                     textureToLoad = {};
-                    textureToLoad.data = palette < paletteBanks.size()
-                                             ? paletteBanks[palette]
-                                             : nullptr;
+                    const size_t firstEntry = palette * 16U;
+                    textureToLoad.data =
+                        firstEntry < paletteEntriesValid.size() &&
+                                paletteEntriesValid[firstEntry]
+                            ? paletteTmem.data() + firstEntry * 2U
+                            : nullptr;
+                    textureToLoad.payloadSize =
+                        textureToLoad.data != nullptr ? 32U : 0U;
                     textureToLoad.format = 0U;
                     textureToLoad.size = 2U;
                     break;
@@ -2661,8 +2707,8 @@ class RuntimeDisplayListRenderer {
     TextureSource textureToLoad = {};
     /* N64 RDP TMEM contains 512 64-bit words. */
     std::array<TextureSource, 512U> loadedTextures = {};
-    std::array<const uint8_t *, 16U> paletteBanks = {};
-    const uint8_t *paletteFull = nullptr;
+    std::array<uint8_t, 512U> paletteTmem = {};
+    std::array<bool, 256U> paletteEntriesValid = {};
     std::array<uintptr_t, 16U> segmentPointers = {};
     std::array<N64Light, 9U> lights = {};
     size_t lightCount = 1U;

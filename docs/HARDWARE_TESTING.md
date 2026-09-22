@@ -192,7 +192,7 @@ performance/memory evidence remains outstanding.
 
 ## M13 core overworld gameplay
 
-Use a private `.3dsx` bundle marked `0.13.12-m13r12` with the owner-generated O2R
+Use a private `.3dsx` bundle marked `0.13.13-m13r13` with the owner-generated O2R
 files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
 repeat it on the New 3DS XL/LL when the console is available. In addition:
 
@@ -213,7 +213,7 @@ repeat it on the New 3DS XL/LL when the console is available. In addition:
    stream overflows, and memory failures remain zero, then preserve the exact
    build SHA, both-screen captures, and `PaperBoat3DS.log`.
 
-For r12, also photograph the `Step`, `Cmd/f`, `CC`, `2C`, `Fog`, `Key/conv`,
+For r13, also photograph the `Step`, `Cmd/f`, `CC`, `2C`, `Fog`, `Key/conv`,
 `probe`, and `pause` fields before pausing, while paused, and after resuming.
 `CC` is
 semantic-TEV/legacy-CPU batch count, while `2C` counts two-cycle batches routed
@@ -225,6 +225,9 @@ legacy fog as a vertex-alpha migration case. The general legacy count can
 remain nonzero for other measured migration boundaries. `Key/conv` reports
 semantic/legacy key-and-convert-constant batches; report both values, and treat
 a nonzero legacy value as a renderer migration failure for that material.
+Pay particular attention to CI4/CI8 palette-swapped sprites, glyphs, the world
+background, and the pause map; r13 replaces raw TLUT source pointers with
+bounded 512-byte staging and must show no black or corrupt upper-palette texels.
 Verify that the world background and complete building surfaces are present, Mario/NPCs
 remain whole while crossing other objects, and the warmed-up `last` update
 time is normally at or below 40 ms without the slow-update count continually

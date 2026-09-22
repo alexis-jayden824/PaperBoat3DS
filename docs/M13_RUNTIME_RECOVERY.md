@@ -383,3 +383,26 @@ conversion are not claimed. LOD, vertex-alpha fog, saturation-sensitive TEV
 programs, and broader maps remain explicit migration boundaries. M13 still
 requires a side-by-side r12 playtest showing complete Toad Town materials,
 sprites, UI, pause/resume, and zero error counters.
+
+## r13 bounded TLUT staging
+
+`0.13.13-m13r13` fixes a CI texture defect found in the end-to-end renderer
+audit. The old runtime kept raw palette-source pointers and assumed that a CI8
+palette beginning at bank zero always had 512 contiguous bytes. PaperBoat may
+populate RDP TLUT memory with independent loads, so upper palette indices could
+read beyond the first source buffer and decode as black or corrupt texels.
+
+The runtime now models the 512-byte TLUT as bounded persistent staging, tracks
+validity for all 256 entries, and only decodes CI4/CI8 textures when the selected
+palette range is complete. Texture-cache identity also includes the staged
+palette content and the full decoded source descriptor, preventing a later TLUT
+load or a 32-bit key collision from silently reusing stale RGBA data. A split
+CI8 regression selects an upper-half palette entry and runs under ASan/UBSan in
+CI.
+
+This is a concrete palette/sprite correctness fix, not visual acceptance of all
+Toad Town materials. The r13 playtest must repeat the r12 route and specifically
+inspect the background, Mario/NPC sprites, pause world map, glyphs, and any
+palette-swapped surfaces. LOD, vertex-alpha fog, saturation-sensitive TEV
+programs, key-width/K0-K3 conversion, broader maps, and full device validation
+remain open M13 boundaries.

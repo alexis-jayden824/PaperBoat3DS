@@ -38,7 +38,7 @@ jobs:
         run: sh tools/fetch_upstream.sh
 
       - name: Test M10-M13 libultraship graphics contract
-        run: make m10-graphics-test
+        run: SANITIZE=1 make m10-graphics-test
 
       - name: Test M11 archive-backed frame
         run: make m11-frame-test
