@@ -10,7 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef __3DS__
-#include <3ds/svc.h>
+/* libctru's s32/u32 conflict with libultra types in this translation unit. */
+void svcSleepThread(long long nanoseconds);
 #endif
 
 #include "common.h"
@@ -452,7 +453,7 @@ void GameEngine_HoldFrame(void) {
     /* PaperBoat sleeps ~1/30s so DISABLE_DRAW_FRAME (START pause setup)
      * does not spin the CPU. The outer loop already waits for VBlank when
      * no frame was submitted. */
-    svcSleepThread(33000000LL);
+    svcSleepThread(33000000LL); /* ~1/30s, matching PaperBoat HoldFrame */
 #endif
 }
 
