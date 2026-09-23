@@ -1,3 +1,4 @@
+#include "pb3ds/gbi_command_span.h"
 #include "pb3ds/gfx_rendering_api_3ds.h"
 #include "pb3ds/runtime_resources.h"
 #include "pb3ds/title_flow.h"
@@ -217,6 +218,56 @@ static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
           afterRuntime->commands_last_frame);
     CHECK(afterRuntime->texture_fallbacks ==
           beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(
+    PBGfxApi3DS *api) {
+    /* PaperBoat draws the Toad Town backdrop as COPY-cycle TEXRECT_WIDE
+     * strips from a CI8 + pal256. Many palette entries have a clear RGBA5551
+     * LSB. r8 enabled alpha test for every textured batch, which discarded
+     * those pixels and left the sky black while 3D/sprites still drew. */
+    static uint8_t texture[8U * 8U];
+    static uint8_t palette[256U * 2U];
+    std::memset(texture, 1, sizeof(texture));
+    for (size_t entry = 0U; entry < 256U; entry++) {
+        palette[entry * 2U] = 0x84U;
+        palette[entry * 2U + 1U] = 0x10U; /* RGB, alpha bit clear */
+    }
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD9FFFFFF), UINT32_C(0x00000601) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFD1000FF),
+                     reinterpret_cast<uintptr_t>(palette) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x073FC000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0x37000020), UINT32_C(0x00000020) } },
+        { .words = { 0U, 0U } },
+        { .words = { UINT32_C(0x00001000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterRuntime->copy_rectangles ==
+          beforeRuntime.copy_rectangles + 1U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(pb_gbi_command_span(0xE4U) == 3U);
+    CHECK(pb_gbi_command_span(0x37U) == 3U);
+    CHECK(pb_gbi_command_span(0xDFU) == 1U);
     return true;
 }
 
@@ -818,6 +869,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeDisplayList(api));
     CHECK(testRuntimeMovememViewportUsesBottomLeftOrigin(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
+    CHECK(testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(api));
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeSplitCi8Palette(api));
     CHECK(testRuntimeCi8Pal16Palette(api));

@@ -27,9 +27,10 @@ objects=
 while IFS= read -r source; do
     [ -n "$source" ] || continue
     case "$source" in
-        src/world/area_mac/mac_00/main.c|src/world/area_mac/mac_01/main.c)
+        src/world/area_mac/mac_00/main.c|src/world/area_mac/mac_01/main.c|src/heaps.c)
             # Generated variants retain the accepted mac_00 <-> mac_01 exit
             # while omitting triggers into maps outside the M13 registry.
+            # Generated heaps.c expands D_80200000 to the pause aux cache size.
             continue
             ;;
     esac
@@ -59,7 +60,7 @@ while IFS= read -r source; do
 done < "$source_list"
 
 for generated in runtime_world_mac runtime_game_modes runtime_nusys_overrides \
-        runtime_heap_storage runtime_mac_00_main runtime_mac_01_main; do
+        runtime_heap_storage runtime_heaps runtime_mac_00_main runtime_mac_01_main; do
     object="$object_dir/$generated.o"
     echo "  M13 generated/$generated.c"
     generated_cflags=

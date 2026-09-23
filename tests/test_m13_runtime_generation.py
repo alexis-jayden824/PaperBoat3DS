@@ -28,6 +28,7 @@ def main() -> int:
         )
         mac_00 = (output / "runtime_mac_00_main.c").read_text(encoding="utf-8")
         mac_01 = (output / "runtime_mac_01_main.c").read_text(encoding="utf-8")
+        heap = (output / "runtime_heaps.c").read_text(encoding="utf-8")
 
     mac_00_binds = mac_00.split("EvtScript N(EVS_BindExitTriggers) = {", 1)[1]
     mac_00_binds = mac_00_binds.split("\n};", 1)[0]
@@ -45,7 +46,12 @@ def main() -> int:
         check(blocked not in mac_01_binds,
               f"mac_01 bound an out-of-scope {blocked} exit")
 
-    print("M13 runtime generation checks passed: 9")
+    check("BSS u8 D_80200000[0x38000] ALIGNED(0x1000);" in heap,
+          "generated heaps.c must size the pause aux cache to 0x38000")
+    check("BSS u8 D_80200000[0x4000]" not in heap,
+          "generated heaps.c must not keep the 16 KiB overlay placeholder")
+
+    print("M13 runtime generation checks passed: 11")
     return 0
 
 

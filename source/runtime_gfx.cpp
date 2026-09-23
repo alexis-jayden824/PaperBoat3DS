@@ -548,6 +548,7 @@ class RuntimeDisplayListRenderer {
         batchTextured = false;
         batchHasTexture = {};
         batchFill = false;
+        batchScreenSpace = false;
         batchTextureReplace = false;
         batchSemantic = false;
         batchShaderUsesTexture0 = false;
@@ -1513,18 +1514,20 @@ class RuntimeDisplayListRenderer {
                    : base;
     }
 
-    bool BeginBatch(bool textureRequested, bool fill = false) {
+    bool BeginBatch(bool textureRequested, bool fill = false,
+                    bool screenSpace = false) {
         const DecodedCombiner combiner = DecodeCombiner();
         const bool copyCycle =
             (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY;
         bool textured = textureRequested &&
                         (combiner.use.texture || copyCycle);
         if (batchTriangles != 0U && batchTextured == textured &&
-            batchFill == fill) {
+            batchFill == fill && batchScreenSpace == screenSpace) {
             return true;
         }
         if (!Flush()) return false;
         batchFill = fill;
+        batchScreenSpace = screenSpace;
         batchHasTexture = {};
         batchTextureTiles = {};
         batchTextureInfo = {};
@@ -1576,20 +1579,31 @@ class RuntimeDisplayListRenderer {
              (otherModeLow & G_ZS_PRIM) != 0U) &&
             (otherModeLow & Z_CMP) != 0U;
         const bool depthWrite = (otherModeLow & Z_UPD) != 0U;
+        /* RDP COPY/FILL ignore the blender and geometry cull, and texrects
+         * are screen-space. Enabling alpha test on every textured batch made
+         * CI backdrop palettes whose RGBA5551 LSB is clear fully invisible,
+         * which is the black Toad Town sky with intact 3D/sprites. */
+        const bool opaqueCopyOrFill = copyCycle || fill;
         const uint32_t cull = geometryMode & G_CULL_BOTH;
-        const int8_t cullKeepSign = cull == G_CULL_FRONT
-                                        ? 1
-                                        : (cull == G_CULL_BACK ? -1 : 0);
-        const bool useAlpha = textured ||
-                              (otherModeLow & FORCE_BL) != 0U ||
-                              primColor.alpha != 255U ||
-                              envColor.alpha != 255U;
+        const int8_t cullKeepSign =
+            (opaqueCopyOrFill || screenSpace)
+                ? 0
+                : (cull == G_CULL_FRONT
+                       ? 1
+                       : (cull == G_CULL_BACK ? -1 : 0));
+        const uint32_t alphaCompare = otherModeLow & 3U;
+        const bool useAlpha = !opaqueCopyOrFill &&
+                              ((otherModeLow & FORCE_BL) != 0U ||
+                               primColor.alpha != 255U ||
+                               envColor.alpha != 255U);
+        const bool alphaTest = !opaqueCopyOrFill && alphaCompare != 0U;
         const uint8_t alphaReference =
-            (otherModeLow & 3U) == 1U ? blendColor.alpha : 0U;
+            alphaCompare == 1U ? blendColor.alpha : 0U;
         api->ConfigureRuntimePipeline(
-            depthTest, depthWrite,
+            depthTest && !opaqueCopyOrFill,
+            depthWrite && !opaqueCopyOrFill,
             (otherModeLow & ZMODE_DEC) == ZMODE_DEC, cullKeepSign,
-            useAlpha, textured, alphaReference);
+            useAlpha, alphaTest, alphaReference);
         const bool semanticFog = batchSemantic &&
                                  batchFogSource != FogSource::None;
         const Color &fogBlendColor = batchFogSource == FogSource::Constant
@@ -1782,7 +1796,7 @@ class RuntimeDisplayListRenderer {
                                             upperS, upperT, depth);
             rectangle[5] = rectangle[0];
         }
-        if (!BeginBatch(textured, fill)) return false;
+        if (!BeginBatch(textured, fill, true)) return false;
         for (const LoadedVertex &vertex : rectangle) {
             AppendVertex(vertex);
         }
@@ -2846,6 +2860,7 @@ class RuntimeDisplayListRenderer {
     bool batchTextured = false;
     std::array<bool, PB_GFX_TEXTURE_UNITS> batchHasTexture = {};
     bool batchFill = false;
+    bool batchScreenSpace = false;
     bool batchTextureReplace = false;
     bool batchSemantic = false;
     bool batchShaderUsesTexture0 = false;

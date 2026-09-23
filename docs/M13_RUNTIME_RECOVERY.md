@@ -460,3 +460,42 @@ and scissor as `Sc`. A regression display list uses a 320x100 viewport and
 requires the converted Y origin to be 140. This is a focused clipping fix on
 top of r14's texture-lifetime and combiner work; M13 remains open pending
 side-by-side and repeated-pause validation on real hardware.
+
+## r16 pal16 CI8 TLUT validity
+
+`0.13.16-m13r16` stopped requiring all 256 CI8 TLUT validity flags before
+decoding. Paper Mario menus and sprites often load a 16-entry pal16 into one
+bank; treating unloaded entries as a miss made those surfaces fallback. That
+fix is retained. The r16 hardware capture of `mac_00` still showed a black
+painted backdrop with intact buildings and sprites and `Fall:0`, so the
+remaining sky hole was not a missing pal256.
+
+## r17 COPY-cycle backdrop opacity and pause START hang
+
+The r16 Folium/hardware photo of `mac_00` (`Mode:5`, `Fall:0`, `Reject:0`,
+viewport `40,0 320x240`) shows 3D props and Toad/Mario sprites against a
+black clear. PaperBoat draws that sky as `G_CYC_COPY` `TEXRECT_WIDE` strips
+from `nok_bg` CI8 + pal256. Two interpreter choices discarded those pixels:
+
+- every textured batch enabled alpha test, so RGBA5551 palette entries with a
+  clear LSB (common for backgrounds) were rejected before blending;
+- world geometry mode keeps `G_CULL_BACK`, and screen-space quads after the
+  PICA Y flip do not match that cull convention.
+
+COPY/FILL batches now disable alpha test, alpha blend, depth, and culling;
+other texrects are screen-space and also keep culling off. Alpha test follows
+the RDP compare bits instead of "any textured draw".
+
+START freeze/crash had two separate causes on the pause overlay path:
+
+- `gbi_resolve_vtx_in_static_dl` walked one `Gfx` at a time and never
+  skipped TEXRECT extra words, so a payload byte that was not `G_ENDDL`
+  could loop forever when `pause_init` resolved HUD lists;
+- `hud_element_set_aux_cache(D_80200000, 0x38000)` wrote 224 KiB through a
+  16 KiB overlay placeholder in `heaps.c`. The generated heap unit now sizes
+  `D_80200000` to 0x38000 so START cannot smash adjacent BSS.
+
+A COPY `TEXRECT_WIDE` regression uses a zero-alpha pal256 plus `G_CULL_BACK`
+and still records the copy rectangle. Generation checks the aux-cache array.
+M13 remains open pending a hardware playtest of the painted Toad Town sky
+and repeated START pause/resume.

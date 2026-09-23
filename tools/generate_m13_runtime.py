@@ -258,6 +258,13 @@ def main() -> int:
         mac_01_main, "EVS_BindExitTriggers", MAC_01_EXIT_TRIGGERS
     )
 
+    heaps = (args.upstream / "src/heaps.c").read_text(encoding="utf-8")
+    pause_aux = "BSS u8 D_80200000[0x4000] ALIGNED(0x1000);"
+    pause_aux_fixed = "BSS u8 D_80200000[0x38000] ALIGNED(0x1000);"
+    if heaps.count(pause_aux) != 1:
+        raise SystemExit("pinned heaps.c pause aux cache declaration changed")
+    heaps = heaps.replace(pause_aux, pause_aux_fixed)
+
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "runtime_world_mac.c").write_text(
         source.split(marker, 1)[0] + WORLD_SUFFIX.lstrip(), encoding="utf-8"
@@ -271,6 +278,7 @@ def main() -> int:
     (args.output / "runtime_heap_storage.c").write_text(
         HEAP_STORAGE, encoding="utf-8"
     )
+    (args.output / "runtime_heaps.c").write_text(heaps, encoding="utf-8")
     (args.output / "runtime_mac_00_main.c").write_text(
         mac_00_main, encoding="utf-8"
     )

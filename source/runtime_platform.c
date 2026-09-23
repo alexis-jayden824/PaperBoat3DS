@@ -1,5 +1,6 @@
 #include "pb3ds/runtime.h"
 #include "pb3ds/compat.h"
+#include "pb3ds/gbi_command_span.h"
 
 #include <math.h>
 #include <setjmp.h>
@@ -611,14 +612,24 @@ void gDPSetTextureImageOTR(Gfx *packet, int format, int size, int width,
 }
 void gbi_resolve_vtx_in_static_dl(Gfx *displayList) {
     if (displayList == NULL) return;
-    for (Gfx *command = displayList;; command++) {
-        const unsigned int opcode = command->words.w0 >> 24U;
+    /*
+     * Pause HUD lists mix TEXRECT (3 packets) with ordinary commands. Walking
+     * one Gfx at a time treats S/T payloads as opcodes, can skip G_ENDDL, and
+     * hangs the START menu on 3DS. Bound the walk even if a list is truncated.
+     */
+    const size_t kCommandLimit = 65536U;
+    size_t seen = 0U;
+    for (Gfx *command = displayList; seen < kCommandLimit; ) {
+        const unsigned int opcode = (unsigned int)(command->words.w0 >> 24U);
         if (opcode == G_ENDDL) return;
         if (opcode == G_VTX && command->words.w1 != 0U &&
             GameEngine_OTRSigCheck((const char *)command->words.w1)) {
             void *data = ResourceGetDataByName((const char *)command->words.w1);
             if (data != NULL) command->words.w1 = (uintptr_t)data;
         }
+        const size_t span = pb_gbi_command_span(opcode);
+        command += span;
+        seen += span;
     }
 }
 
