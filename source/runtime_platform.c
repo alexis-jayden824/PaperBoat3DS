@@ -1,6 +1,7 @@
 #include "pb3ds/runtime.h"
 #include "pb3ds/compat.h"
 #include "pb3ds/gbi_command_span.h"
+#include "pb3ds/gbi_resolve.h"
 
 #include <math.h>
 #include <setjmp.h>
@@ -8,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __3DS__
+#include <3ds/svc.h>
+#endif
 
 #include "common.h"
 #include "audio/public.h"
@@ -16,6 +20,9 @@
 #include "gbi_custom.h"
 #include "port/interpolation/FrameInterpolation.h"
 #include "sprite.h"
+
+_Static_assert(sizeof(Gfx) == sizeof(PBGbiPacket),
+               "static DL walker packet layout must match Gfx");
 
 extern void init_game_globals(void);
 extern void Graphics_ThreadUpdate(void);
@@ -440,7 +447,14 @@ void Graphics_PushFrame(Gfx *displayList) {
 
 void GameEngine_StartAudioFrame(void) {}
 void GameEngine_EndAudioFrame(void) {}
-void GameEngine_HoldFrame(void) {}
+void GameEngine_HoldFrame(void) {
+#ifdef __3DS__
+    /* PaperBoat sleeps ~1/30s so DISABLE_DRAW_FRAME (START pause setup)
+     * does not spin the CPU. The outer loop already waits for VBlank when
+     * no frame was submitted. */
+    svcSleepThread(33000000LL);
+#endif
+}
 
 void GameEngine_ReadController(void *opaquePads) {
     OSContPad *pads = opaquePads;
@@ -611,26 +625,14 @@ void gDPSetTextureImageOTR(Gfx *packet, int format, int size, int width,
     }
 }
 void gbi_resolve_vtx_in_static_dl(Gfx *displayList) {
-    if (displayList == NULL) return;
     /*
-     * Pause HUD lists mix TEXRECT (3 packets) with ordinary commands. Walking
-     * one Gfx at a time treats S/T payloads as opcodes, can skip G_ENDDL, and
-     * hangs the START menu on 3DS. Bound the walk even if a list is truncated.
+     * Match PaperBoat GBIMiddleware: resolve even G_VTX OTR paths, recurse
+     * G_DL (push vs branch), and skip TEXRECT extra words so pause_init
+     * cannot hang on HUD lists.
      */
-    const size_t kCommandLimit = 65536U;
-    size_t seen = 0U;
-    for (Gfx *command = displayList; seen < kCommandLimit; ) {
-        const unsigned int opcode = (unsigned int)(command->words.w0 >> 24U);
-        if (opcode == G_ENDDL) return;
-        if (opcode == G_VTX && command->words.w1 != 0U &&
-            GameEngine_OTRSigCheck((const char *)command->words.w1)) {
-            void *data = ResourceGetDataByName((const char *)command->words.w1);
-            if (data != NULL) command->words.w1 = (uintptr_t)data;
-        }
-        const size_t span = pb_gbi_command_span(opcode);
-        command += span;
-        seen += span;
-    }
+    pb_gbi_resolve_vtx_in_static_dl((PBGbiPacket *)displayList,
+                                    GameEngine_OTRSigCheck,
+                                    ResourceGetDataByName);
 }
 
 int gfx_create_framebuffer(unsigned int width, unsigned int height,

@@ -499,3 +499,24 @@ A COPY `TEXRECT_WIDE` regression uses a zero-alpha pal256 plus `G_CULL_BACK`
 and still records the copy rectangle. Generation checks the aux-cache array.
 M13 remains open pending a hardware playtest of the painted Toad Town sky
 and repeated START pause/resume.
+
+## r18 sprite punchthrough, HUD lists, and START resolve
+
+r17 made COPY backdrops visible, but PaperBoat sprites and pause HUD never
+set `G_AC_THRESHOLD`. They punch holes with `CVG_X_ALPHA` plus `G_CC_DECALRGBA`.
+With alpha test gated only on the compare bits, transparent texels kept their
+black RGB and drew as full quads under Mario/Toads, and HUD glyphs stacked as
+solid rectangles.
+
+1-cycle batches now enable alpha test when `CVG_X_ALPHA` is set. COPY/FILL stay
+opaque so `nok_bg` pal256 entries with a clear LSB still paint the sky.
+
+`gbi_resolve_vtx_in_static_dl` now follows PaperBoat `GBIMiddleware.cpp`: skip
+odd `G_VTX` pointers, recurse `G_DL` (push vs `G_DL_NOPUSH` branch), and keep
+the TEXRECT command span so `pause_init` cannot hang. `GameEngine_OTRSigCheck`
+rejects NULL, low, and odd addresses before `strncmp`. The interpreter resolves
+leftover `__OTR__` `G_VTX`/`G_DL` pointers instead of treating path strings as
+vertex memory. `GameEngine_HoldFrame` sleeps during `DISABLE_DRAW_FRAME`.
+
+A 1-cycle `CVG_X_ALPHA` rectangle still submits, and a nested-list resolve
+rewrites even OTR vertex paths without touching TEXRECT payloads.

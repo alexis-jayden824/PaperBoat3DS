@@ -1,4 +1,5 @@
 #include "pb3ds/gbi_command_span.h"
+#include "pb3ds/gbi_resolve.h"
 #include "pb3ds/gfx_rendering_api_3ds.h"
 #include "pb3ds/runtime_resources.h"
 #include "pb3ds/title_flow.h"
@@ -268,6 +269,52 @@ static bool testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(
     CHECK(pb_gbi_command_span(0xE4U) == 3U);
     CHECK(pb_gbi_command_span(0x37U) == 3U);
     CHECK(pb_gbi_command_span(0xDFU) == 1U);
+    return true;
+}
+
+static bool testRuntimeSpriteCvgXAlphaPunchthrough(PBGfxApi3DS *api) {
+    /* PaperBoat OpaqueSpriteGfx is 1-cycle DECALRGBA with CVG_X_ALPHA and
+     * no G_AC_THRESHOLD. Transparent CI texels must still submit the quad
+     * (alpha test discards fragments, it must not reject the draw). COPY
+     * zero-alpha backdrops remain a separate opaque path. */
+    static uint8_t texture[8U * 8U];
+    static uint8_t palette[16U * 2U];
+    std::memset(texture, 0, sizeof(texture));
+    for (size_t entry = 0U; entry < 16U; entry++) {
+        palette[entry * 2U] = 0x84U;
+        palette[entry * 2U + 1U] = 0x10U; /* RGB, alpha bit clear */
+    }
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD9FFFFFF), UINT32_C(0x00000001) } },
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0x00001030) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xFD10000F),
+                     reinterpret_cast<uintptr_t>(palette) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x0703C000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterRuntime->copy_rectangles == beforeRuntime.copy_rectangles);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
     return true;
 }
 
@@ -870,6 +917,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeMovememViewportUsesBottomLeftOrigin(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(api));
+    CHECK(testRuntimeSpriteCvgXAlphaPunchthrough(api));
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeSplitCi8Palette(api));
     CHECK(testRuntimeCi8Pal16Palette(api));
@@ -901,8 +949,52 @@ static bool testCBoundary() {
     return true;
 }
 
+static uint8_t testOtrSigCheck(const char *data) {
+    return data != nullptr && std::strncmp(data, "__OTR__", 7) == 0 ? 1U : 0U;
+}
+
+static void *testResourceGet(const char *name) {
+    static uint8_t resolved[16];
+    if (name != nullptr && std::strcmp(name, "__OTR__vtx") == 0) {
+        return resolved;
+    }
+    return nullptr;
+}
+
+static bool testGbiResolveMatchesPaperBoat() {
+    static const char otrPath[] = "__OTR__vtx";
+    PBGbiPacket nested[] = {
+        { .words = { UINT32_C(0x01001010),
+                     reinterpret_cast<uintptr_t>(otrPath) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    PBGbiPacket texrectPayload = {
+        .words = { UINT32_C(0x01001010),
+                   reinterpret_cast<uintptr_t>(otrPath) }
+    };
+    PBGbiPacket displayList[] = {
+        { .words = { UINT32_C(0xE4000000), 0U } },
+        texrectPayload,
+        { .words = { 0U, 0U } },
+        { .words = { UINT32_C(0xDE000000),
+                     reinterpret_cast<uintptr_t>(nested) } },
+        { .words = { UINT32_C(0x01001010), 1U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const uintptr_t payloadBefore = displayList[1].words.w1;
+    const uintptr_t oddBefore = displayList[4].words.w1;
+    pb_gbi_resolve_vtx_in_static_dl(displayList, testOtrSigCheck,
+                                    testResourceGet);
+    CHECK(displayList[1].words.w1 == payloadBefore);
+    CHECK(nested[0].words.w1 ==
+          reinterpret_cast<uintptr_t>(testResourceGet(otrPath)));
+    CHECK(displayList[4].words.w1 == oddBefore);
+    return true;
+}
+
 int main() {
-    if (!testExactInterface() || !testCBoundary()) {
+    if (!testExactInterface() || !testCBoundary() ||
+        !testGbiResolveMatchesPaperBoat()) {
         return EXIT_FAILURE;
     }
     std::printf("M13 exact GfxRenderingAPI contract: %u checks passed\n",

@@ -103,6 +103,7 @@ constexpr uint32_t G_CULL_BOTH = G_CULL_FRONT | G_CULL_BACK;
 constexpr uint32_t Z_CMP = 0x10U;
 constexpr uint32_t Z_UPD = 0x20U;
 constexpr uint32_t ZMODE_DEC = 0xC00U;
+constexpr uint32_t CVG_X_ALPHA = 0x1000U;
 constexpr uint32_t FORCE_BL = 0x4000U;
 constexpr uint32_t G_ZS_PRIM = 1U << 2U;
 constexpr uint8_t G_BL_CLR_BL = 2U;
@@ -577,6 +578,23 @@ class RuntimeDisplayListRenderer {
             }
         }
         return reinterpret_cast<const void *>(address);
+    }
+
+    const void *ResolveMaybeOtr(uintptr_t address, bool *otrMissing = nullptr) {
+        if (otrMissing != nullptr) *otrMissing = false;
+        const void *resolved = Resolve(address);
+        if (resolved != nullptr &&
+            GameEngine_OTRSigCheck(
+                static_cast<const char *>(resolved))) {
+            const void *data = ResourceGetDataByName(
+                static_cast<const char *>(resolved));
+            if (data == nullptr) {
+                stats.missing_resources++;
+                if (otrMissing != nullptr) *otrMissing = true;
+            }
+            return data;
+        }
+        return resolved;
     }
 
     void RebuildCombined() {
@@ -1581,8 +1599,9 @@ class RuntimeDisplayListRenderer {
         const bool depthWrite = (otherModeLow & Z_UPD) != 0U;
         /* RDP COPY/FILL ignore the blender and geometry cull, and texrects
          * are screen-space. Enabling alpha test on every textured batch made
-         * CI backdrop palettes whose RGBA5551 LSB is clear fully invisible,
-         * which is the black Toad Town sky with intact 3D/sprites. */
+         * CI backdrop palettes whose RGBA5551 LSB is clear fully invisible.
+         * PaperBoat sprites and HUD instead punch through with CVG_X_ALPHA
+         * (not G_AC_THRESHOLD); r17 left those quads as black rectangles. */
         const bool opaqueCopyOrFill = copyCycle || fill;
         const uint32_t cull = geometryMode & G_CULL_BOTH;
         const int8_t cullKeepSign =
@@ -1596,7 +1615,9 @@ class RuntimeDisplayListRenderer {
                               ((otherModeLow & FORCE_BL) != 0U ||
                                primColor.alpha != 255U ||
                                envColor.alpha != 255U);
-        const bool alphaTest = !opaqueCopyOrFill && alphaCompare != 0U;
+        const bool alphaTest =
+            !opaqueCopyOrFill &&
+            (alphaCompare != 0U || (otherModeLow & CVG_X_ALPHA) != 0U);
         const uint8_t alphaReference =
             alphaCompare == 1U ? blendColor.alpha : 0U;
         api->ConfigureRuntimePipeline(
@@ -1970,17 +1991,24 @@ class RuntimeDisplayListRenderer {
                     const size_t count = (word0 >> 12U) & 0xFFU;
                     const size_t end = (word0 >> 1U) & 0x7FU;
                     const size_t destination = end >= count ? end - count : 0U;
-                    LoadVertices(static_cast<const N64Vertex *>(
-                                     Resolve(command.words.w1)),
-                                 count, destination);
+                    bool otrMissing = false;
+                    const N64Vertex *verticesData =
+                        static_cast<const N64Vertex *>(
+                            ResolveMaybeOtr(command.words.w1, &otrMissing));
+                    if (otrMissing) break;
+                    LoadVertices(verticesData, count, destination);
                     break;
                 }
                 case G_VTX_WIDE: {
                     const size_t count = (word0 >> 12U) & 0xFFU;
                     const size_t end = (word0 >> 1U) & 0x7FU;
-                    LoadVertices(static_cast<const N64Vertex *>(
-                                     Resolve(command.words.w1)),
-                                 count, end >= count ? end - count : 0U);
+                    bool otrMissing = false;
+                    const N64Vertex *verticesData =
+                        static_cast<const N64Vertex *>(
+                            ResolveMaybeOtr(command.words.w1, &otrMissing));
+                    if (otrMissing) break;
+                    LoadVertices(verticesData, count,
+                                 end >= count ? end - count : 0U);
                     break;
                 }
                 case G_VTX_OTR_FILEPATH: {
@@ -2260,11 +2288,14 @@ class RuntimeDisplayListRenderer {
                 }
                 case G_DL: {
                     Flush();
+                    bool otrMissing = false;
                     const PBRuntimeGfx *nested =
                         static_cast<const PBRuntimeGfx *>(
-                            Resolve(command.words.w1));
-                    if (!RunList(nested, depth + 1U)) return false;
+                            ResolveMaybeOtr(command.words.w1, &otrMissing));
+                    if (nested != nullptr &&
+                        !RunList(nested, depth + 1U)) return false;
                     if (((word0 >> 16U) & 1U) != 0U) return true;
+                    (void)otrMissing;
                     break;
                 }
                 case G_DL_OTR_FILEPATH: {

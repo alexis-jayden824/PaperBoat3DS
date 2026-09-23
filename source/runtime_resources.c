@@ -144,9 +144,14 @@ void pb_runtime_resources_clear(PBRuntimeResources *r) {
 }
 
 uint8_t GameEngine_OTRSigCheck(const char *data) {
-    /* Match upstream's small-integer guard; other inputs must be valid readable
-     * game pointers, as required by the Engine.h API. */
-    return (uintptr_t)data >= 0x10000U && strncmp(data, "__OTR__", 7) == 0;
+    /* Match PaperBoat's small-integer guard and skip odd pointers. Unaligned
+     * strncmp on ARM11 data-aborts; pause static DLs can hand those to this
+     * check before G_VTX is rewritten. */
+    const uintptr_t address = (uintptr_t)data;
+    if (data == NULL || address < 0x10000U || (address & 1U) != 0U) {
+        return 0U;
+    }
+    return strncmp(data, "__OTR__", 7) == 0 ? 1U : 0U;
 }
 
 static bool decode(PBRuntimeResources *r, PBRuntimeResource *entry,
