@@ -15,6 +15,14 @@ extern "C" {
 #define PB_RENDER_TEXTURE_MIN_DIMENSION 8U
 #define PB_RENDER_TEXTURE_MAX_DIMENSION 1024U
 #define PB_RENDER_FOG_LUT_VALUES 256U
+/*
+ * Screen-space vertices carry N64 depth in 0..1. An ortho clip volume that
+ * starts at 0 and ends at 1 puts near walls and sprite heads (depth ~1) and
+ * far walls (depth ~0) on the clip planes, so PICA shears them off. Slack
+ * keeps those fragments inside the volume.
+ */
+#define PB_RENDER_ORTHO_NEAR (-0.5f)
+#define PB_RENDER_ORTHO_FAR (1.5f)
 
 typedef enum {
     PB_TEXTURE_RGBA8 = 0x0,

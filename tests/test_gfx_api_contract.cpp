@@ -989,6 +989,16 @@ static bool testGbiResolveMatchesPaperBoat() {
     CHECK(nested[0].words.w1 ==
           reinterpret_cast<uintptr_t>(testResourceGet(otrPath)));
     CHECK(displayList[4].words.w1 == oddBefore);
+    CHECK(pb_gbi_host_pointer_ok(reinterpret_cast<uintptr_t>(otrPath)));
+    CHECK(!pb_gbi_host_pointer_ok(0U));
+    CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0x80200000)));
+    PBGbiPacket leftoverN64[] = {
+        { .words = { UINT32_C(0xDE000000), UINT32_C(0x80200000) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    pb_gbi_resolve_vtx_in_static_dl(leftoverN64, testOtrSigCheck,
+                                    testResourceGet);
+    CHECK(leftoverN64[0].words.w1 == UINT32_C(0x80200000));
     return true;
 }
 

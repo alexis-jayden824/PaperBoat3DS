@@ -1,4 +1,5 @@
 #include "pb3ds/runtime_resources.h"
+#include "pb3ds/gbi_resolve.h"
 #include "pb3ds/texture.h"
 
 #include <string.h>
@@ -145,10 +146,10 @@ void pb_runtime_resources_clear(PBRuntimeResources *r) {
 
 uint8_t GameEngine_OTRSigCheck(const char *data) {
     /* Match PaperBoat's small-integer guard and skip odd pointers. Unaligned
-     * strncmp on ARM11 data-aborts; pause static DLs can hand those to this
-     * check before G_VTX is rewritten. */
+     * strncmp on ARM11 data-aborts; leftover N64 KSEG addresses do too. */
     const uintptr_t address = (uintptr_t)data;
-    if (data == NULL || address < 0x10000U || (address & 1U) != 0U) {
+    if (data == NULL || !pb_gbi_host_pointer_ok(address) ||
+        (address & 1U) != 0U) {
         return 0U;
     }
     return strncmp(data, "__OTR__", 7) == 0 ? 1U : 0U;

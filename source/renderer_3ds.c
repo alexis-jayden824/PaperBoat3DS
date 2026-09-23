@@ -366,7 +366,8 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     AttrInfo_AddLoader(attributes, 3, GPU_FLOAT, 4);
 
     Mtx_OrthoTilt(&renderer->projection, 0.0f, (float)PB_RENDER_TOP_WIDTH,
-                  0.0f, (float)PB_RENDER_TOP_HEIGHT, 0.0f, 1.0f, true);
+                  0.0f, (float)PB_RENDER_TOP_HEIGHT, PB_RENDER_ORTHO_NEAR,
+                  PB_RENDER_ORTHO_FAR, true);
 
     result = PB_RENDERER_INIT_VERTEX_BUFFER;
     renderer->stream_capacity_vertices = PB_GFX_MAX_STREAM_TRIANGLES * 3U;

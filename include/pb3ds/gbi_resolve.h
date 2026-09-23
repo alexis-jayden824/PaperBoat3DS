@@ -30,6 +30,14 @@ typedef struct PBGbiPacket {
 typedef uint8_t (*PBGbiOtrSigCheck)(const char *data);
 typedef void *(*PBGbiResourceGet)(const char *name);
 
+/* True when a GBI pointer can be dereferenced on this host. Rejects NULL,
+ * low integers, and leftover N64 KSEG addresses that data-abort on 3DS. */
+static inline bool pb_gbi_host_pointer_ok(uintptr_t address) {
+    if (address < 0x10000U) return false;
+    if (address >= 0x80000000U && address <= 0x9FFFFFFFU) return false;
+    return true;
+}
+
 static inline void pb_gbi_resolve_vtx_walk(
     PBGbiPacket *displayList, unsigned int depth, size_t *seen,
     PBGbiOtrSigCheck otr_sig_check, PBGbiResourceGet resource_get) {
@@ -46,7 +54,7 @@ static inline void pb_gbi_resolve_vtx_walk(
             const uintptr_t w1 = command->words.w1;
             /* PaperBoat skips odd tagged pointers so OTRSigCheck never
              * strncmp's unaligned or already-resolved native data. */
-            if (w1 != 0U && (w1 & 1U) == 0U &&
+            if (pb_gbi_host_pointer_ok(w1) && (w1 & 1U) == 0U &&
                 otr_sig_check((const char *)w1)) {
                 void *data = resource_get((const char *)w1);
                 if (data != NULL) command->words.w1 = (uintptr_t)data;
@@ -54,11 +62,13 @@ static inline void pb_gbi_resolve_vtx_walk(
         } else if (opcode == PB_GBI_OP_DL) {
             const unsigned int pushFlag =
                 (unsigned int)(command->words.w0 >> 16U) & 0xFFU;
-            PBGbiPacket *sub = (PBGbiPacket *)command->words.w1;
+            const uintptr_t subAddress = command->words.w1;
             const size_t span = pb_gbi_command_span(opcode);
             *seen += span;
-            if (sub != NULL && !otr_sig_check((const char *)sub)) {
-                pb_gbi_resolve_vtx_walk(sub, depth + 1U, seen, otr_sig_check,
+            if (pb_gbi_host_pointer_ok(subAddress) &&
+                !otr_sig_check((const char *)subAddress)) {
+                pb_gbi_resolve_vtx_walk((PBGbiPacket *)subAddress,
+                                        depth + 1U, seen, otr_sig_check,
                                         resource_get);
                 if (pushFlag == PB_GBI_DL_NOPUSH) return;
             }

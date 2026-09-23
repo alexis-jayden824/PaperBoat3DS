@@ -520,3 +520,17 @@ vertex memory. `GameEngine_HoldFrame` sleeps during `DISABLE_DRAW_FRAME`.
 
 A 1-cycle `CVG_X_ALPHA` rectangle still submits, and a nested-list resolve
 rewrites even OTR vertex paths without touching TEXRECT payloads.
+
+## r19 near-plane building clip and START KSEG abort
+
+The r18 Folium photo of `mac_01` shows punchthrough sprites, but Mario/Toad
+hats are sheared off and the Dojo's near walls are missing while the roof
+remains. Screen-space vertices carry N64 depth in 0..1 into
+`Mtx_OrthoTilt(..., 0, 1)`. PICA clips fragments on those planes, so close
+walls and sprite heads (depth ~1) and far walls (depth ~0) disappear. The
+ortho volume now has slack (`-0.5` .. `1.5`).
+
+START still hung because pause static lists can carry leftover N64 KSEG
+`G_DL`/`G_VTX` pointers (`0x8xxxxxxx`). Recursing or `strncmp` there
+data-aborts on ARM11. The walker and `OTRSigCheck` now refuse that range
+before touching memory.

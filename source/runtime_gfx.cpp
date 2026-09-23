@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "pb3ds/fast3d_semantics.h"
+#include "pb3ds/gbi_resolve.h"
 #include "pb3ds/runtime_resources.h"
 #include "pb3ds/texture.h"
 
@@ -577,6 +578,7 @@ class RuntimeDisplayListRenderer {
                     segmentPointers[segment] + offset);
             }
         }
+        if (!pb_gbi_host_pointer_ok(address)) return nullptr;
         return reinterpret_cast<const void *>(address);
     }
 

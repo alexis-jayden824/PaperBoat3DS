@@ -301,11 +301,19 @@ static bool test_buffer_contract_and_status(void) {
     return true;
 }
 
+static bool test_ortho_depth_slack(void) {
+    /* N64 depth is 0..1 in screen space. A 0..1 ortho volume clips sprite
+     * heads and near walls on PICA. */
+    CHECK(PB_RENDER_ORTHO_NEAR < 0.0f);
+    CHECK(PB_RENDER_ORTHO_FAR > 1.0f);
+    return true;
+}
+
 int main(void) {
     if (!test_texture_formats() || !test_texture_swizzle() ||
         !test_viewport_rotation() || !test_textured_quad_orientation() ||
         !test_fast3d_fog_lut() || !test_pipeline_and_cache() ||
-        !test_buffer_contract_and_status()) {
+        !test_buffer_contract_and_status() || !test_ortho_depth_slack()) {
         return EXIT_FAILURE;
     }
 
