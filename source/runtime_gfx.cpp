@@ -1608,15 +1608,8 @@ class RuntimeDisplayListRenderer {
          * (not G_AC_THRESHOLD); r17 left those quads as black rectangles. */
         const bool opaqueCopyOrFill = copyCycle || fill;
         const uint32_t cull = geometryMode & G_CULL_BOTH;
-        /* PaperBoat Fast3D: G_CULL_FRONT keepSign=+1, G_CULL_BACK=-1. The
-         * OpenGL backend with invertY culls front (CCW) for BACK, matching
-         * PB_CULL_FRONT_CCW. */
-        const int8_t cullKeepSign =
-            (opaqueCopyOrFill || screenSpace)
-                ? 0
-                : (cull == G_CULL_FRONT
-                       ? 1
-                       : (cull == G_CULL_BACK ? -1 : 0));
+        (void)cull;
+        const int8_t cullKeepSign = 0;
         const uint32_t alphaCompare = otherModeLow & 3U;
         const bool useAlpha = !opaqueCopyOrFill &&
                               ((otherModeLow & FORCE_BL) != 0U ||

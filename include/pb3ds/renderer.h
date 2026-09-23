@@ -39,6 +39,13 @@ static inline float pb_renderer_screen_depth_to_n64_clip_z(float depth,
     return clip_w * (1.0f - 2.0f * depth);
 }
 
+/* Reverse-Z 0..1 screen depth to PICA clip Z in [-w, 0] (near = -w). */
+static inline float pb_renderer_screen_depth_to_pica_z(float depth,
+                                                       float clip_w) {
+    return pb_renderer_n64_to_pica_clip_z(
+        pb_renderer_screen_depth_to_n64_clip_z(depth, clip_w), clip_w);
+}
+
 /*
  * PICA does not clip W<=0 the way Fast3D/OpenGL does. Homogeneous vertices
  * behind the eye become screen-spanning slivers. Clip edges where W crosses

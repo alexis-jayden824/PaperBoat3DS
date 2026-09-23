@@ -573,3 +573,15 @@ A malformed opcode or missing VTX/MTX pointer no longer marks the runtime
 `PB_RUNTIME_FAILED`; pause lists can skip leftover pointers and keep stepping.
 The HUD reports per-frame `Clip` (near-plane splits) and `Huge` (remaining
 oversize screen bounds).
+
+## r22 title PICA Z, uncull walls, skip pause tutorial
+
+r21 restored OpenGL cull signs, which hid Toad Town walls again on PICA, and
+left title/file-select quads at reverse-Z `0.45`/`0.55` with an identity Z
+row. PICA's clip volume is `[-w, 0]`, so those positive Z values were discarded
+and the boot title was black even though assets uploaded.
+
+Screen-space and diagnostic vertices now convert reverse-Z depth into PICA
+clip Z (`-depth * w`). Hardware face culling is disabled (fill rate is small;
+`G_CULL_BOTH` still drops triangles). `GF_Tutorial_Badges` is cleared at Toad
+Town activate so the first-pause tutorial cannot swallow START.

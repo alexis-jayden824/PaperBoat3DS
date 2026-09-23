@@ -328,6 +328,9 @@ static bool test_ortho_depth_slack(void) {
             pb_renderer_screen_depth_to_n64_clip_z(0.0f, 1.0f), 1.0f);
     CHECK(sprite_near == -1.0f);
     CHECK(sprite_far == 0.0f);
+    CHECK(pb_renderer_screen_depth_to_pica_z(0.45f, 1.0f) == -0.45f);
+    CHECK(pb_renderer_screen_depth_to_pica_z(0.55f, 1.0f) == -0.55f);
+    CHECK(pb_renderer_screen_depth_to_pica_z(1.0f, 2.0f) == -2.0f);
     CHECK(pb_renderer_clip_w_inside(1.0f));
     CHECK(!pb_renderer_clip_w_inside(0.0f));
     CHECK(!pb_renderer_clip_w_inside(-4.0f));

@@ -294,18 +294,18 @@ void MakeChecker(std::array<uint8_t, 8U * 8U * 4U> &pixels) {
 }
 
 float kPanelVertices[] = {
-    34.0f,  30.0f,  0.45f, 1.0f, 0.0f, 0.0f, 0.0f, 0.95f, 0.98f, 1.0f, 1.0f,
-    366.0f, 30.0f,  0.45f, 1.0f, 0.0f, 6.0f, 0.0f, 0.95f, 0.98f, 1.0f, 1.0f,
-    366.0f, 210.0f, 0.45f, 1.0f, 0.0f, 6.0f, 4.0f, 0.95f, 0.98f, 1.0f, 1.0f,
-    366.0f, 210.0f, 0.45f, 1.0f, 0.0f, 6.0f, 4.0f, 0.95f, 0.98f, 1.0f, 1.0f,
-    34.0f,  210.0f, 0.45f, 1.0f, 0.0f, 0.0f, 4.0f, 0.95f, 0.98f, 1.0f, 1.0f,
-    34.0f,  30.0f,  0.45f, 1.0f, 0.0f, 0.0f, 0.0f, 0.95f, 0.98f, 1.0f, 1.0f,
+    34.0f,  30.0f,  -0.45f, 1.0f, 0.0f, 0.0f, 0.0f, 0.95f, 0.98f, 1.0f, 1.0f,
+    366.0f, 30.0f,  -0.45f, 1.0f, 0.0f, 6.0f, 0.0f, 0.95f, 0.98f, 1.0f, 1.0f,
+    366.0f, 210.0f, -0.45f, 1.0f, 0.0f, 6.0f, 4.0f, 0.95f, 0.98f, 1.0f, 1.0f,
+    366.0f, 210.0f, -0.45f, 1.0f, 0.0f, 6.0f, 4.0f, 0.95f, 0.98f, 1.0f, 1.0f,
+    34.0f,  210.0f, -0.45f, 1.0f, 0.0f, 0.0f, 4.0f, 0.95f, 0.98f, 1.0f, 1.0f,
+    34.0f,  30.0f,  -0.45f, 1.0f, 0.0f, 0.0f, 0.0f, 0.95f, 0.98f, 1.0f, 1.0f,
 };
 
 float kSailVertices[] = {
-    112.0f, 62.0f,  0.70f, 1.0f, 0.0f, 1.00f, 0.24f, 0.10f, 0.88f,
-    292.0f, 62.0f,  0.70f, 1.0f, 0.0f, 1.00f, 0.86f, 0.12f, 0.88f,
-    202.0f, 196.0f, 0.70f, 1.0f, 0.0f, 0.16f, 0.95f, 0.78f, 0.88f,
+    112.0f, 62.0f,  -0.70f, 1.0f, 0.0f, 1.00f, 0.24f, 0.10f, 0.88f,
+    292.0f, 62.0f,  -0.70f, 1.0f, 0.0f, 1.00f, 0.86f, 0.12f, 0.88f,
+    202.0f, 196.0f, -0.70f, 1.0f, 0.0f, 0.16f, 0.95f, 0.78f, 0.88f,
 };
 
 void SetTexturedVertex(float *vertices, size_t index, float x, float y,
@@ -315,7 +315,7 @@ void SetTexturedVertex(float *vertices, size_t index, float x, float y,
     const size_t offset = index * kFirstFrameVertexStride;
     vertices[offset + 0U] = x;
     vertices[offset + 1U] = y;
-    vertices[offset + 2U] = 0.45f;
+    vertices[offset + 2U] = pb_renderer_screen_depth_to_pica_z(0.45f, 1.0f);
     vertices[offset + 3U] = 1.0f;
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = u;
@@ -359,7 +359,7 @@ void SetShadeVertex(float *vertices, size_t index, float x, float y,
     const size_t offset = index * kShadeVertexStride;
     vertices[offset + 0U] = x;
     vertices[offset + 1U] = y;
-    vertices[offset + 2U] = 0.55f;
+    vertices[offset + 2U] = pb_renderer_screen_depth_to_pica_z(0.55f, 1.0f);
     vertices[offset + 3U] = 1.0f;
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = red;
@@ -400,7 +400,8 @@ void SetProjectedTexturedVertex(float *vertices, size_t index,
      */
     vertices[offset + 0U] = point.x * point.distance;
     vertices[offset + 1U] = point.y * point.distance;
-    vertices[offset + 2U] = point.z * point.distance;
+    vertices[offset + 2U] =
+        pb_renderer_screen_depth_to_pica_z(point.z, point.distance);
     vertices[offset + 3U] = point.distance;
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = u;
@@ -418,7 +419,8 @@ void SetProjectedShadeVertex(float *vertices, size_t index,
     const size_t offset = index * kShadeVertexStride;
     vertices[offset + 0U] = point.x * point.distance;
     vertices[offset + 1U] = point.y * point.distance;
-    vertices[offset + 2U] = point.z * point.distance;
+    vertices[offset + 2U] =
+        pb_renderer_screen_depth_to_pica_z(point.z, point.distance);
     vertices[offset + 3U] = point.distance;
     vertices[offset + 4U] = 0.0f;
     vertices[offset + 5U] = static_cast<float>(red) / 255.0f;
