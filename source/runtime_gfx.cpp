@@ -334,9 +334,10 @@ class RuntimeDisplayListRenderer {
         stats.commands_peak_frame = std::max(
             stats.commands_peak_frame,
             static_cast<uint32_t>(commandCount));
-        if (interpreted && flushed && !malformed) {
+        if (interpreted && flushed) {
             stats.frames_rendered++;
-        } else if (malformed) {
+        }
+        if (malformed) {
             stats.malformed_lists++;
         }
 #ifndef __3DS__
@@ -350,7 +351,10 @@ class RuntimeDisplayListRenderer {
                          lastCommandIndex, lastDepth);
         }
 #endif
-        return interpreted && flushed && !malformed;
+        /* A single malformed opcode must not kill the game loop. Pause HUD
+         * lists can contain leftover pointers; skipping those commands is
+         * enough for START to keep stepping. */
+        return flushed;
     }
 
     void InvalidateTexture(const void *address) {
@@ -388,8 +392,10 @@ class RuntimeDisplayListRenderer {
         float screenX = 0.0f;
         float screenY = 0.0f;
         float depth = 0.5f;
-        float clipW = 1.0f;
+        float clipX = 0.0f;
+        float clipY = 0.0f;
         float clipZ = 0.0f;
+        float clipW = 1.0f;
         float objectZ = 0.0f;
         float textureS = 0.0f;
         float textureT = 0.0f;
@@ -545,6 +551,8 @@ class RuntimeDisplayListRenderer {
         lastCommandIndex = 0U;
         lastDepth = 0U;
         malformed = false;
+        stats.clipped_triangles = 0U;
+        stats.huge_triangles = 0U;
         batch.clear();
         batchTriangles = 0U;
         batchTextured = false;
@@ -605,7 +613,7 @@ class RuntimeDisplayListRenderer {
 
     void ApplyMatrix(uint8_t parameters, const int32_t *address) {
         if (address == nullptr) {
-            malformed = true;
+            stats.missing_resources++;
             return;
         }
         const Matrix decoded = DecodeMatrix(address);
@@ -670,9 +678,12 @@ class RuntimeDisplayListRenderer {
 
     void LoadVertices(const N64Vertex *source, size_t count,
                       size_t destination) {
-        if (source == nullptr || destination >= vertices.size() ||
+        if (source == nullptr) {
+            stats.missing_resources++;
+            return;
+        }
+        if (destination >= vertices.size() ||
             count > vertices.size() - destination) {
-            malformed = true;
             return;
         }
         for (size_t index = 0U; index < count; index++) {
@@ -692,6 +703,8 @@ class RuntimeDisplayListRenderer {
             LoadedVertex &output = vertices[destination + index];
             output = {};
             output.objectZ = object[2];
+            output.clipX = clip[0];
+            output.clipY = clip[1];
             output.clipZ = clip[2];
             output.clipW = clip[3];
             /*
@@ -1595,15 +1608,15 @@ class RuntimeDisplayListRenderer {
          * (not G_AC_THRESHOLD); r17 left those quads as black rectangles. */
         const bool opaqueCopyOrFill = copyCycle || fill;
         const uint32_t cull = geometryMode & G_CULL_BOTH;
-        /* Full-screen G_MOVEMEM viewports do not reverse winding relative to
-         * Fast3D/OpenGL (clip +Y is already PICA up). Mapping G_CULL_BACK to
-         * FRONT_CCW culled Toad Town walls while unculled sprites remained. */
+        /* PaperBoat Fast3D: G_CULL_FRONT keepSign=+1, G_CULL_BACK=-1. The
+         * OpenGL backend with invertY culls front (CCW) for BACK, matching
+         * PB_CULL_FRONT_CCW. */
         const int8_t cullKeepSign =
             (opaqueCopyOrFill || screenSpace)
                 ? 0
                 : (cull == G_CULL_FRONT
-                       ? -1
-                       : (cull == G_CULL_BACK ? 1 : 0));
+                       ? 1
+                       : (cull == G_CULL_BACK ? -1 : 0));
         const uint32_t alphaCompare = otherModeLow & 3U;
         const bool useAlpha = !opaqueCopyOrFill &&
                               ((otherModeLow & FORCE_BL) != 0U ||
@@ -1720,35 +1733,126 @@ class RuntimeDisplayListRenderer {
         }
     }
 
+    LoadedVertex InterpolateClip(const LoadedVertex &a, const LoadedVertex &b,
+                                 float t) const {
+        LoadedVertex out = {};
+        const float s = 1.0f - t;
+        out.clipX = a.clipX * s + b.clipX * t;
+        out.clipY = a.clipY * s + b.clipY * t;
+        out.clipZ = a.clipZ * s + b.clipZ * t;
+        out.clipW = a.clipW * s + b.clipW * t;
+        out.objectZ = a.objectZ * s + b.objectZ * t;
+        out.textureS = a.textureS * s + b.textureS * t;
+        out.textureT = a.textureT * s + b.textureT * t;
+        out.color.red = static_cast<uint8_t>(
+            static_cast<float>(a.color.red) * s +
+            static_cast<float>(b.color.red) * t);
+        out.color.green = static_cast<uint8_t>(
+            static_cast<float>(a.color.green) * s +
+            static_cast<float>(b.color.green) * t);
+        out.color.blue = static_cast<uint8_t>(
+            static_cast<float>(a.color.blue) * s +
+            static_cast<float>(b.color.blue) * t);
+        out.color.alpha = static_cast<uint8_t>(
+            static_cast<float>(a.color.alpha) * s +
+            static_cast<float>(b.color.alpha) * t);
+        const float halfWidth = viewportWidth * 0.5f;
+        const float halfHeight = viewportHeight * 0.5f;
+        const float centerX = viewportX + halfWidth;
+        const float centerY = viewportY + halfHeight;
+        out.screenX = out.clipX * halfWidth + centerX * out.clipW;
+        out.screenY = out.clipY * halfHeight + centerY * out.clipW;
+        const float ndcZ = std::fabs(out.clipW) > 0.0001f
+                               ? out.clipZ / out.clipW
+                               : 0.0f;
+        out.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
+        out.valid = std::isfinite(out.screenX) && std::isfinite(out.screenY) &&
+                    std::isfinite(out.clipW);
+        return out;
+    }
+
+    size_t ClipTriangleW(const LoadedVertex in[3], LoadedVertex out[4]) const {
+        size_t count = 0U;
+        for (size_t index = 0U; index < 3U; index++) {
+            const LoadedVertex &a = in[index];
+            const LoadedVertex &b = in[(index + 1U) % 3U];
+            const bool aInside = pb_renderer_clip_w_inside(a.clipW);
+            const bool bInside = pb_renderer_clip_w_inside(b.clipW);
+            if (aInside) {
+                out[count++] = a;
+            }
+            if (aInside != bInside && count < 4U) {
+                const float t = pb_renderer_clip_w_edge_t(a.clipW, b.clipW);
+                out[count++] = InterpolateClip(a, b, t);
+            }
+            if (count >= 4U && index < 2U) {
+                break;
+            }
+        }
+        return count;
+    }
+
+    void NoteScreenArea(const LoadedVertex &a, const LoadedVertex &b,
+                        const LoadedVertex &c) {
+        const float minX = std::min(a.screenX / std::max(a.clipW, 0.001f),
+                                    std::min(b.screenX / std::max(b.clipW, 0.001f),
+                                             c.screenX / std::max(c.clipW, 0.001f)));
+        const float maxX = std::max(a.screenX / std::max(a.clipW, 0.001f),
+                                    std::max(b.screenX / std::max(b.clipW, 0.001f),
+                                             c.screenX / std::max(c.clipW, 0.001f)));
+        const float minY = std::min(a.screenY / std::max(a.clipW, 0.001f),
+                                    std::min(b.screenY / std::max(b.clipW, 0.001f),
+                                             c.screenY / std::max(c.clipW, 0.001f)));
+        const float maxY = std::max(a.screenY / std::max(a.clipW, 0.001f),
+                                    std::max(b.screenY / std::max(b.clipW, 0.001f),
+                                             c.screenY / std::max(c.clipW, 0.001f)));
+        if (maxX - minX > static_cast<float>(PB_RENDER_TOP_WIDTH) * 2.0f ||
+            maxY - minY > static_cast<float>(PB_RENDER_TOP_HEIGHT) * 2.0f) {
+            stats.huge_triangles++;
+        }
+    }
+
+    bool SubmitClippedTriangle(const LoadedVertex &a, const LoadedVertex &b,
+                               const LoadedVertex &c, bool textured) {
+        if (!a.valid || !b.valid || !c.valid) return true;
+        if (!BeginBatch(textured)) return false;
+        NoteScreenArea(a, b, c);
+        AppendVertex(a);
+        AppendVertex(b);
+        AppendVertex(c);
+        batchTriangles++;
+        if (batchTriangles >= kBatchTriangleLimit) return Flush();
+        return true;
+    }
+
     bool EmitTriangle(uint8_t first, uint8_t second, uint8_t third) {
         if (first >= vertices.size() || second >= vertices.size() ||
             third >= vertices.size()) {
-#ifndef __3DS__
-            std::fprintf(stderr,
-                         "runtime gfx: invalid triangle %u,%u,%u (max %zu)\n",
-                         first, second, third, vertices.size());
-#endif
-            malformed = true;
+            return true;
+        }
+        if ((geometryMode & G_CULL_BOTH) == G_CULL_BOTH) {
+            return true;
+        }
+        const LoadedVertex in[3] = {
+            vertices[first], vertices[second], vertices[third]
+        };
+        if (!in[0].valid || !in[1].valid || !in[2].valid) {
+            return true;
+        }
+        LoadedVertex clipped[4] = {};
+        const size_t count = ClipTriangleW(in, clipped);
+        if (count < 3U) return true;
+        if (count > 3U) stats.clipped_triangles++;
+        const bool textured = DecodeCombiner().use.texture;
+        if (!SubmitClippedTriangle(clipped[0], clipped[1], clipped[2],
+                                   textured)) {
             return false;
         }
-        const LoadedVertex *triangle[] = {
-            &vertices[first], &vertices[second], &vertices[third]
-        };
-        if (!triangle[0]->valid || !triangle[1]->valid ||
-            !triangle[2]->valid) {
-            return true;
+        if (count == 4U &&
+            !SubmitClippedTriangle(clipped[0], clipped[2], clipped[3],
+                                   textured)) {
+            return false;
         }
-        if (triangle[0]->clipW <= 0.0f && triangle[1]->clipW <= 0.0f &&
-            triangle[2]->clipW <= 0.0f) {
-            return true;
-        }
-        const bool textured = DecodeCombiner().use.texture;
-        if (!BeginBatch(textured)) return false;
-        for (const LoadedVertex *vertex : triangle) {
-            AppendVertex(*vertex);
-        }
-        batchTriangles++;
-        if (batchTriangles >= kBatchTriangleLimit) return Flush();
         return true;
     }
 
@@ -1760,6 +1864,8 @@ class RuntimeDisplayListRenderer {
         vertex.depth = depth;
         vertex.clipW = 1.0f;
         vertex.clipZ = pb_renderer_screen_depth_to_n64_clip_z(depth, 1.0f);
+        vertex.clipX = 0.0f;
+        vertex.clipY = 0.0f;
         vertex.textureS = u * 32.0f;
         vertex.textureT = v * 32.0f;
         vertex.color = {};
@@ -1989,25 +2095,25 @@ class RuntimeDisplayListRenderer {
                 case G_VTX: {
                     const size_t count = (word0 >> 12U) & 0xFFU;
                     const size_t end = (word0 >> 1U) & 0x7FU;
-                    const size_t destination = end >= count ? end - count : 0U;
+                    if (count == 0U || end < count) break;
                     bool otrMissing = false;
                     const N64Vertex *verticesData =
                         static_cast<const N64Vertex *>(
                             ResolveMaybeOtr(command.words.w1, &otrMissing));
                     if (otrMissing) break;
-                    LoadVertices(verticesData, count, destination);
+                    LoadVertices(verticesData, count, end - count);
                     break;
                 }
                 case G_VTX_WIDE: {
                     const size_t count = (word0 >> 12U) & 0xFFU;
                     const size_t end = (word0 >> 1U) & 0x7FU;
+                    if (count == 0U || end < count) break;
                     bool otrMissing = false;
                     const N64Vertex *verticesData =
                         static_cast<const N64Vertex *>(
                             ResolveMaybeOtr(command.words.w1, &otrMissing));
                     if (otrMissing) break;
-                    LoadVertices(verticesData, count,
-                                 end >= count ? end - count : 0U);
+                    LoadVertices(verticesData, count, end - count);
                     break;
                 }
                 case G_VTX_OTR_FILEPATH: {
@@ -2039,9 +2145,9 @@ class RuntimeDisplayListRenderer {
                                               : static_cast<const uint8_t *>(
                                                     ResourceGetDataByCrc(hash));
                     if (data != nullptr && offset <= 0xFFFFFU) data += offset;
-                    if (data != nullptr) {
+                    if (data != nullptr && count != 0U && end >= count) {
                         LoadVertices(reinterpret_cast<const N64Vertex *>(data),
-                                     count, end >= count ? end - count : 0U);
+                                     count, end - count);
                     } else {
                         stats.missing_resources++;
                     }
@@ -2060,9 +2166,11 @@ class RuntimeDisplayListRenderer {
                 }
                 case G_TRI1:
                     if (!EmitTriangle(
-                            static_cast<uint8_t>((word0 >> 17U) & 0x7FU),
-                            static_cast<uint8_t>((word0 >> 9U) & 0x7FU),
-                            static_cast<uint8_t>((word0 >> 1U) & 0x7FU))) {
+                            static_cast<uint8_t>(
+                                ((word0 >> 16U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>(
+                                ((word0 >> 8U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>((word0 & 0xFFU) / 2U))) {
                         return false;
                     }
                     break;
@@ -2084,13 +2192,17 @@ class RuntimeDisplayListRenderer {
                     break;
                 case G_QUAD:
                     if (!EmitTriangle(
-                            static_cast<uint8_t>((word0 >> 17U) & 0x7FU),
-                            static_cast<uint8_t>((word0 >> 9U) & 0x7FU),
-                            static_cast<uint8_t>((word0 >> 1U) & 0x7FU)) ||
+                            static_cast<uint8_t>(
+                                ((word0 >> 16U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>(
+                                ((word0 >> 8U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>((word0 & 0xFFU) / 2U)) ||
                         !EmitTriangle(
-                            static_cast<uint8_t>((word1 >> 17U) & 0x7FU),
-                            static_cast<uint8_t>((word1 >> 9U) & 0x7FU),
-                            static_cast<uint8_t>((word1 >> 1U) & 0x7FU))) {
+                            static_cast<uint8_t>(
+                                ((word1 >> 16U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>(
+                                ((word1 >> 8U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>((word1 & 0xFFU) / 2U))) {
                         return false;
                     }
                     break;

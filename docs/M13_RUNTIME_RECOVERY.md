@@ -556,3 +556,20 @@ remained.
 
 START leftover pointers in KSEG1 and higher (`0xA0000000`..`0xFFFFFFFF`) are
 rejected with KSEG0 so `pause_init` cannot `strncmp` unmapped ARM11 addresses.
+
+## r21 near-plane clip and pause list isolation
+
+The r20 Folium photo of `mac_00` showed Toad Town walls, but giant slivers
+crossed the frame, Mario vanished, and START never reached the pause HUD.
+
+PICA does not clip `W<=0` the way Fast3D/OpenGL does. Homogeneous vertices
+behind the camera were submitted with identity-Z clip space, so one eye-plane
+vertex stretched a triangle across the screen. `EmitTriangle` now clips edges
+at `W = 1/32` and fans the resulting polygon. `G_CULL_BACK` keep-sign is
+restored to PaperBoat (`-1` → cull CCW front), matching the invert-Y OpenGL
+backend. `G_CULL_BOTH` discards. `G_TRI1`/`G_QUAD` use F3DEX2 `C0(16,8)/2`.
+
+A malformed opcode or missing VTX/MTX pointer no longer marks the runtime
+`PB_RUNTIME_FAILED`; pause lists can skip leftover pointers and keep stepping.
+The HUD reports per-frame `Clip` (near-plane splits) and `Huge` (remaining
+oversize screen bounds).

@@ -39,6 +39,25 @@ static inline float pb_renderer_screen_depth_to_n64_clip_z(float depth,
     return clip_w * (1.0f - 2.0f * depth);
 }
 
+/*
+ * PICA does not clip W<=0 the way Fast3D/OpenGL does. Homogeneous vertices
+ * behind the eye become screen-spanning slivers. Clip edges where W crosses
+ * this epsilon before submission.
+ */
+#define PB_RENDER_CLIP_W_EPS (0.03125f)
+
+static inline bool pb_renderer_clip_w_inside(float clip_w) {
+    return clip_w > PB_RENDER_CLIP_W_EPS;
+}
+
+static inline float pb_renderer_clip_w_edge_t(float w0, float w1) {
+    const float denom = w1 - w0;
+    if (denom == 0.0f) {
+        return 0.0f;
+    }
+    return (PB_RENDER_CLIP_W_EPS - w0) / denom;
+}
+
 typedef enum {
     PB_TEXTURE_RGBA8 = 0x0,
     PB_TEXTURE_RGB8 = 0x1,

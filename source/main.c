@@ -197,6 +197,9 @@ static void print_bottom_screen(PrintConsole *console,
                        ? renderer_stats->retired_texture_peak : 0U),
                    (unsigned long)(renderer_stats != NULL
                        ? renderer_stats->texture_retire_failures : 0U));
+            printf("\x1b[19;2HClip:%lu Huge:%lu\n",
+                   (unsigned long)runtime_gfx_stats->clipped_triangles,
+                   (unsigned long)runtime_gfx_stats->huge_triangles);
             printf("\x1b[20;2HVp:%ld,%ld %lux%lu Sc:%ld,%ld %lux%lu\n",
                    (long)runtime_gfx_stats->game_viewport_x,
                    (long)runtime_gfx_stats->game_viewport_y,
@@ -717,6 +720,7 @@ int main(int argc, char **argv) {
                      "texture_fallbacks=%llu "
                      "texture_evictions=%llu "
                      "unknown=%lu missing=%lu malformed=%lu "
+                     "clipped=%lu huge=%lu "
                      "game_viewport=%ld,%ld,%lu,%lu "
                      "scissor=%ld,%ld,%lu,%lu",
                      (unsigned long long)runtime_gfx_stats->commands,
@@ -742,6 +746,8 @@ int main(int argc, char **argv) {
                      (unsigned long)runtime_gfx_stats->unknown_commands,
                      (unsigned long)runtime_gfx_stats->missing_resources,
                      (unsigned long)runtime_gfx_stats->malformed_lists,
+                     (unsigned long)runtime_gfx_stats->clipped_triangles,
+                     (unsigned long)runtime_gfx_stats->huge_triangles,
                      (long)runtime_gfx_stats->game_viewport_x,
                      (long)runtime_gfx_stats->game_viewport_y,
                      (unsigned long)runtime_gfx_stats->game_viewport_w,

@@ -438,8 +438,11 @@ void Graphics_PushFrame(Gfx *displayList) {
         displayList == NULL) return;
     if (!pb_gfx_api_3ds_render_display_list(active_runtime->graphics,
                                             (const PBRuntimeGfx *)displayList)) {
-        active_runtime->state = PB_RUNTIME_FAILED;
-        active_runtime->error = "display-list submission failed";
+        active_runtime->stats.platform_warnings++;
+        if (active_runtime->log != NULL) {
+            pb_log_write(active_runtime->log, PB_LOG_WARN, "gfx",
+                         "display-list submission incomplete");
+        }
         return;
     }
     active_runtime->frame_submitted = true;

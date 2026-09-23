@@ -30,6 +30,8 @@ typedef struct {
     uint32_t max_call_depth;
     uint32_t commands_last_frame;
     uint32_t commands_peak_frame;
+    uint32_t clipped_triangles;
+    uint32_t huge_triangles;
     uint8_t last_unknown_opcode;
     /* Diagnostics for the "sprites/geometry cut off" class of report: the
      * most recently established CPU-side game viewport (used to convert

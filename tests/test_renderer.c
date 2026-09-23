@@ -328,6 +328,17 @@ static bool test_ortho_depth_slack(void) {
             pb_renderer_screen_depth_to_n64_clip_z(0.0f, 1.0f), 1.0f);
     CHECK(sprite_near == -1.0f);
     CHECK(sprite_far == 0.0f);
+    CHECK(pb_renderer_clip_w_inside(1.0f));
+    CHECK(!pb_renderer_clip_w_inside(0.0f));
+    CHECK(!pb_renderer_clip_w_inside(-4.0f));
+    CHECK(pb_renderer_clip_w_edge_t(-4.0f, 4.0f) > 0.0f);
+    CHECK(pb_renderer_clip_w_edge_t(-4.0f, 4.0f) < 1.0f);
+    {
+        const float t = pb_renderer_clip_w_edge_t(-1.0f, 1.0f);
+        const float w = -1.0f + (1.0f - (-1.0f)) * t;
+        CHECK(w > PB_RENDER_CLIP_W_EPS - 0.0001f);
+        CHECK(w < PB_RENDER_CLIP_W_EPS + 0.0001f);
+    }
     return true;
 }
 
