@@ -440,7 +440,7 @@ void Graphics_PushFrame(Gfx *displayList) {
                                             (const PBRuntimeGfx *)displayList)) {
         active_runtime->stats.platform_warnings++;
         if (active_runtime->log != NULL) {
-            pb_log_write(active_runtime->log, PB_LOG_WARN, "gfx",
+            pb_log_write(active_runtime->log, PB_LOG_WARNING, "gfx",
                          "display-list submission incomplete");
         }
         return;
