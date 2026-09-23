@@ -16,13 +16,28 @@ extern "C" {
 #define PB_RENDER_TEXTURE_MAX_DIMENSION 1024U
 #define PB_RENDER_FOG_LUT_VALUES 256U
 /*
- * Screen-space vertices carry N64 depth in 0..1. An ortho clip volume that
- * starts at 0 and ends at 1 puts near walls and sprite heads (depth ~1) and
- * far walls (depth ~0) on the clip planes, so PICA shears them off. Slack
- * keeps those fragments inside the volume.
+ * Mtx_OrthoTilt still needs dummy near/far because it fills the whole
+ * matrix, but row 2 is then replaced with identity. N64 clip Z is converted
+ * into PICA's [-w, 0] window in the vertex stream instead of remapping
+ * depth through a second 0..1 ortho, which sheared near walls and sprite
+ * heads onto a horizontal clip line.
  */
-#define PB_RENDER_ORTHO_NEAR (-0.5f)
-#define PB_RENDER_ORTHO_FAR (1.5f)
+#define PB_RENDER_ORTHO_NEAR (0.0f)
+#define PB_RENDER_ORTHO_FAR (1.0f)
+#define PB_RENDER_ORTHO_Z_IDENTITY_ZZ (1.0f)
+#define PB_RENDER_ORTHO_Z_IDENTITY_ZW (0.0f)
+
+/* N64 clip Z is [-w, w] (-w near). PICA requires [-w, 0] (-w near, 0 far). */
+static inline float pb_renderer_n64_to_pica_clip_z(float clip_z,
+                                                   float clip_w) {
+    return 0.5f * clip_z - 0.5f * clip_w;
+}
+
+/* Screen-space prim depth is reverse-Z 1=near, 0=far. Recover N64 clip Z. */
+static inline float pb_renderer_screen_depth_to_n64_clip_z(float depth,
+                                                           float clip_w) {
+    return clip_w * (1.0f - 2.0f * depth);
+}
 
 typedef enum {
     PB_TEXTURE_RGBA8 = 0x0,

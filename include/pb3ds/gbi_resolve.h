@@ -34,7 +34,16 @@ typedef void *(*PBGbiResourceGet)(const char *name);
  * low integers, and leftover N64 KSEG addresses that data-abort on 3DS. */
 static inline bool pb_gbi_host_pointer_ok(uintptr_t address) {
     if (address < 0x10000U) return false;
-    if (address >= 0x80000000U && address <= 0x9FFFFFFFU) return false;
+    /*
+     * Leftover N64 KSEG0/KSEG1/KSSEG/KSEG3 pointers (0x8xxxxxxx-0xFxxxxxxx)
+     * data-abort on ARM11. 3DS user pointers never live in that half. On
+     * 64-bit hosts only the 32-bit leftover encoding is rejected.
+     */
+#if UINTPTR_MAX > 0xFFFFFFFFU
+    if (address <= 0xFFFFFFFFU && address >= 0x80000000U) return false;
+#else
+    if (address >= 0x80000000U) return false;
+#endif
     return true;
 }
 

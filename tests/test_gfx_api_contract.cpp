@@ -992,6 +992,8 @@ static bool testGbiResolveMatchesPaperBoat() {
     CHECK(pb_gbi_host_pointer_ok(reinterpret_cast<uintptr_t>(otrPath)));
     CHECK(!pb_gbi_host_pointer_ok(0U));
     CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0x80200000)));
+    CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0xA0000000)));
+    CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0xFFFFFFF0)));
     PBGbiPacket leftoverN64[] = {
         { .words = { UINT32_C(0xDE000000), UINT32_C(0x80200000) } },
         { .words = { UINT32_C(0xDF000000), 0U } },

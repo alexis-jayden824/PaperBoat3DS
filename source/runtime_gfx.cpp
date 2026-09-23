@@ -695,16 +695,11 @@ class RuntimeDisplayListRenderer {
             output.clipZ = clip[2];
             output.clipW = clip[3];
             /*
-             * Do NOT reject W<=0 vertices here.  Fast3D deliberately leaves
-             * world vertices in homogeneous clip space and lets the GPU clip
-             * triangles crossing the eye/near plane.  The old CPU divide made
-             * those vertices explode to huge screen coordinates, which is the
-             * source of the repeated horizontal wedges seen in mac_00.
-             *
-             * This compatibility bridge still converts to our 400x240 PICA
-             * viewport, but keeps the divide homogeneous: x/y are formed as
-             * viewport-affine clip coordinates and are multiplied by W again
-             * in AppendVertex.  No 1/W appears on the CPU path.
+             * Do NOT reject W<=0 vertices here.  Fast3D leaves world vertices
+             * in homogeneous clip space and lets the GPU clip triangles that
+             * cross the eye/near plane.  XY is the viewport affine form
+             * (already multiplied by W).  Z stays as N64 clip Z so AppendVertex
+             * can map it into PICA's [-w, 0] window without a CPU 1/W.
              */
             if (!std::isfinite(clip[0]) || !std::isfinite(clip[1]) ||
                 !std::isfinite(clip[2]) || !std::isfinite(clip[3])) {
@@ -714,14 +709,8 @@ class RuntimeDisplayListRenderer {
             const float halfHeight = viewportHeight * 0.5f;
             const float centerX = viewportX + halfWidth;
             const float centerY = viewportY + halfHeight;
-            output.screenX =
-                std::fabs(clip[3]) > 0.0001f
-                    ? (clip[0] * halfWidth + centerX * clip[3]) / clip[3]
-                    : centerX;
-            output.screenY =
-                std::fabs(clip[3]) > 0.0001f
-                    ? (clip[1] * halfHeight + centerY * clip[3]) / clip[3]
-                    : centerY;
+            output.screenX = clip[0] * halfWidth + centerX * clip[3];
+            output.screenY = clip[1] * halfHeight + centerY * clip[3];
             const float ndcZ =
                 std::fabs(clip[3]) > 0.0001f ? clip[2] / clip[3] : 0.0f;
             output.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
@@ -1606,12 +1595,15 @@ class RuntimeDisplayListRenderer {
          * (not G_AC_THRESHOLD); r17 left those quads as black rectangles. */
         const bool opaqueCopyOrFill = copyCycle || fill;
         const uint32_t cull = geometryMode & G_CULL_BOTH;
+        /* Full-screen G_MOVEMEM viewports do not reverse winding relative to
+         * Fast3D/OpenGL (clip +Y is already PICA up). Mapping G_CULL_BACK to
+         * FRONT_CCW culled Toad Town walls while unculled sprites remained. */
         const int8_t cullKeepSign =
             (opaqueCopyOrFill || screenSpace)
                 ? 0
                 : (cull == G_CULL_FRONT
-                       ? 1
-                       : (cull == G_CULL_BACK ? -1 : 0));
+                       ? -1
+                       : (cull == G_CULL_BACK ? 1 : 0));
         const uint32_t alphaCompare = otherModeLow & 3U;
         const bool useAlpha = !opaqueCopyOrFill &&
                               ((otherModeLow & FORCE_BL) != 0U ||
@@ -1687,9 +1679,10 @@ class RuntimeDisplayListRenderer {
         const float clipW = std::fabs(vertex.clipW) < 0.0001f
                                 ? std::copysign(0.0001f, vertex.clipW)
                                 : vertex.clipW;
-        batch.push_back(vertex.screenX * clipW);
-        batch.push_back(vertex.screenY * clipW);
-        batch.push_back(vertex.depth * clipW);
+        batch.push_back(vertex.screenX);
+        batch.push_back(vertex.screenY);
+        batch.push_back(
+            pb_renderer_n64_to_pica_clip_z(vertex.clipZ, clipW));
         batch.push_back(clipW);
         batch.push_back(0.0f);
         const bool usedUnits[PB_GFX_TEXTURE_UNITS] = {
@@ -1745,6 +1738,10 @@ class RuntimeDisplayListRenderer {
             !triangle[2]->valid) {
             return true;
         }
+        if (triangle[0]->clipW <= 0.0f && triangle[1]->clipW <= 0.0f &&
+            triangle[2]->clipW <= 0.0f) {
+            return true;
+        }
         const bool textured = DecodeCombiner().use.texture;
         if (!BeginBatch(textured)) return false;
         for (const LoadedVertex *vertex : triangle) {
@@ -1762,7 +1759,7 @@ class RuntimeDisplayListRenderer {
         vertex.screenY = y;
         vertex.depth = depth;
         vertex.clipW = 1.0f;
-        vertex.clipZ = 0.0f;
+        vertex.clipZ = pb_renderer_screen_depth_to_n64_clip_z(depth, 1.0f);
         vertex.textureS = u * 32.0f;
         vertex.textureT = v * 32.0f;
         vertex.color = {};

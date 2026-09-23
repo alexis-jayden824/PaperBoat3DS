@@ -368,6 +368,12 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     Mtx_OrthoTilt(&renderer->projection, 0.0f, (float)PB_RENDER_TOP_WIDTH,
                   0.0f, (float)PB_RENDER_TOP_HEIGHT, PB_RENDER_ORTHO_NEAR,
                   PB_RENDER_ORTHO_FAR, true);
+    /* Keep the 90-degree XY tilt; do not remap Z a second time. Vertices
+     * already carry PICA clip Z in [-w, 0]. */
+    renderer->projection.r[2].x = 0.0f;
+    renderer->projection.r[2].y = 0.0f;
+    renderer->projection.r[2].z = PB_RENDER_ORTHO_Z_IDENTITY_ZZ;
+    renderer->projection.r[2].w = PB_RENDER_ORTHO_Z_IDENTITY_ZW;
 
     result = PB_RENDERER_INIT_VERTEX_BUFFER;
     renderer->stream_capacity_vertices = PB_GFX_MAX_STREAM_TRIANGLES * 3U;

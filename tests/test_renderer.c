@@ -302,10 +302,32 @@ static bool test_buffer_contract_and_status(void) {
 }
 
 static bool test_ortho_depth_slack(void) {
-    /* N64 depth is 0..1 in screen space. A 0..1 ortho volume clips sprite
-     * heads and near walls on PICA. */
-    CHECK(PB_RENDER_ORTHO_NEAR < 0.0f);
-    CHECK(PB_RENDER_ORTHO_FAR > 1.0f);
+    /* PICA clip Z is [-w, 0]. N64 near (-w) maps to -w; N64 far (+w) to 0.
+     * Vertices inside the camera frustum stay inside; a second 0..1 ortho
+     * window is not applied to Z. */
+    const float w = 4.0f;
+    const float near_z = pb_renderer_n64_to_pica_clip_z(-w, w);
+    const float far_z = pb_renderer_n64_to_pica_clip_z(w, w);
+    const float inside_z = pb_renderer_n64_to_pica_clip_z(0.0f, w);
+    const float closer_than_near =
+        pb_renderer_n64_to_pica_clip_z(-3.0f * w, w);
+    CHECK(near_z == -w);
+    CHECK(far_z == 0.0f);
+    CHECK(inside_z == -0.5f * w);
+    CHECK(near_z >= -w && near_z <= 0.0f);
+    CHECK(far_z >= -w && far_z <= 0.0f);
+    CHECK(inside_z >= -w && inside_z <= 0.0f);
+    CHECK(closer_than_near < -w);
+    CHECK(PB_RENDER_ORTHO_Z_IDENTITY_ZZ == 1.0f);
+    CHECK(PB_RENDER_ORTHO_Z_IDENTITY_ZW == 0.0f);
+    const float sprite_near =
+        pb_renderer_n64_to_pica_clip_z(
+            pb_renderer_screen_depth_to_n64_clip_z(1.0f, 1.0f), 1.0f);
+    const float sprite_far =
+        pb_renderer_n64_to_pica_clip_z(
+            pb_renderer_screen_depth_to_n64_clip_z(0.0f, 1.0f), 1.0f);
+    CHECK(sprite_near == -1.0f);
+    CHECK(sprite_far == 0.0f);
     return true;
 }
 

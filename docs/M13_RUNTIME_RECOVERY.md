@@ -534,3 +534,25 @@ START still hung because pause static lists can carry leftover N64 KSEG
 `G_DL`/`G_VTX` pointers (`0x8xxxxxxx`). Recursing or `strncmp` there
 data-aborts on ARM11. The walker and `OTRSigCheck` now refuse that range
 before touching memory.
+
+## r20 PICA clip-Z identity and G_CULL_BACK winding
+
+The r19 Folium photo of `mac_00` still shows a white screen-crossing clip
+line, missing Toad Town buildings, and sprites standing on the `nok_bg`
+grass. Geometry was submitted (`~1460` tris/frame): walls were not a missing
+display-list failure.
+
+r19 remapped N64 NDC Z into `0..1` and ran that through `Mtx_OrthoTilt`
+near/far. PICA's clip volume is `[-w, 0]`, not `[-w, w]`, and the extra ortho
+window sheared triangles that crossed the camera near plane into a horizontal
+wedge. Vertices now keep homogeneous viewport XY and map N64 clip Z
+(`[-w, w]`, `-w` near) into PICA `[-w, 0]`. The projection Z row is identity
+so that mapping is not applied twice.
+
+Full-screen viewports do not reverse winding versus Fast3D (clip `+Y` is
+already PICA up). `G_CULL_BACK` therefore culls PICA back faces (`CCW` front)
+instead of front faces, which had dropped the 3D town while unculled sprites
+remained.
+
+START leftover pointers in KSEG1 and higher (`0xA0000000`..`0xFFFFFFFF`) are
+rejected with KSEG0 so `pause_init` cannot `strncmp` unmapped ARM11 addresses.
