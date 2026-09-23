@@ -1,8 +1,8 @@
 #pragma once
 
 #define PB3DS_PROJECT_NAME "PaperBoat3DS"
-#define PB3DS_VERSION "0.13.22-m13r22"
-#define PB3DS_ROADMAP_STAGE "M13 upstream runtime recovery"
+#define PB3DS_VERSION "0.13.23-m13r23"
+#define PB3DS_ROADMAP_STAGE "M13 N64 frustum clip"
 
 #ifndef PB3DS_BUILD_SHA
 #define PB3DS_BUILD_SHA "unknown"

@@ -65,6 +65,150 @@ static inline float pb_renderer_clip_w_edge_t(float w0, float w1) {
     return (PB_RENDER_CLIP_W_EPS - w0) / denom;
 }
 
+/*
+ * N64 homogeneous clip volume is |x|,|y|,|z| <= w with w > 0. PICA's GPU
+ * clipper sees screen-mapped vertices after OrthoTilt, so triangles that
+ * only failed the N64 planes become screen-spanning slivers. Clip the
+ * Fast3D volume on the CPU, then submit.
+ */
+#define PB_RENDER_CLIP_PLANE_COUNT 7U
+#define PB_RENDER_CLIP_MAX_VERTS 16U
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+    float w;
+} PBClipVertex;
+
+static inline float pb_renderer_n64_clip_plane(const PBClipVertex *vertex,
+                                               unsigned int plane) {
+    switch (plane) {
+        case 0U:
+            return vertex->w - PB_RENDER_CLIP_W_EPS;
+        case 1U:
+            return vertex->w - vertex->x;
+        case 2U:
+            return vertex->w + vertex->x;
+        case 3U:
+            return vertex->w - vertex->y;
+        case 4U:
+            return vertex->w + vertex->y;
+        case 5U:
+            return vertex->w - vertex->z;
+        case 6U:
+            return vertex->w + vertex->z;
+        default:
+            return 0.0f;
+    }
+}
+
+static inline PBClipVertex pb_renderer_clip_lerp(const PBClipVertex *a,
+                                                 const PBClipVertex *b,
+                                                 float t) {
+    PBClipVertex out;
+    const float s = 1.0f - t;
+    out.x = a->x * s + b->x * t;
+    out.y = a->y * s + b->y * t;
+    out.z = a->z * s + b->z * t;
+    out.w = a->w * s + b->w * t;
+    return out;
+}
+
+static inline size_t pb_renderer_clip_against_plane(const PBClipVertex *in,
+                                                    size_t count,
+                                                    PBClipVertex *out,
+                                                    unsigned int plane) {
+    size_t produced = 0U;
+    size_t index;
+
+    if (in == NULL || out == NULL || count < 2U) {
+        return 0U;
+    }
+    for (index = 0U; index < count; index++) {
+        const PBClipVertex *a = &in[index];
+        const PBClipVertex *b = &in[(index + 1U) % count];
+        const float fa = pb_renderer_n64_clip_plane(a, plane);
+        const float fb = pb_renderer_n64_clip_plane(b, plane);
+        const bool a_inside = fa >= 0.0f;
+        const bool b_inside = fb >= 0.0f;
+
+        if (a_inside && produced < PB_RENDER_CLIP_MAX_VERTS) {
+            out[produced++] = *a;
+        }
+        if (a_inside != b_inside && produced < PB_RENDER_CLIP_MAX_VERTS) {
+            const float denom = fa - fb;
+            float t = denom == 0.0f ? 0.0f : fa / denom;
+            if (t < 0.0f) {
+                t = 0.0f;
+            } else if (t > 1.0f) {
+                t = 1.0f;
+            }
+            out[produced++] = pb_renderer_clip_lerp(a, b, t);
+        }
+    }
+    return produced;
+}
+
+static inline size_t pb_renderer_clip_n64_triangle(const PBClipVertex *triangle,
+                                                   PBClipVertex *out) {
+    PBClipVertex current[PB_RENDER_CLIP_MAX_VERTS];
+    PBClipVertex next[PB_RENDER_CLIP_MAX_VERTS];
+    size_t count;
+    unsigned int plane;
+
+    if (triangle == NULL || out == NULL) {
+        return 0U;
+    }
+    current[0] = triangle[0];
+    current[1] = triangle[1];
+    current[2] = triangle[2];
+    count = 3U;
+    for (plane = 0U; plane < PB_RENDER_CLIP_PLANE_COUNT; plane++) {
+        count = pb_renderer_clip_against_plane(current, count, next, plane);
+        if (count < 3U) {
+            return 0U;
+        }
+        {
+            size_t index;
+            for (index = 0U; index < count; index++) {
+                current[index] = next[index];
+            }
+        }
+    }
+    {
+        size_t index;
+        for (index = 0U; index < count; index++) {
+            out[index] = current[index];
+        }
+    }
+    return count;
+}
+
+/*
+ * Fast3D keep-sign in pre-Y-flip clip space: G_CULL_FRONT keeps C > 0,
+ * G_CULL_BACK keeps C < 0. Hardware PICA winding after OrthoTilt does not
+ * match this, so the interpreter culls here instead of via GPU faces.
+ */
+static inline float pb_renderer_clip_face_cross(float x0, float y0, float w0,
+                                                float x1, float y1, float w1,
+                                                float x2, float y2, float w2) {
+    const float ax = x0 / w0;
+    const float ay = y0 / w0;
+    const float bx = x1 / w1;
+    const float by = y1 / w1;
+    const float cx = x2 / w2;
+    const float cy = y2 / w2;
+    return (ax - bx) * (cy - by) - (ay - by) * (cx - bx);
+}
+
+static inline bool pb_renderer_clip_keep_face(float cross, int8_t keep_sign) {
+    if (keep_sign == 0) {
+        return true;
+    }
+    return keep_sign > 0 ? cross > 0.0f : cross < 0.0f;
+}
+
 typedef enum {
     PB_TEXTURE_RGBA8 = 0x0,
     PB_TEXTURE_RGB8 = 0x1,

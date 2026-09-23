@@ -5,20 +5,10 @@ An experimental native Nintendo 3DS port of PaperBoat.
 ## Status
 
 Active development follows the documented [M0-M24 roadmap](docs/ROADMAP.md)
-on the `port/3ds` branch. M7's pinned legal asset workflow has completed its
-real-ROM acceptance run, and M8-M12.1 have package plus Folium evidence. M13
-is in upstream-runtime recovery: the application is now wired to PaperBoat's
-real world loop and display lists instead of the custom diagnostic scene. A
-private host trace enters `mac_00`, moves the upstream player, pauses/resumes,
-and renders 379 frames without an unknown command, missing resource, texture
-fallback, malformed list, or renderer rejection. Native ARM11 build and
-side-by-side Folium/hardware presentation acceptance are still required. The
-r11 candidate additionally bounds the recovery slice to `mac_00`/`mac_01` and
-routes standard depth/constant fog through native PICA200 fog state; those
-changes remain device-validation candidates rather than an M13 completion
-claim. The r12 candidate adds semantic key-center/key-scale and signed K4/K5
-convert constants while retaining explicit telemetry for any remaining legacy
-route.
+on the `port/3ds` branch. Master milestones M0-M12.1 are implemented in this
+tree. M13 runs the pinned PaperBoat world loop on 3DS and is still open for
+hardware presentation/pause acceptance. M14+ is blocked until that gate
+passes.
 
 No milestone is considered complete until its acceptance criteria are backed
 by reproducible evidence. This is not yet a playable PaperBoat port.

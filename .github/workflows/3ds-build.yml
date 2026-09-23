@@ -11,6 +11,14 @@ permissions:
   contents: read
 
 jobs:
+  host-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Test M7 synthetic asset contract
+        run: sh tools/test_asset_pipeline.sh
+
   build:
     runs-on: ubuntu-latest
     container:

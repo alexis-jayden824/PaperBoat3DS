@@ -585,3 +585,22 @@ Screen-space and diagnostic vertices now convert reverse-Z depth into PICA
 clip Z (`-depth * w`). Hardware face culling is disabled (fill rate is small;
 `G_CULL_BOTH` still drops triangles). `GF_Tutorial_Badges` is cleared at Toad
 Town activate so the first-pause tutorial cannot swallow START.
+
+## r23 N64 frustum clip and milestone map
+
+W-only clipping left triangles with legal W and illegal |X|,|Y|,|Z| > W in the
+vertex stream. After OrthoTilt those vertices become screen-spanning slivers.
+
+`0.13.23-m13r23` clips every world triangle against the Fast3D homogeneous
+volume (`W > 1/32` and `|x|,|y|,|z| <= W`) and fans the resulting polygon.
+Back-face rejection uses Fast3D's clip-space keep-sign on the CPU; PICA stays
+uncullled so OrthoTilt winding cannot drop Toad Town walls. Invalid indices
+and culled primitives are counted on the HUD (`Cull`/`Bad`). Optional
+`PB3DS_DEBUG_VTX/TRI/MATRIX/STATE/HUGE_TRI` flags exist in
+`include/pb3ds/debug.h` (off by default).
+
+The master M0-M24 numbering in `docs/ROADMAP.md` now matches the project
+milestone list. `include/pb3ds/platform.h` names the 3DS service boundary and
+records that ndsp audio is deferred until M14.
+
+M13 still requires a hardware playtest of Toad Town, sprites, and START.

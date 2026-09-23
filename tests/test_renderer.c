@@ -342,6 +342,60 @@ static bool test_ortho_depth_slack(void) {
         CHECK(w > PB_RENDER_CLIP_W_EPS - 0.0001f);
         CHECK(w < PB_RENDER_CLIP_W_EPS + 0.0001f);
     }
+    {
+        /* A vertex behind the eye must not survive N64 frustum clipping. */
+        const PBClipVertex behind[3] = {
+            { 0.0f, 0.0f, 0.0f, -4.0f },
+            { 1.0f, 0.0f, 0.0f, -2.0f },
+            { 0.0f, 1.0f, 0.0f, -2.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        CHECK(pb_renderer_clip_n64_triangle(behind, out) == 0U);
+    }
+    {
+        /* One vertex behind the eye becomes a clipped polygon still inside. */
+        const PBClipVertex crossing[3] = {
+            { 0.0f, 0.0f, 0.0f, -2.0f },
+            { 0.5f, 0.0f, 0.0f, 2.0f },
+            { 0.0f, 0.5f, 0.0f, 2.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        const size_t count = pb_renderer_clip_n64_triangle(crossing, out);
+        CHECK(count >= 3U);
+        CHECK(count <= PB_RENDER_CLIP_MAX_VERTS);
+        for (size_t index = 0; index < count; index++) {
+            CHECK(out[index].w > PB_RENDER_CLIP_W_EPS - 0.0001f);
+            CHECK(out[index].x <= out[index].w + 0.0001f);
+            CHECK(-out[index].x <= out[index].w + 0.0001f);
+            CHECK(out[index].y <= out[index].w + 0.0001f);
+            CHECK(-out[index].y <= out[index].w + 0.0001f);
+            CHECK(out[index].z <= out[index].w + 0.0001f);
+            CHECK(-out[index].z <= out[index].w + 0.0001f);
+        }
+    }
+    {
+        /* Off-axis XY that would span the screen is clipped to |x|,|y| <= w. */
+        const PBClipVertex huge[3] = {
+            { 40.0f, 0.0f, 0.0f, 1.0f },
+            { 0.0f, 0.0f, 0.0f, 1.0f },
+            { 0.0f, 40.0f, 0.0f, 1.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        const size_t count = pb_renderer_clip_n64_triangle(huge, out);
+        CHECK(count >= 3U);
+        for (size_t index = 0; index < count; index++) {
+            CHECK(out[index].x <= out[index].w + 0.001f);
+            CHECK(out[index].y <= out[index].w + 0.001f);
+        }
+    }
+    {
+        const float backFacing = pb_renderer_clip_face_cross(
+            0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f);
+        CHECK(backFacing < 0.0f);
+        CHECK(pb_renderer_clip_keep_face(backFacing, -1));
+        CHECK(!pb_renderer_clip_keep_face(backFacing, 1));
+        CHECK(pb_renderer_clip_keep_face(backFacing, 0));
+    }
     return true;
 }
 

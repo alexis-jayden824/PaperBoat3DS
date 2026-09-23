@@ -108,7 +108,8 @@ export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 
 .PHONY: all packages fetch-upstream m5-core-check m13-runtime-lib \
 	m6-policy-test \
-	m6-budget-check m8-input-test m9-renderer-test m10-graphics-test \
+	m6-budget-check m7-assets-test m8-input-test m9-renderer-test \
+	m10-graphics-test \
 	m11-frame-test m12-flow-test m12-layout-test m13-world-test \
 	m13-core-check clean
 
@@ -128,6 +129,9 @@ all: fetch-upstream m13-runtime-lib $(BUILD)
 
 m6-policy-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_memory_policy.sh "$(BUILD)/m6-tests"
+
+m7-assets-test:
+	@sh tools/test_asset_pipeline.sh
 
 m6-budget-check: all
 	@SIZE="$(DEVKITARM)/bin/arm-none-eabi-size" \

@@ -13,6 +13,7 @@
 #include <new>
 #include <vector>
 
+#include "pb3ds/debug.h"
 #include "pb3ds/fast3d_semantics.h"
 #include "pb3ds/gbi_resolve.h"
 #include "pb3ds/runtime_resources.h"
@@ -553,6 +554,8 @@ class RuntimeDisplayListRenderer {
         malformed = false;
         stats.clipped_triangles = 0U;
         stats.huge_triangles = 0U;
+        stats.culled_triangles = 0U;
+        stats.invalid_triangles = 0U;
         batch.clear();
         batchTriangles = 0U;
         batchTextured = false;
@@ -1607,8 +1610,12 @@ class RuntimeDisplayListRenderer {
          * PaperBoat sprites and HUD instead punch through with CVG_X_ALPHA
          * (not G_AC_THRESHOLD); r17 left those quads as black rectangles. */
         const bool opaqueCopyOrFill = copyCycle || fill;
-        const uint32_t cull = geometryMode & G_CULL_BOTH;
-        (void)cull;
+        /*
+         * PICA face winding after OrthoTilt does not match Fast3D/OpenGL.
+         * Leave the GPU uncullled and drop back-faces in N64 clip space
+         * inside EmitTriangle, which is the same keep-sign contract as
+         * PaperBoat's interpreter.
+         */
         const int8_t cullKeepSign = 0;
         const uint32_t alphaCompare = otherModeLow & 3U;
         const bool useAlpha = !opaqueCopyOrFill &&
@@ -1764,23 +1771,63 @@ class RuntimeDisplayListRenderer {
         return out;
     }
 
-    size_t ClipTriangleW(const LoadedVertex in[3], LoadedVertex out[4]) const {
-        size_t count = 0U;
-        for (size_t index = 0U; index < 3U; index++) {
-            const LoadedVertex &a = in[index];
-            const LoadedVertex &b = in[(index + 1U) % 3U];
-            const bool aInside = pb_renderer_clip_w_inside(a.clipW);
-            const bool bInside = pb_renderer_clip_w_inside(b.clipW);
-            if (aInside) {
-                out[count++] = a;
+    float ClipPlaneValue(const LoadedVertex &vertex, unsigned int plane) const {
+        const PBClipVertex clip = {
+            vertex.clipX, vertex.clipY, vertex.clipZ, vertex.clipW,
+        };
+        return pb_renderer_n64_clip_plane(&clip, plane);
+    }
+
+    int8_t GeometryCullKeepSign() const {
+        const uint32_t cull = geometryMode & G_CULL_BOTH;
+        if (cull == G_CULL_FRONT) {
+            return 1;
+        }
+        if (cull == G_CULL_BACK) {
+            return -1;
+        }
+        return 0;
+    }
+
+    size_t ClipTriangleN64(const LoadedVertex in[3],
+                           LoadedVertex out[PB_RENDER_CLIP_MAX_VERTS]) const {
+        LoadedVertex current[PB_RENDER_CLIP_MAX_VERTS] = { in[0], in[1], in[2] };
+        LoadedVertex next[PB_RENDER_CLIP_MAX_VERTS] = {};
+        size_t count = 3U;
+        for (unsigned int plane = 0U; plane < PB_RENDER_CLIP_PLANE_COUNT;
+             plane++) {
+            size_t produced = 0U;
+            for (size_t index = 0U; index < count; index++) {
+                const LoadedVertex &a = current[index];
+                const LoadedVertex &b = current[(index + 1U) % count];
+                const float fa = ClipPlaneValue(a, plane);
+                const float fb = ClipPlaneValue(b, plane);
+                const bool aInside = fa >= 0.0f;
+                const bool bInside = fb >= 0.0f;
+                if (aInside && produced < PB_RENDER_CLIP_MAX_VERTS) {
+                    next[produced++] = a;
+                }
+                if (aInside != bInside && produced < PB_RENDER_CLIP_MAX_VERTS) {
+                    const float denom = fa - fb;
+                    float t = denom == 0.0f ? 0.0f : fa / denom;
+                    if (t < 0.0f) {
+                        t = 0.0f;
+                    } else if (t > 1.0f) {
+                        t = 1.0f;
+                    }
+                    next[produced++] = InterpolateClip(a, b, t);
+                }
             }
-            if (aInside != bInside && count < 4U) {
-                const float t = pb_renderer_clip_w_edge_t(a.clipW, b.clipW);
-                out[count++] = InterpolateClip(a, b, t);
+            count = produced;
+            if (count < 3U) {
+                return 0U;
             }
-            if (count >= 4U && index < 2U) {
-                break;
+            for (size_t index = 0U; index < count; index++) {
+                current[index] = next[index];
             }
+        }
+        for (size_t index = 0U; index < count; index++) {
+            out[index] = current[index];
         }
         return count;
     }
@@ -1802,6 +1849,11 @@ class RuntimeDisplayListRenderer {
         if (maxX - minX > static_cast<float>(PB_RENDER_TOP_WIDTH) * 2.0f ||
             maxY - minY > static_cast<float>(PB_RENDER_TOP_HEIGHT) * 2.0f) {
             stats.huge_triangles++;
+#if PB3DS_DEBUG_HUGE_TRI
+            (void)a;
+            (void)b;
+            (void)c;
+#endif
         }
     }
 
@@ -1821,30 +1873,42 @@ class RuntimeDisplayListRenderer {
     bool EmitTriangle(uint8_t first, uint8_t second, uint8_t third) {
         if (first >= vertices.size() || second >= vertices.size() ||
             third >= vertices.size()) {
+            stats.invalid_triangles++;
             return true;
         }
         if ((geometryMode & G_CULL_BOTH) == G_CULL_BOTH) {
+            stats.culled_triangles++;
             return true;
         }
         const LoadedVertex in[3] = {
             vertices[first], vertices[second], vertices[third]
         };
         if (!in[0].valid || !in[1].valid || !in[2].valid) {
+            stats.invalid_triangles++;
             return true;
         }
-        LoadedVertex clipped[4] = {};
-        const size_t count = ClipTriangleW(in, clipped);
+        LoadedVertex clipped[PB_RENDER_CLIP_MAX_VERTS] = {};
+        const size_t count = ClipTriangleN64(in, clipped);
         if (count < 3U) return true;
         if (count > 3U) stats.clipped_triangles++;
+        const int8_t keepSign = GeometryCullKeepSign();
         const bool textured = DecodeCombiner().use.texture;
-        if (!SubmitClippedTriangle(clipped[0], clipped[1], clipped[2],
-                                   textured)) {
-            return false;
-        }
-        if (count == 4U &&
-            !SubmitClippedTriangle(clipped[0], clipped[2], clipped[3],
-                                   textured)) {
-            return false;
+        for (size_t index = 1U; index + 1U < count; index++) {
+            const LoadedVertex &a = clipped[0];
+            const LoadedVertex &b = clipped[index];
+            const LoadedVertex &c = clipped[index + 1U];
+            if (keepSign != 0) {
+                const float cross = pb_renderer_clip_face_cross(
+                    a.clipX, a.clipY, a.clipW, b.clipX, b.clipY, b.clipW,
+                    c.clipX, c.clipY, c.clipW);
+                if (!pb_renderer_clip_keep_face(cross, keepSign)) {
+                    stats.culled_triangles++;
+                    continue;
+                }
+            }
+            if (!SubmitClippedTriangle(a, b, c, textured)) {
+                return false;
+            }
         }
         return true;
     }

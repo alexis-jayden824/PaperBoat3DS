@@ -1,4 +1,5 @@
 #include "pb3ds/compat.h"
+#include "pb3ds/platform.h"
 
 #include <3ds.h>
 #include <ctype.h>
@@ -117,4 +118,8 @@ void pb_archive_close(PBArchive *archive) {
 
 uint64_t pb_platform_time_ms(void) {
     return osGetTime();
+}
+
+PBAudioStatus pb_platform_audio_status(void) {
+    return PB_AUDIO_DEFERRED_M14;
 }
