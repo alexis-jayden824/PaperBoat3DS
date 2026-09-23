@@ -1178,7 +1178,13 @@ class RuntimeDisplayListRenderer {
             return paletteTmem.data() + firstEntry * 2U;
         }
         if (type == PB_RESOURCE_TEXTURE_CI8) {
-            if (!std::all_of(paletteEntriesValid.begin(),
+            /*
+             * Paper Mario CI8 sprites, glyphs, and menus typically load a
+             * 16-entry pal16 into one TLUT bank.  RDP TMEM keeps unloaded
+             * entries as zero; requiring all 256 validity flags made every
+             * pal16 CI8 texture miss and render as a black/fallback surface.
+             */
+            if (!std::any_of(paletteEntriesValid.begin(),
                              paletteEntriesValid.end(),
                              [](bool valid) { return valid; })) {
                 return nullptr;

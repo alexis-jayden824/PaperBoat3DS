@@ -302,6 +302,50 @@ static bool testRuntimeSplitCi8Palette(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeCi8Pal16Palette(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U];
+    static uint8_t palette[16U * 2U];
+    std::memset(texture, 0, sizeof(texture));
+    for (size_t entry = 0U; entry < 16U; entry++) {
+        palette[entry * 2U] = 0xF8U;
+        palette[entry * 2U + 1U] = 0x01U;
+    }
+    /* gDPLoadTLUT_pal16 writes 16 RGBA5551 colors at TMEM 256. CI8 sprites
+     * index that bank; they must decode without waiting for a 256-entry
+     * pal256 fill of the rest of TLUT. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD10000F),
+                     reinterpret_cast<uintptr_t>(palette) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x0703C000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), 0U } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes + 256U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
 static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
     static uint8_t texture[8U * 8U * 2U] = {};
     /* Cycle 0 is TEXEL0; cycle 1 is SHADE. PaperBoat/Fast selects cycle 0
@@ -776,6 +820,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeLoadTileSubregion(api));
     CHECK(testRuntimeSplitCi8Palette(api));
+    CHECK(testRuntimeCi8Pal16Palette(api));
     CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
     CHECK(testRuntimeDepthFogUsesSemanticCombiner(api));
     CHECK(testRuntimeKeyConvertUsesSemanticCombiner(api));
