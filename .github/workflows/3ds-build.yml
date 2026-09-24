@@ -1,0 +1,45 @@
+name: Nintendo 3DS M0 bootstrap
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Test M0 bootstrap contract
+        run: sh tools/test_bootstrap.sh
+
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Record toolchain versions
+        run: |
+          "$DEVKITARM/bin/arm-none-eabi-gcc" --version
+          make --version
+      - name: Test M0 bootstrap contract
+        run: make bootstrap-test
+      - name: Build 3DSX
+        run: |
+          make -j2 \
+            PB3DS_BUILD_SHA="$GITHUB_SHA" \
+            PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Upload Homebrew artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaperBoat3DS-Refolded-${{ github.sha }}
+          path: |
+            PaperBoat3DS-Refolded.3dsx
+            PaperBoat3DS-Refolded.elf
+            PaperBoat3DS-Refolded.smdh
