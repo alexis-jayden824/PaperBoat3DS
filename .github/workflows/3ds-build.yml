@@ -11,6 +11,14 @@ permissions:
   contents: read
 
 jobs:
+  host-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Test M7 synthetic asset contract
+        run: sh tools/test_asset_pipeline.sh
+
   build:
     runs-on: ubuntu-latest
     container:
@@ -37,8 +45,8 @@ jobs:
       - name: Fetch pinned upstream sources
         run: sh tools/fetch_upstream.sh
 
-      - name: Test M10 libultraship graphics contract
-        run: make m10-graphics-test
+      - name: Test M10-M13 libultraship graphics contract
+        run: SANITIZE=1 make m10-graphics-test
 
       - name: Test M11 archive-backed frame
         run: make m11-frame-test
@@ -49,8 +57,17 @@ jobs:
       - name: Test M12.1 400x240 title layout
         run: make m12-layout-test
 
+      - name: Test M13 overworld resource and flow contracts
+        run: make m13-world-test
+
+      - name: Test native resources with pinned upstream shape loader
+        run: SANITIZE=1 sh tools/test_runtime_resources.sh
+
       - name: Cross-compile M5 upstream core slice
         run: make m5-core-check
+
+      - name: Link M13 upstream runtime integration slice
+        run: make m13-core-check
 
       - name: Build 3DSX
         run: |

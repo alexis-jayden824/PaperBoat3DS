@@ -228,3 +228,60 @@ The simple panels are expected at M12. Missing save text/window decoration,
 audio, and an overworld transition are documented milestone boundaries rather
 than emulator failures. Folium still cannot establish physical lifecycle,
 input, or Old 3DS performance behavior.
+
+## M13 core overworld gameplay
+
+Use the private bundle marked `0.13.15-m13r15` with the same owner-generated O2R
+files installed in Folium's virtual SD.
+
+1. Enter file select and confirm a slot. The bottom screen must advance through
+   numbered `Starting PaperBoat` stages and then change to `Upstream: active`;
+   the top screen must reach authentic `mac_00` through PaperBoat's transition
+   frames without freezing.
+2. Wait for `Mode:5`, then move in several directions. Verify Mario is visible,
+   acceleration/deceleration and facing resemble the PaperBoat/N64 reference,
+   collision stops him at the same boundaries, the camera follows, and the
+   live position/speed/action values change coherently.
+3. Press START. Verify the upstream pause UI appears and the bottom screen
+   reports `Mode:10`; player position must remain fixed. Resume and repeat this
+   at least ten times.
+4. Inspect the top screen beside matching PaperBoat/N64 footage. Record any
+   difference in framing, layer order, texture or palette selection,
+   transparency, fog, sprites, UI, or fades.
+5. Confirm the bottom screen keeps `unk:0`, `miss:0`, `Fall:0`, `bad:0`, and
+   `Reject:0` while moving and pausing. Treat any nonzero value or magenta
+   checker texture as a failure and photograph both screens immediately.
+6. Exercise the `mac_00`/`mac_01` exits if reachable in the candidate, then
+   approach the former `kmr_20` sewer-pipe trigger. It must not request that
+   out-of-scope map or produce `Map not found: kmr_20`. Exit with L+R+START and
+   preserve the SHA, captures, and log.
+
+For r15, capture the bottom-screen `Step`, `Cmd/f`, `CC`, `2C`, `Fog`,
+`Key/conv`, `Unsafe`, `Ev`, `Rt`, `Vp`, `Sc`, `probe`, and `pause` fields
+immediately before START, on the pause menu, and after resume. If a sprite is
+cut off, capture the active `Vp` and `Sc` bounds on that exact frame. `CC`
+reports semantic TEV batches first and temporary CPU fallbacks second; `2C`
+reports semantic two-cycle batches. The latter must increase when affected
+materials render. `Fog` reports semantic/legacy fog batches; the semantic value
+must increase when fogged materials render, while standard depth and constant
+fog must not increment the legacy value. Report any legacy fog as a remaining
+vertex-alpha case. The general legacy value can remain nonzero for unrelated
+migration boundaries. `Key/conv` reports semantic/legacy
+key-and-convert-constant batches; report both values, and treat a nonzero
+legacy value as a renderer migration failure for that material.
+Inspect CI4/CI8 palette-swapped sprites, glyphs, the world background, and the
+pause map closely. r15 retains complete RDP TLUT staging and keeps evicted
+native textures alive until queued PICA draws finish. `Ev` and the first two
+`Rt` values may increase; the final `Rt` failure value must remain zero.
+The test fails if the update count stops, if the Toad Town background or major
+building surfaces are black, if Mario/NPC layers are cut apart, or if any
+sprite, glyph, UI label, or model texture is vertically inverted.
+
+If startup does not finish, photograph the numbered stage and preserve the
+complete log. A `runtime-panic` line is a captured upstream assertion; a final
+`runtime-start` line without its following stage identifies the call that did
+not return. Do not describe either case as successful gameplay.
+
+M13 stays open after a successful boot. Acceptance requires this upstream path
+to look and feel correct side by side; audio, saves, battles, and later chapter
+coverage remain blocked.

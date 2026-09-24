@@ -11,7 +11,8 @@
   proprietary assets. CI rejects those extensions.
 - One devkitARM ELF is packaged as canonical `.3dsx`, emulator `.3ds`, and
   optional CFW `.cia` outputs.
-- The application is still a diagnostic shell, not a playable port.
+- The application is being recovered onto PaperBoat's upstream world loop; M13
+  remains an unaccepted test candidate.
 
 ## Evidence through M8
 
@@ -132,10 +133,43 @@ N64 flow as the explicit checkpoint exit chord. Confirmation intentionally
 stops at the M13 handoff. The rendered file panels do not claim save I/O,
 message/font/window display lists, audio, or overworld execution.
 
+## M13 candidate audit result
+
+Folium proved that the custom `PBWorldScene` could load assets and submit a
+scene, but its hand-written movement and partial rendering did not reproduce
+Paper Mario. It is retained only as diagnostic scaffolding and no longer runs
+after file confirmation.
+
+The recovery candidate builds the pinned PaperBoat closure, initializes the
+upstream engine, enters `mac_00` entry 1, and advances the real
+`step_game_loop`, `gfx_task_background`, and `gfx_draw_frame` path. Controller
+input reaches upstream player acceleration, collision, action, and camera
+state. PaperBoat's display lists reach a bounded 3DS interpreter with resource
+path/hash lookup, matrices, vertices, nested lists, tiles, texture loads,
+palettes, combine/other modes, alpha and blend state, fog, scissor, rectangles,
+and depth state. Generated map units retain only the `mac_00`/`mac_01`
+transition pair, and standard depth/constant fog now reaches native PICA200 fog
+state with independent semantic/legacy diagnostics. Key center/scale and signed
+K4/K5 convert constants also reach the semantic TEV backend, with a separate
+semantic/legacy counter for route evidence.
+
+An owner-only 400-update host trace submitted 379 real frames, moved the
+upstream player, and entered/exited the upstream pause mode. Across 2,647,677
+commands and 1,306 loaded resources it reported zero unknown opcodes, missing
+resources, texture fallbacks, malformed lists, or renderer rejects. Public
+synthetic tests still cover archive parsing and the diagnostic scaffold without
+proprietary data; the private archive remains local.
+
+Native CI now links the complete ARM11 ELF, verifies the authoritative runtime
+symbols, passes the static memory gate, and packages `.3dsx`, `.3ds`, and
+`.cia` candidates. This establishes native build closure, but not target
+performance or visual fidelity. The PR stays open until side-by-side
+Folium/hardware captures establish Toad Town presentation and movement. Audio,
+saves, battles, and chapter coverage remain blocked.
+
 ## Open gates
 
-1. Pass the M12 native build/package and public synthetic CI gates.
-2. Validate the corrected title and file-select interaction in Folium.
-3. Validate renderer lifecycle, input, and memory behavior on real hardware.
-4. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
+1. Validate the complete M13 playable slice in Folium and merge its PR.
+2. Validate renderer lifecycle, input, and memory behavior on real hardware.
+3. Preserve real-hardware gates for lifecycle, memory, controls, rendering,
    and Old 3DS performance.

@@ -69,3 +69,22 @@ bool pb_title_layout_compute(PBTitleLayout *layout, uint16_t target_width,
            pb_title_layout_rect_inside(&layout->copyright,
                                        &layout->safe_canvas);
 }
+
+bool pb_title_prompt_bake_tint(uint8_t *rgba, size_t rgba_size) {
+    if (rgba == NULL || rgba_size == 0U || rgba_size % 4U != 0U) {
+        return false;
+    }
+    for (size_t offset = 0U; offset < rgba_size; offset += 4U) {
+        rgba[offset + 0U] = (uint8_t)(
+            ((uint32_t)rgba[offset + 0U] * PB_TITLE_PROMPT_TINT_RED + 127U) /
+            255U);
+        rgba[offset + 1U] = (uint8_t)(
+            ((uint32_t)rgba[offset + 1U] * PB_TITLE_PROMPT_TINT_GREEN +
+             127U) /
+            255U);
+        rgba[offset + 2U] = (uint8_t)(
+            ((uint32_t)rgba[offset + 2U] * PB_TITLE_PROMPT_TINT_BLUE + 127U) /
+            255U);
+    }
+    return true;
+}

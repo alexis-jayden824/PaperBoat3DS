@@ -5,9 +5,30 @@
 
 #define PB_GFX_SUPPORTED_OPTIONS                                             \
     (PB_GFX_OPTION_MASK(PB_GFX_OPT_ALPHA) |                                 \
-     PB_GFX_OPTION_MASK(PB_GFX_OPT_TEXEL0_CLAMP_S) |                        \
-     PB_GFX_OPTION_MASK(PB_GFX_OPT_TEXEL0_CLAMP_T))
+     PB_GFX_OPTION_MASK(PB_GFX_OPT_TWO_CYCLE))
 #define PB_GFX_OPTION_MASK(option) (UINT64_C(1) << (unsigned int)(option))
+
+typedef struct {
+    bool constant;
+    float value[4];
+    PBGfxTevSource source;
+    PBGfxTevRgbOperand rgb_operand;
+    bool original_previous;
+} PBTevArgument;
+
+typedef struct {
+    PBGfxTevSource sources[3];
+    PBGfxTevRgbOperand rgb_operands[3];
+    PBGfxTevFunction function;
+    float constant[4];
+    bool has_constant;
+} PBTevChannelStage;
+
+typedef struct {
+    PBTevChannelStage stages[3];
+    size_t count;
+    bool alpha;
+} PBTevChannelProgram;
 
 static bool operand_is_texture0(uint8_t operand) {
     return operand == PB_GFX_SHADER_TEXEL0 ||
@@ -43,11 +64,440 @@ static PBGfxCombinerMode formula_mode(const uint8_t formula[4]) {
     return PB_GFX_COMBINER_FALLBACK;
 }
 
+static bool channel_values_equal(const float left[4], const float right[4],
+                                 bool alpha) {
+    if (alpha) {
+        return left[3] == right[3];
+    }
+    return left[0] == right[0] && left[1] == right[1] &&
+           left[2] == right[2];
+}
+
+static bool argument_equal(const PBTevArgument *left,
+                           const PBTevArgument *right, bool alpha) {
+    if (left->constant != right->constant) {
+        return false;
+    }
+    if (left->constant) {
+        return channel_values_equal(left->value, right->value, alpha);
+    }
+    return left->source == right->source &&
+           (alpha || left->rgb_operand == right->rgb_operand) &&
+           left->original_previous == right->original_previous;
+}
+
+static bool argument_is_value(const PBTevArgument *argument, float value,
+                              bool alpha) {
+    if (!argument->constant) {
+        return false;
+    }
+    if (alpha) {
+        return argument->value[3] == value;
+    }
+    return argument->value[0] == value && argument->value[1] == value &&
+           argument->value[2] == value;
+}
+
+static PBTevArgument constant_argument(float value) {
+    PBTevArgument argument = { 0 };
+    argument.constant = true;
+    for (size_t component = 0; component < 4U; component++) {
+        argument.value[component] = value;
+    }
+    return argument;
+}
+
+static bool decode_tev_argument(uint8_t operand, unsigned int cycle,
+                                bool alpha, const float inputs[6][4],
+                                PBTevArgument *argument) {
+    if (argument == NULL) {
+        return false;
+    }
+    memset(argument, 0, sizeof(*argument));
+    argument->rgb_operand = PB_GFX_TEV_RGB_COLOR;
+    if (operand >= PB_GFX_SHADER_INPUT_1 &&
+        operand <= PB_GFX_SHADER_INPUT_6) {
+        argument->constant = true;
+        memcpy(argument->value, inputs[operand - PB_GFX_SHADER_INPUT_1],
+               sizeof(argument->value));
+        return true;
+    }
+    switch (operand) {
+        case PB_GFX_SHADER_ZERO:
+            *argument = constant_argument(0.0f);
+            return true;
+        case PB_GFX_SHADER_ONE:
+            *argument = constant_argument(1.0f);
+            return true;
+        case PB_GFX_SHADER_SHADE:
+            argument->source = PB_GFX_TEV_SHADE;
+            return true;
+        case PB_GFX_SHADER_TEXEL0:
+        case PB_GFX_SHADER_TEXEL0_ALPHA:
+            argument->source = cycle == 0U ? PB_GFX_TEV_TEXTURE0
+                                           : PB_GFX_TEV_TEXTURE1;
+            argument->rgb_operand =
+                operand == PB_GFX_SHADER_TEXEL0_ALPHA
+                    ? PB_GFX_TEV_RGB_ALPHA
+                    : PB_GFX_TEV_RGB_COLOR;
+            return true;
+        case PB_GFX_SHADER_TEXEL1:
+        case PB_GFX_SHADER_TEXEL1_ALPHA:
+            argument->source = cycle == 0U ? PB_GFX_TEV_TEXTURE1
+                                           : PB_GFX_TEV_TEXTURE0;
+            argument->rgb_operand =
+                operand == PB_GFX_SHADER_TEXEL1_ALPHA
+                    ? PB_GFX_TEV_RGB_ALPHA
+                    : PB_GFX_TEV_RGB_COLOR;
+            return true;
+        case PB_GFX_SHADER_COMBINED:
+            if (cycle == 0U) {
+                *argument = constant_argument(0.0f);
+            } else {
+                argument->source = PB_GFX_TEV_PREVIOUS;
+                argument->original_previous = true;
+            }
+            return true;
+        default:
+            (void)alpha;
+            return false;
+    }
+}
+
+static void evaluate_binary(PBGfxTevFunction function,
+                            const PBTevArgument *left,
+                            const PBTevArgument *right,
+                            PBTevArgument *result) {
+    *result = constant_argument(0.0f);
+    for (size_t component = 0; component < 4U; component++) {
+        switch (function) {
+            case PB_GFX_TEV_MODULATE:
+                result->value[component] =
+                    left->value[component] * right->value[component];
+                break;
+            case PB_GFX_TEV_ADD:
+                result->value[component] =
+                    left->value[component] + right->value[component];
+                break;
+            case PB_GFX_TEV_SUBTRACT:
+                result->value[component] =
+                    left->value[component] - right->value[component];
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+static size_t distinct_constants(const PBTevArgument *arguments[],
+                                 size_t count, bool alpha) {
+    const PBTevArgument *first = NULL;
+    size_t distinct = 0U;
+    for (size_t index = 0; index < count; index++) {
+        if (!arguments[index]->constant) {
+            continue;
+        }
+        if (first == NULL) {
+            first = arguments[index];
+            distinct = 1U;
+        } else if (!channel_values_equal(first->value,
+                                         arguments[index]->value, alpha)) {
+            return 2U;
+        }
+    }
+    return distinct;
+}
+
+static bool emit_channel_stage(PBTevChannelProgram *program,
+                               PBGfxTevFunction function,
+                               const PBTevArgument *arguments[],
+                               size_t argument_count,
+                               PBTevArgument *result) {
+    if (program == NULL || result == NULL || argument_count == 0U ||
+        argument_count > 3U || program->count >= 3U ||
+        distinct_constants(arguments, argument_count, program->alpha) > 1U) {
+        return false;
+    }
+    for (size_t index = 0; index < argument_count; index++) {
+        if (!arguments[index]->constant &&
+            arguments[index]->source == PB_GFX_TEV_PREVIOUS &&
+            arguments[index]->original_previous && program->count != 0U) {
+            return false;
+        }
+    }
+
+    PBTevChannelStage *stage = &program->stages[program->count];
+    memset(stage, 0, sizeof(*stage));
+    stage->function = function;
+    for (size_t index = 0; index < 3U; index++) {
+        stage->sources[index] = PB_GFX_TEV_SHADE;
+        stage->rgb_operands[index] = PB_GFX_TEV_RGB_COLOR;
+    }
+    for (size_t index = 0; index < argument_count; index++) {
+        if (arguments[index]->constant) {
+            stage->sources[index] = PB_GFX_TEV_CONSTANT;
+            if (!stage->has_constant) {
+                memcpy(stage->constant, arguments[index]->value,
+                       sizeof(stage->constant));
+                stage->has_constant = true;
+            }
+        } else {
+            stage->sources[index] = arguments[index]->source;
+            stage->rgb_operands[index] = arguments[index]->rgb_operand;
+        }
+    }
+    program->count++;
+    memset(result, 0, sizeof(*result));
+    result->source = PB_GFX_TEV_PREVIOUS;
+    result->rgb_operand = PB_GFX_TEV_RGB_COLOR;
+    return true;
+}
+
+static bool emit_replace(PBTevChannelProgram *program,
+                         const PBTevArgument *argument,
+                         PBTevArgument *result) {
+    const PBTevArgument *arguments[] = { argument };
+    return emit_channel_stage(program, PB_GFX_TEV_REPLACE, arguments, 1U,
+                              result);
+}
+
+static bool emit_binary(PBTevChannelProgram *program,
+                        PBGfxTevFunction function,
+                        const PBTevArgument *left,
+                        const PBTevArgument *right,
+                        PBTevArgument *result) {
+    if (left->constant && right->constant) {
+        evaluate_binary(function, left, right, result);
+        return true;
+    }
+    const PBTevArgument *arguments[] = { left, right };
+    return emit_channel_stage(program, function, arguments, 2U, result);
+}
+
+static bool emit_ternary(PBTevChannelProgram *program,
+                         PBGfxTevFunction function,
+                         const PBTevArgument *first,
+                         const PBTevArgument *second,
+                         const PBTevArgument *third,
+                         PBTevArgument *result) {
+    if (first->constant && second->constant && third->constant) {
+        *result = constant_argument(0.0f);
+        for (size_t component = 0; component < 4U; component++) {
+            if (function == PB_GFX_TEV_INTERPOLATE) {
+                result->value[component] =
+                    first->value[component] * third->value[component] +
+                    second->value[component] *
+                        (1.0f - third->value[component]);
+            } else {
+                result->value[component] =
+                    first->value[component] * second->value[component] +
+                    third->value[component];
+            }
+        }
+        return true;
+    }
+    const PBTevArgument *arguments[] = { first, second, third };
+    return emit_channel_stage(program, function, arguments, 3U, result);
+}
+
+static bool finish_channel(PBTevChannelProgram *program,
+                           const PBTevArgument *result) {
+    if (!result->constant && result->source == PB_GFX_TEV_PREVIOUS &&
+        !result->original_previous && program->count != 0U) {
+        return true;
+    }
+    PBTevArgument previous;
+    return emit_replace(program, result, &previous);
+}
+
+static bool compile_channel_formula(const uint8_t formula[4],
+                                    unsigned int cycle, bool alpha,
+                                    const float inputs[6][4],
+                                    PBTevChannelProgram *program) {
+    memset(program, 0, sizeof(*program));
+    program->alpha = alpha;
+    PBTevArgument a, b, c, d;
+    if (!decode_tev_argument(formula[0], cycle, alpha, inputs, &a) ||
+        !decode_tev_argument(formula[1], cycle, alpha, inputs, &b) ||
+        !decode_tev_argument(formula[2], cycle, alpha, inputs, &c) ||
+        !decode_tev_argument(formula[3], cycle, alpha, inputs, &d)) {
+        return false;
+    }
+
+    if (argument_is_value(&c, 0.0f, alpha) ||
+        argument_equal(&a, &b, alpha)) {
+        return finish_channel(program, &d);
+    }
+
+    PBTevArgument result;
+    if (argument_equal(&b, &d, alpha)) {
+        if (distinct_constants(
+                (const PBTevArgument *[]){ &a, &b, &c }, 3U, alpha) <= 1U &&
+            emit_ternary(program, PB_GFX_TEV_INTERPOLATE, &a, &b, &c,
+                         &result)) {
+            return finish_channel(program, &result);
+        }
+        PBTevArgument difference;
+        PBTevArgument product;
+        if (!emit_binary(program, PB_GFX_TEV_SUBTRACT, &a, &b,
+                         &difference) ||
+            !emit_binary(program, PB_GFX_TEV_MODULATE, &difference, &c,
+                         &product) ||
+            !emit_binary(program, PB_GFX_TEV_ADD, &product, &b, &result)) {
+            return false;
+        }
+        return finish_channel(program, &result);
+    }
+
+    const bool b_zero = argument_is_value(&b, 0.0f, alpha);
+    const bool d_zero = argument_is_value(&d, 0.0f, alpha);
+    if (b_zero && d_zero) {
+        if (!emit_binary(program, PB_GFX_TEV_MODULATE, &a, &c, &result)) {
+            return false;
+        }
+        return finish_channel(program, &result);
+    }
+    if (b_zero) {
+        if (distinct_constants(
+                (const PBTevArgument *[]){ &a, &c, &d }, 3U, alpha) <= 1U &&
+            emit_ternary(program, PB_GFX_TEV_MULTIPLY_ADD, &a, &c, &d,
+                         &result)) {
+            return finish_channel(program, &result);
+        }
+        PBTevArgument product;
+        if (!emit_binary(program, PB_GFX_TEV_MODULATE, &a, &c, &product) ||
+            !emit_binary(program, PB_GFX_TEV_ADD, &product, &d, &result)) {
+            return false;
+        }
+        return finish_channel(program, &result);
+    }
+
+    PBTevArgument difference;
+    if (!emit_binary(program, PB_GFX_TEV_SUBTRACT, &a, &b, &difference)) {
+        return false;
+    }
+    if (d_zero) {
+        if (!emit_binary(program, PB_GFX_TEV_MODULATE, &difference, &c,
+                         &result)) {
+            return false;
+        }
+        return finish_channel(program, &result);
+    }
+    if (distinct_constants(
+            (const PBTevArgument *[]){ &difference, &c, &d }, 3U, alpha) <=
+            1U &&
+        emit_ternary(program, PB_GFX_TEV_MULTIPLY_ADD, &difference, &c, &d,
+                     &result)) {
+        return finish_channel(program, &result);
+    }
+    PBTevArgument product;
+    if (!emit_binary(program, PB_GFX_TEV_MODULATE, &difference, &c,
+                     &product) ||
+        !emit_binary(program, PB_GFX_TEV_ADD, &product, &d, &result)) {
+        return false;
+    }
+    return finish_channel(program, &result);
+}
+
+static PBTevChannelStage pass_previous_stage(void) {
+    PBTevChannelStage stage = { 0 };
+    stage.function = PB_GFX_TEV_REPLACE;
+    for (size_t index = 0; index < 3U; index++) {
+        stage.sources[index] = PB_GFX_TEV_PREVIOUS;
+        stage.rgb_operands[index] = PB_GFX_TEV_RGB_COLOR;
+    }
+    return stage;
+}
+
+static void merge_channel_stage(PBGfxTevStage *destination,
+                                const PBTevChannelStage *source,
+                                bool alpha) {
+    if (alpha) {
+        destination->alpha_function = source->function;
+        memcpy(destination->alpha_sources, source->sources,
+               sizeof(destination->alpha_sources));
+        if (source->has_constant) {
+            destination->constant[3] = source->constant[3];
+        }
+    } else {
+        destination->rgb_function = source->function;
+        memcpy(destination->rgb_sources, source->sources,
+               sizeof(destination->rgb_sources));
+        memcpy(destination->rgb_operands, source->rgb_operands,
+               sizeof(destination->rgb_operands));
+        if (source->has_constant) {
+            memcpy(destination->constant, source->constant,
+                   sizeof(float) * 3U);
+        }
+    }
+}
+
 uint64_t pb_gfx_shader_option(PBGfxShaderOption option) {
     if ((unsigned int)option > (unsigned int)PB_GFX_OPT_PRISM_SHADER) {
         return 0;
     }
     return UINT64_C(1) << (unsigned int)option;
+}
+
+bool pb_gfx_combiner_compile_tev(const PBGfxCombinerPlan *plan,
+                                 const float inputs[6][4],
+                                 PBGfxTevProgram *program) {
+    if (plan == NULL || inputs == NULL || program == NULL ||
+        !plan->supported) {
+        return false;
+    }
+    memset(program, 0, sizeof(*program));
+    size_t stage_offset = 0U;
+    const unsigned int cycle_count = plan->two_cycle ? 2U : 1U;
+    for (unsigned int cycle = 0; cycle < cycle_count; cycle++) {
+        PBTevChannelProgram rgb;
+        PBTevChannelProgram alpha;
+        if (!compile_channel_formula(plan->operands[cycle][0], cycle, false,
+                                     inputs, &rgb)) {
+            memset(program, 0, sizeof(*program));
+            return false;
+        }
+        if (plan->uses_alpha) {
+            if (!compile_channel_formula(plan->operands[cycle][1], cycle,
+                                         true, inputs, &alpha)) {
+                memset(program, 0, sizeof(*program));
+                return false;
+            }
+        } else {
+            static const uint8_t opaque_formula[4] = {
+                PB_GFX_SHADER_ZERO, PB_GFX_SHADER_ZERO,
+                PB_GFX_SHADER_ZERO, PB_GFX_SHADER_ONE,
+            };
+            if (!compile_channel_formula(opaque_formula, cycle, true,
+                                         inputs, &alpha)) {
+                memset(program, 0, sizeof(*program));
+                return false;
+            }
+        }
+
+        const size_t cycle_stages = rgb.count > alpha.count
+                                        ? rgb.count
+                                        : alpha.count;
+        if (cycle_stages == 0U ||
+            stage_offset + cycle_stages > PB_GFX_TEV_STAGE_COUNT) {
+            memset(program, 0, sizeof(*program));
+            return false;
+        }
+        const PBTevChannelStage pass = pass_previous_stage();
+        for (size_t index = 0; index < cycle_stages; index++) {
+            PBGfxTevStage *destination =
+                &program->stages[stage_offset + index];
+            const PBTevChannelStage *rgb_stage =
+                index < rgb.count ? &rgb.stages[index] : &pass;
+            const PBTevChannelStage *alpha_stage =
+                index < alpha.count ? &alpha.stages[index] : &pass;
+            merge_channel_stage(destination, rgb_stage, false);
+            merge_channel_stage(destination, alpha_stage, true);
+        }
+        stage_offset += cycle_stages;
+    }
+    program->stage_count = (uint8_t)stage_offset;
+    return stage_offset != 0U;
 }
 
 bool pb_gfx_combiner_decode(PBGfxCombinerPlan *plan, uint64_t shader_id0,
@@ -92,6 +542,11 @@ bool pb_gfx_combiner_decode(PBGfxCombinerPlan *plan, uint64_t shader_id0,
         (shader_id1 & PB_GFX_OPTION_MASK(PB_GFX_OPT_ALPHA)) != 0;
     plan->two_cycle =
         (shader_id1 & PB_GFX_OPTION_MASK(PB_GFX_OPT_TWO_CYCLE)) != 0;
+    if (plan->two_cycle &&
+        (plan->used_textures[0] || plan->used_textures[1])) {
+        plan->used_textures[0] = true;
+        plan->used_textures[1] = true;
+    }
 
     const uint64_t option_bits = shader_id1 &
         ((UINT64_C(1) << ((unsigned int)PB_GFX_OPT_PRISM_SHADER + 1U)) - 1U);
@@ -101,21 +556,12 @@ bool pb_gfx_combiner_decode(PBGfxCombinerPlan *plan, uint64_t shader_id0,
         custom_shader_id != 0) {
         plan->reject_reasons |= PB_GFX_REJECT_OPTION;
     }
-    if (plan->two_cycle) {
-        plan->reject_reasons |= PB_GFX_REJECT_TWO_CYCLE;
-    }
-    if (plan->used_textures[1]) {
-        plan->reject_reasons |= PB_GFX_REJECT_TEXTURE1;
-    }
-
     const PBGfxCombinerMode color_mode =
         formula_mode(plan->operands[0][0]);
     const PBGfxCombinerMode alpha_mode =
         formula_mode(plan->operands[0][1]);
-    if (color_mode == PB_GFX_COMBINER_FALLBACK ||
-        (plan->uses_alpha && alpha_mode != color_mode)) {
-        plan->reject_reasons |= PB_GFX_REJECT_FORMULA;
-    } else {
+    if (color_mode != PB_GFX_COMBINER_FALLBACK &&
+        (!plan->uses_alpha || alpha_mode == color_mode)) {
         plan->mode = color_mode;
     }
 
@@ -129,6 +575,21 @@ bool pb_gfx_combiner_decode(PBGfxCombinerPlan *plan, uint64_t shader_id0,
         plan->vertex_stride_floats += plan->uses_alpha ? 4U : 3U;
     }
     plan->supported = plan->reject_reasons == PB_GFX_REJECT_NONE;
+    if (plan->supported) {
+        float validation_inputs[6][4];
+        for (size_t input = 0; input < 6U; input++) {
+            for (size_t component = 0; component < 4U; component++) {
+                validation_inputs[input][component] =
+                    (float)(input * 4U + component + 1U) / 32.0f;
+            }
+        }
+        PBGfxTevProgram validation_program;
+        if (!pb_gfx_combiner_compile_tev(plan, validation_inputs,
+                                         &validation_program)) {
+            plan->reject_reasons |= PB_GFX_REJECT_FORMULA;
+            plan->supported = false;
+        }
+    }
     if (!plan->supported) {
         plan->mode = PB_GFX_COMBINER_FALLBACK;
     }
@@ -216,15 +677,37 @@ bool pb_gfx_bridge_end_frame(PBGfxBridge *bridge, bool presented) {
 
 static bool set_rectangle(PBViewport *destination, bool *valid, int x, int y,
                           int width, int height) {
-    if (destination == NULL || valid == NULL || x < 0 || y < 0 || width <= 0 ||
-        height <= 0 || x > (int)PB_RENDER_TOP_WIDTH - width ||
-        y > (int)PB_RENDER_TOP_HEIGHT - height) {
+    if (destination == NULL || valid == NULL || width <= 0 || height <= 0) {
         return false;
     }
-    destination->x = (uint16_t)x;
-    destination->y = (uint16_t)y;
-    destination->width = (uint16_t)width;
-    destination->height = (uint16_t)height;
+
+    /* Fast3D camera offsets and animated menu clips can extend a rectangle a
+     * few pixels beyond the logical screen. Intersect those requests with the
+     * visible target so a rejected update cannot leave a stale, wider clip
+     * rectangle bound for a later draw. Use widened arithmetic so extreme
+     * signed inputs cannot overflow while calculating the far edge. */
+    long long left = x;
+    long long top = y;
+    long long right = (long long)x + (long long)width;
+    long long bottom = (long long)y + (long long)height;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > (long long)PB_RENDER_TOP_WIDTH) {
+        right = (long long)PB_RENDER_TOP_WIDTH;
+    }
+    if (bottom > (long long)PB_RENDER_TOP_HEIGHT) {
+        bottom = (long long)PB_RENDER_TOP_HEIGHT;
+    }
+    if (left >= (long long)PB_RENDER_TOP_WIDTH ||
+        top >= (long long)PB_RENDER_TOP_HEIGHT || right <= left ||
+        bottom <= top) {
+        return false;
+    }
+
+    destination->x = (uint16_t)left;
+    destination->y = (uint16_t)top;
+    destination->width = (uint16_t)(right - left);
+    destination->height = (uint16_t)(bottom - top);
     *valid = true;
     return true;
 }

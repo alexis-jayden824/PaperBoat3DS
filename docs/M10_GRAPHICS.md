@@ -30,16 +30,17 @@ rotated to the native 240x400 PICA target.
 
 ## Bounded resources
 
-- Texture IDs come from a 32-entry registry. Uploads require power-of-two RGBA8
+- Texture IDs originally came from a 32-entry registry; M13 raises the fixed
+  registry to 64 entries for authentic map textures. Uploads require power-of-two RGBA8
   dimensions from 8 through 1024, are Morton-swizzled, and replace an existing
   native texture without leaking the old allocation.
 - Shader plans use a fixed 64-entry cache; there is no runtime allocation or
   source compilation for a combiner.
-- Each draw is limited to 384 triangles and 64 KiB of source vertex data. The
-  native conversion buffer is one fixed linear allocation sized for 1,152
-  vertices. M11 resets it once per frame and gives each draw a non-overlapping
-  span; the earlier per-draw overwrite was unsafe while PICA consumed queued
-  commands asynchronously.
+- The original diagnostic arena held 384 triangles and 64 KiB of source vertex
+  data. M13 raises the same fixed per-frame arena to 4,096 triangles, 12,288
+  vertices, and 576 KiB for the authentic map while preserving bounded
+  non-overlapping spans. The earlier per-draw overwrite was unsafe while PICA
+  consumed queued commands asynchronously.
 - Draws are rejected unless their float count exactly matches libultraship's
   active layout: `position4 + matrix-slot1`, optional UV pairs, and optional
   RGB/RGBA shade.

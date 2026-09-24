@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static unsigned int checks_run;
 
@@ -60,8 +61,31 @@ static bool test_reference_and_rejection(void) {
     return true;
 }
 
+static bool test_prompt_tint_bake(void) {
+    uint8_t pixels[] = {
+        255, 255, 255, 255,
+        128, 64, 32, 17,
+        0, 0, 0, 0,
+    };
+    CHECK(pb_title_prompt_bake_tint(pixels, sizeof(pixels)));
+    CHECK(pixels[0] == PB_TITLE_PROMPT_TINT_RED);
+    CHECK(pixels[1] == PB_TITLE_PROMPT_TINT_GREEN);
+    CHECK(pixels[2] == PB_TITLE_PROMPT_TINT_BLUE);
+    CHECK(pixels[3] == 255);
+    CHECK(pixels[4] == 124);
+    CHECK(pixels[5] == 60);
+    CHECK(pixels[6] == 19);
+    CHECK(pixels[7] == 17);
+    CHECK(pixels[8] == 0);
+    CHECK(pixels[11] == 0);
+    CHECK(!pb_title_prompt_bake_tint(NULL, sizeof(pixels)));
+    CHECK(!pb_title_prompt_bake_tint(pixels, sizeof(pixels) - 1U));
+    return true;
+}
+
 int main(void) {
-    if (!test_new_3ds_xl_layout() || !test_reference_and_rejection()) {
+    if (!test_new_3ds_xl_layout() || !test_reference_and_rejection() ||
+        !test_prompt_tint_bake()) {
         return EXIT_FAILURE;
     }
     printf("M12.1 400x240 title layout: %u checks passed\n", checks_run);

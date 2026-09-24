@@ -35,9 +35,16 @@ looking like a smaller card floating on the screen.
 ## Prompt visibility
 
 PaperBoat modulates the IA8 PRESS START texture by RGB `(248, 240, 152)` and a
-blinking alpha. M12.1 applies that same pale-yellow tint. The bottom-screen
-diagnostic prints `A:<value>` beside `Safe:320@x40`; a capture with `A:255`
-must show the prompt, while `A:0` is an intentional off phase.
+blinking alpha. The first M12.1 Folium capture validated the 400x240 framing but
+showed that the texture-times-nonwhite-vertex tint path could still suppress
+the prompt even while the diagnostic reported `A:255`. M13 bakes the exact RGB
+tint into a temporary upload buffer, preserves every source alpha value, and
+uses only vertex alpha for blinking. This leaves the authentic pixels and
+timing intact while avoiding that backend-specific combiner ambiguity.
+
+The bottom-screen diagnostic prints `A:<value>` beside `Safe:320@x40`; a
+capture with `A:255` must show the prompt, while `A:0` is an intentional off
+phase. The host test verifies the tint math and alpha preservation exactly.
 
 ## Acceptance
 

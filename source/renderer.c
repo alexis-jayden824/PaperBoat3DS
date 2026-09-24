@@ -180,6 +180,44 @@ bool pb_renderer_textured_quad(PBTexturedQuad *quad, float left,
     return true;
 }
 
+float pb_renderer_n64_texture_v(float n64_v, uint16_t source_height,
+                                uint16_t texture_height) {
+    if (source_height == 0U || texture_height == 0U ||
+        source_height > texture_height) {
+        return 0.0f;
+    }
+    return ((float)source_height - n64_v) / (float)texture_height;
+}
+
+bool pb_renderer_fast3d_fog_lut(float values[PB_RENDER_FOG_LUT_VALUES],
+                                int16_t fog_multiply, int16_t fog_offset) {
+    if (values == NULL) {
+        return false;
+    }
+
+    float previous_visibility = 0.0f;
+    for (size_t index = 0; index <= 128U; index++) {
+        /* C3D's default depth map turns renderer.v.pica's clip Z into
+         * depth=(N64 clipZ/clipW + 1)/2.  PICA indexes its fog LUT with that
+         * depth, while Fast3D defines the fog factor in original N64 NDC. */
+        const float depth = (float)index / 128.0f;
+        const float ndc_z = depth * 2.0f - 1.0f;
+        float fog = (ndc_z * (float)fog_multiply + (float)fog_offset) /
+                    255.0f;
+        if (fog < 0.0f) fog = 0.0f;
+        if (fog > 1.0f) fog = 1.0f;
+        const float visibility = 1.0f - fog;
+        if (index < 128U) {
+            values[index] = visibility;
+        }
+        if (index > 0U) {
+            values[index + 127U] = visibility - previous_visibility;
+        }
+        previous_visibility = visibility;
+    }
+    return true;
+}
+
 bool pb_renderer_viewport_to_target(const PBViewport *logical,
                                     PBTargetViewport *target) {
     if (logical == NULL || target == NULL || logical->width == 0 ||
@@ -203,6 +241,8 @@ bool pb_renderer_pipeline_is_valid(const PBRenderPipeline *pipeline) {
         (unsigned int)pipeline->depth_function >=
             (unsigned int)PB_COMPARE_COUNT ||
         (unsigned int)pipeline->blend_mode >= (unsigned int)PB_BLEND_COUNT ||
+        (unsigned int)pipeline->alpha_function >=
+            (unsigned int)PB_COMPARE_COUNT ||
         (unsigned int)pipeline->min_filter >= (unsigned int)PB_FILTER_COUNT ||
         (unsigned int)pipeline->mag_filter >= (unsigned int)PB_FILTER_COUNT ||
         (unsigned int)pipeline->wrap_s >= (unsigned int)PB_WRAP_COUNT ||
@@ -230,6 +270,9 @@ static bool pipeline_equals(const PBRenderPipeline *left,
            left->depth_write_enabled == right->depth_write_enabled &&
            left->depth_function == right->depth_function &&
            left->blend_mode == right->blend_mode &&
+           left->alpha_test_enabled == right->alpha_test_enabled &&
+           left->alpha_function == right->alpha_function &&
+           left->alpha_reference == right->alpha_reference &&
            left->min_filter == right->min_filter &&
            left->mag_filter == right->mag_filter &&
            left->wrap_s == right->wrap_s && left->wrap_t == right->wrap_t;

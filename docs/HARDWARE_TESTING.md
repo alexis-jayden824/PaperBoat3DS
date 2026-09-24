@@ -189,3 +189,59 @@ Report the exact build SHA, New 3DS XL/LL model, firmware, launch environment,
 photos of both screens on title and file select, lifecycle result, input result,
 and complete log. This closes the owner's target-hardware check only; Old 3DS
 performance/memory evidence remains outstanding.
+
+## M13 core overworld gameplay
+
+Use a private `.3dsx` bundle marked `0.13.15-m13r15` with the owner-generated O2R
+files under `/3ds/PaperBoat3DS/`. Follow the M13 Folium procedure first, then
+repeat it on the New 3DS XL/LL when the console is available. In addition:
+
+1. Verify file confirmation advances through the numbered startup stages,
+   reaches upstream `mac_00` without a freeze, and reports `Upstream: active`,
+   then `Mode:5`.
+2. Compare Mario movement, collision, camera, sprites, textures, palettes,
+   transparency, fog, UI, fades, and framing with the same PaperBoat/N64 route.
+3. Pause and resume at least ten times and verify upstream `Mode:10`, fixed
+   player position while paused, and clean return to `Mode:5`.
+4. Traverse `mac_00` to `mac_01` and back if reachable, checking upstream
+   scripts, fades, entry motion, and loading-zone guards. Approach the former
+   `kmr_20` sewer-pipe trigger in `mac_00`; it must not request that out-of-scope
+   map or produce `Map not found: kmr_20`.
+5. Close the lid while active and once while paused. On wake, release all
+   controls and verify rendering resumes in the prior world state.
+6. Confirm `unk`, `miss`, `Fall`, `bad`, renderer rejects, frame failures,
+   stream overflows, and memory failures remain zero, then preserve the exact
+   build SHA, both-screen captures, and `PaperBoat3DS.log`.
+
+For r15, also photograph the `Step`, `Cmd/f`, `CC`, `2C`, `Fog`, `Key/conv`,
+`Unsafe`, `Ev`, `Rt`, `Vp`, `Sc`, `probe`, and `pause` fields before pausing,
+while paused, and after resuming. Record `Vp` and `Sc` when a sprite appears
+cut off; these are the active game viewport and GPU scissor bounds.
+`CC` is
+semantic-TEV/legacy-CPU batch count, while `2C` counts two-cycle batches routed
+through the semantic backend. `Fog` reports semantic/legacy fog batches.
+Preserve all values; `2C` must increase when the route exercises two-cycle
+materials, and semantic fog must increase when fogged materials render.
+Standard depth and constant fog must not increment legacy fog; report any
+legacy fog as a vertex-alpha migration case. The general legacy count can
+remain nonzero for other measured migration boundaries. `Key/conv` reports
+semantic/legacy key-and-convert-constant batches; report both values, and treat
+a nonzero legacy value as a renderer migration failure for that material.
+Pay particular attention to CI4/CI8 palette-swapped sprites, glyphs, the world
+background, and the pause map; r15 retains bounded TLUT staging and defers
+evicted native texture destruction until the submitted PICA frame completes.
+`Ev` and the first two `Rt` values may increase under texture churn; the third
+`Rt` value is the retirement-allocation failure count and must stay zero.
+Verify that the world background and complete building surfaces are present, Mario/NPCs
+remain whole while crossing other objects, and the warmed-up `last` update
+time is normally at or below 40 ms without the slow-update count continually
+increasing. All sprite/UI texturing must remain upright and the update count
+must continue advancing in pause mode. A static pause frame is not an
+acceptance pass even if the first menu labels appear.
+
+This validates only the M13 Toad Town route. Audio, saves, battles, and later
+chapter coverage remain blocked until its presentation and movement pass.
+
+If startup stops, preserve the last numbered stage and the complete log. A
+`runtime-panic` line includes the upstream assertion text; otherwise the final
+`runtime-start` stage identifies the call that did not return.

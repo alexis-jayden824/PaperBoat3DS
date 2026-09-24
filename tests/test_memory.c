@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static u32 fake_application_free;
-static u32 fake_linear_free;
+static uint32_t fake_application_free;
+static uint32_t fake_linear_free;
 static unsigned int checks_run;
 
 #define CHECK(expression)                                                      \
@@ -17,12 +17,12 @@ static unsigned int checks_run;
         }                                                                      \
     } while (0)
 
-u32 osGetMemRegionFree(int region) {
+uint32_t osGetMemRegionFree(int region) {
     (void)region;
     return fake_application_free;
 }
 
-u32 linearSpaceFree(void) {
+uint32_t linearSpaceFree(void) {
     return fake_linear_free;
 }
 
@@ -35,8 +35,8 @@ void linearFree(void *memory) {
 }
 
 static void reset_monitor(PBMemoryMonitor *monitor) {
-    fake_application_free = (u32)PB_MIB(32);
-    fake_linear_free = (u32)PB_MIB(16);
+    fake_application_free = (uint32_t)PB_MIB(32);
+    fake_linear_free = (uint32_t)PB_MIB(16);
     pb_memory_monitor_init(monitor, (uintptr_t)PB_MIB(16));
 }
 
@@ -89,8 +89,9 @@ static bool test_reserves_and_sticky_pressure(void) {
     PBMemoryMonitor monitor;
     reset_monitor(&monitor);
 
-    fake_application_free = (u32)PB_MEMORY_APPLICATION_RESERVE + 1024U;
-    fake_linear_free = (u32)PB_MEMORY_LINEAR_RESERVE + 1024U;
+    fake_application_free =
+        (uint32_t)PB_MEMORY_APPLICATION_RESERVE + 1024U;
+    fake_linear_free = (uint32_t)PB_MEMORY_LINEAR_RESERVE + 1024U;
     pb_memory_monitor_sample(&monitor, monitor.stack_anchor);
     CHECK(pb_memory_can_allocate(&monitor, PB_MEMORY_SCENE, 1024));
     CHECK(!pb_memory_can_allocate(&monitor, PB_MEMORY_SCENE, 1025));
@@ -98,11 +99,12 @@ static bool test_reserves_and_sticky_pressure(void) {
     CHECK(!pb_memory_can_allocate(&monitor, PB_MEMORY_LINEAR, 1025));
     CHECK(!monitor.snapshot.pressure);
 
-    fake_application_free = (u32)PB_MEMORY_APPLICATION_RESERVE - 1U;
+    fake_application_free =
+        (uint32_t)PB_MEMORY_APPLICATION_RESERVE - 1U;
     pb_memory_monitor_sample(&monitor, monitor.stack_anchor);
     CHECK(monitor.snapshot.pressure);
 
-    fake_application_free = (u32)PB_MIB(32);
+    fake_application_free = (uint32_t)PB_MIB(32);
     pb_memory_monitor_sample(&monitor, monitor.stack_anchor);
     CHECK(monitor.snapshot.pressure);
     return true;
@@ -118,7 +120,7 @@ static bool test_stack_and_folium_measurement(void) {
     CHECK(monitor.snapshot.pressure);
 
     fake_application_free = 0;
-    fake_linear_free = (u32)PB_MIB(16);
+    fake_linear_free = (uint32_t)PB_MIB(16);
     pb_memory_monitor_init(&monitor, (uintptr_t)PB_MIB(16));
     CHECK(!monitor.snapshot.application_measurement_available);
     CHECK(pb_memory_can_allocate(&monitor, PB_MEMORY_TRANSIENT, 1));

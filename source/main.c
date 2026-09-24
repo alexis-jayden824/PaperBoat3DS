@@ -9,6 +9,7 @@
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
 #include "pb3ds/renderer.h"
+#include "pb3ds/runtime.h"
 #include "pb3ds/title_flow.h"
 #include "pb3ds/version.h"
 
@@ -89,11 +90,13 @@ static void print_bottom_screen(PrintConsole *console,
                                 const PBRendererStats *renderer_stats,
                                 PBGfxApiInitResult graphics_result,
                                 const PBGfxBridgeStats *graphics_stats,
+                                const PBRuntimeGfxStats *runtime_gfx_stats,
                                 const PBFirstFrame *first_frame,
                                 bool first_frame_ready,
                                 const PBTitleAssets *title_assets,
                                 bool title_flow_ready,
-                                const PBTitleFlow *title_flow) {
+                                const PBTitleFlow *title_flow,
+                                const PBRuntime *runtime) {
     const bool renderer_ready =
         renderer_result == PB_RENDERER_INIT_OK && renderer_stats != NULL;
     const bool graphics_ready =
@@ -105,9 +108,163 @@ static void print_bottom_screen(PrintConsole *console,
 
     consoleSelect(console);
     printf("\x1b[2J");
-    printf("\x1b[1;2HM12.1 Title Presentation\n");
+    printf("\x1b[1;2HM13 Runtime Recovery\n");
     printf("\x1b[3;2HVersion: %s\n", PB3DS_VERSION);
     printf("\x1b[4;2HBuild: %.12s\n", PB3DS_BUILD_SHA);
+    if (runtime->state == PB_RUNTIME_LOADING) {
+        printf("\x1b[6;2HStarting PaperBoat...\n");
+        printf("\x1b[8;2HStage %lu: %.27s\n",
+               (unsigned long)runtime->startup_step,
+               runtime->startup_stage != NULL
+                   ? runtime->startup_stage : "preparing runtime");
+        printf("\x1b[10;2HIndex:%lu Resources:%lu Hits:%lu\n",
+               (unsigned long)runtime->resources.index_count,
+               (unsigned long)runtime->resources.count,
+               (unsigned long)runtime->resources.hits);
+        printf("\x1b[12;2HThe app remains responsive while\n");
+        printf("\x1b[13;2Hupstream systems initialize.\n");
+        printf("\x1b[26;2HSD log: %s\n",
+               pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
+        printf("\x1b[30;2HL+R+START exits checkpoint\n");
+        return;
+    }
+    if (runtime->state != PB_RUNTIME_INACTIVE) {
+        printf("\x1b[6;2HMap: mac_%02ld entry:%ld slot:%u\n",
+               (long)(runtime->stats.map_id > 0
+                          ? runtime->stats.map_id - 1
+                          : runtime->stats.map_id),
+               (long)runtime->stats.entry_id,
+               (unsigned int)title_flow->selected_slot + 1U);
+        printf("\x1b[7;2HUpstream: %s\n",
+               pb_runtime_state_name(runtime->state));
+        printf("\x1b[8;2Hboot_main linked; game loop active\n");
+        printf("\x1b[9;2HRes:%lu hit:%lu probe:%lu\n",
+               (unsigned long)runtime->resources.count,
+               (unsigned long)runtime->resources.hits,
+               (unsigned long)runtime->resources.lookup_probes);
+        printf("\x1b[10;2HUpdates:%llu frames:%llu held:%llu\n",
+               (unsigned long long)runtime->stats.updates,
+               (unsigned long long)runtime->stats.frames_submitted,
+               (unsigned long long)runtime->stats.held_frames);
+        printf("\x1b[11;2HMode:%ld block:%lu warn:%lu pause:%d/%d\n",
+               (long)runtime->stats.game_mode,
+               (unsigned long)runtime->stats.unsupported_mode,
+               (unsigned long)runtime->stats.platform_warnings,
+               (int)runtime->stats.pause_step,
+               (int)runtime->stats.pause_delay);
+        printf("\x1b[12;2HPos:%5.0f,%4.0f,%5.0f spd:%3.1f\n",
+               (double)runtime->stats.player_x,
+               (double)runtime->stats.player_y,
+               (double)runtime->stats.player_z,
+               (double)runtime->stats.player_speed);
+        printf("\x1b[13;2HPlayer action:%d\n",
+               (int)runtime->stats.player_action);
+        printf("\x1b[14;2HStep:%llums max:%llums slow:%lu\n",
+               (unsigned long long)runtime->stats.last_update_ms,
+               (unsigned long long)runtime->stats.max_update_ms,
+               (unsigned long)runtime->stats.slow_updates);
+        if (runtime->state == PB_RUNTIME_FAILED) {
+            printf("\x1b[12;2HError: %.30s\n",
+                   runtime->error != NULL ? runtime->error : "unknown");
+            printf("\x1b[13;2HResource: %.27s\n",
+                   runtime->resources.error != NULL
+                       ? runtime->resources.error : "none");
+        }
+        if (graphics_ready) {
+            printf("\x1b[15;2HGPU:%llu Draws:%llu Tris:%llu\n",
+                   (unsigned long long)graphics_stats->frames_presented,
+                   (unsigned long long)graphics_stats->draw_calls,
+                   (unsigned long long)graphics_stats->triangles);
+            printf("\x1b[16;2HTex:%lu Fall:%llu Reject:%lu\n",
+                   (unsigned long)graphics_stats->textures_live,
+                   (unsigned long long)(runtime_gfx_stats != NULL
+                       ? runtime_gfx_stats->texture_fallbacks : 0U),
+                   (unsigned long)graphics_stats->rejected_commands);
+        }
+        if (runtime_gfx_stats != NULL) {
+            printf("\x1b[17;2HDL:%llu unk:%lu miss:%lu Ev:%llu\n",
+                   (unsigned long long)runtime_gfx_stats->commands,
+                   (unsigned long)runtime_gfx_stats->unknown_commands,
+                   (unsigned long)runtime_gfx_stats->missing_resources,
+                   (unsigned long long)runtime_gfx_stats->texture_evictions);
+            printf("\x1b[18;2HLst:%llu d:%lu bad:%lu Rt:%llu/%lu/%lu\n",
+                   (unsigned long long)runtime_gfx_stats->display_lists,
+                   (unsigned long)runtime_gfx_stats->max_call_depth,
+                   (unsigned long)runtime_gfx_stats->malformed_lists,
+                   (unsigned long long)(renderer_stats != NULL
+                       ? renderer_stats->texture_retirements : 0U),
+                   (unsigned long)(renderer_stats != NULL
+                       ? renderer_stats->retired_texture_peak : 0U),
+                   (unsigned long)(renderer_stats != NULL
+                       ? renderer_stats->texture_retire_failures : 0U));
+            printf("\x1b[19;2HClip:%lu Huge:%lu Cull:%lu Bad:%lu\n",
+                   (unsigned long)runtime_gfx_stats->clipped_triangles,
+                   (unsigned long)runtime_gfx_stats->huge_triangles,
+                   (unsigned long)runtime_gfx_stats->culled_triangles,
+                   (unsigned long)runtime_gfx_stats->invalid_triangles);
+            printf("\x1b[21;2HNaN:%lu MtxO/U:%lu/%lu Draw:%lu XY:%ld,%ld-%ld,%ld\n",
+                   (unsigned long)runtime_gfx_stats->nan_vertices,
+                   (unsigned long)runtime_gfx_stats->matrix_stack_overflows,
+                   (unsigned long)runtime_gfx_stats->matrix_stack_underflows,
+                   (unsigned long)runtime_gfx_stats->draws_last_frame,
+                   (long)runtime_gfx_stats->screen_min_x,
+                   (long)runtime_gfx_stats->screen_min_y,
+                   (long)runtime_gfx_stats->screen_max_x,
+                   (long)runtime_gfx_stats->screen_max_y);
+            printf("\x1b[20;2HVp:%ld,%ld %lux%lu Sc:%ld,%ld %lux%lu\n",
+                   (long)runtime_gfx_stats->game_viewport_x,
+                   (long)runtime_gfx_stats->game_viewport_y,
+                   (unsigned long)runtime_gfx_stats->game_viewport_w,
+                   (unsigned long)runtime_gfx_stats->game_viewport_h,
+                   (long)runtime_gfx_stats->scissor_x,
+                   (long)runtime_gfx_stats->scissor_y,
+                   (unsigned long)runtime_gfx_stats->scissor_w,
+                   (unsigned long)runtime_gfx_stats->scissor_h);
+            printf("\x1b[27;2HCmd/f:%lu pk:%lu CC:%llu/%llu 2C:%llu\n",
+                   (unsigned long)runtime_gfx_stats->commands_last_frame,
+                   (unsigned long)runtime_gfx_stats->commands_peak_frame,
+                   (unsigned long long)
+                       runtime_gfx_stats->semantic_combiner_batches,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_combiner_fallbacks,
+                   (unsigned long long)
+                       runtime_gfx_stats->semantic_two_cycle_batches);
+            printf("\x1b[28;2HFog semantic:%llu legacy:%llu\n",
+                   (unsigned long long)
+                       runtime_gfx_stats->semantic_fog_batches,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_fog_fallbacks);
+            printf("\x1b[29;2HKey/conv:%llu/%llu Unsafe:%llu\n",
+                   (unsigned long long)
+                       runtime_gfx_stats->semantic_key_convert_batches,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_key_convert_fallbacks,
+                   (unsigned long long)
+                       runtime_gfx_stats->legacy_unsafe_modulate_batches);
+        }
+        printf("\x1b[19;2HSys:%s %s K:%08lX\n",
+               state->model_query_ok
+                   ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
+                   : "unknown",
+               lifecycle_name(state->lifecycle),
+               (unsigned long)state->kernel_version);
+        printf("\x1b[21;2HInput: %s N64:%04X\n",
+               input->waiting_for_neutral ? "WAIT" : "active",
+               (unsigned int)input->n64_held);
+        printf("\x1b[22;2HStick:%4d,%4d\n",
+               input->stick_x, input->stick_y);
+        printf("\x1b[23;2HBudgets: %s fail:%lu\n",
+               memory->pressure ? "PRESSURE" : "OK",
+               (unsigned long)memory->allocation_failures);
+        printf("\x1b[24;2HLinear free: %6lu KiB\n",
+               (unsigned long)(memory->linear_free / 1024));
+        printf("\x1b[25;2HScene peak: %6lu KiB\n",
+               (unsigned long)(memory->class_peak[PB_MEMORY_SCENE] / 1024));
+        printf("\x1b[26;2HSD log: %s\n",
+               pb_log_is_persistent(log) ? "ACTIVE" : "unavailable");
+        printf("\x1b[30;2HL+R+START exits checkpoint\n");
+        return;
+    }
     if (title_flow_ready) {
         printf("\x1b[6;2HScene: %-11s slot:%u%s\n",
                pb_title_flow_screen_name(title_flow->screen),
@@ -159,7 +316,6 @@ static void print_bottom_screen(PrintConsole *console,
                command_permille / 10U, command_permille % 10U,
                (unsigned long)(renderer_stats->vertex_buffer_bytes / 1024U));
     }
-
     printf("\x1b[17;2HSystem: %s\n",
            state->model_query_ok
                ? (state->is_new_3ds ? "New 3DS" : "Old 3DS")
@@ -192,7 +348,7 @@ static void print_bottom_screen(PrintConsole *console,
            engine_archive_available ? "OK" : "--",
            game_archive_available ? "OK" : "--");
     if (title_flow_ready && title_flow->screen == PB_TITLE_FLOW_FILE_SELECT) {
-        printf("\x1b[29;2HMove: Pad  A select  B title\n");
+        printf("\x1b[29;2HMove: Pad  A launch  B title\n");
     } else {
         printf("\x1b[29;2HA/START opens file select\n");
     }
@@ -202,6 +358,19 @@ static void print_bottom_screen(PrintConsole *console,
 static void sample_memory(PBMemoryMonitor *monitor) {
     const uintptr_t stack_marker = (uintptr_t)&monitor;
     pb_memory_monitor_sample(monitor, stack_marker);
+}
+
+static void show_boot_checkpoint(const char *stage) {
+    printf("\x1b[2J");
+    printf("\x1b[2;2HM13 Runtime Recovery\n");
+    printf("\x1b[4;2HVersion: %s\n", PB3DS_VERSION);
+    printf("\x1b[6;2HStarting PaperBoat...\n");
+    printf("\x1b[8;2H%s\n", stage != NULL ? stage : "booting");
+    printf("\x1b[10;2HIf startup stops here, record this stage.\n");
+    fflush(stdout);
+    gfxFlushBuffers();
+    gfxSwapBuffers();
+    gspWaitForVBlank();
 }
 
 int main(int argc, char **argv) {
@@ -236,6 +405,7 @@ int main(int argc, char **argv) {
     PBTitleFlow title_flow;
     pb_title_flow_init(&title_flow);
     bool title_flow_ready = false;
+    PBRuntime runtime;
     const uintptr_t stack_anchor = (uintptr_t)&memory_monitor;
 
     state.model_query_ok = R_SUCCEEDED(APT_CheckNew3DS(&state.is_new_3ds));
@@ -244,7 +414,9 @@ int main(int argc, char **argv) {
     pb_memory_monitor_init(&memory_monitor, stack_anchor);
     consoleInit(GFX_BOTTOM, &bottom_console);
     aptHook(&apt_cookie, apt_hook, &state);
+    show_boot_checkpoint("1/5 graphics + console ready");
 
+    show_boot_checkpoint("2/5 opening SD resources");
     (void)pb_log_init(&log);
     pb_config_init(&config);
     const bool config_loaded =
@@ -253,6 +425,7 @@ int main(int argc, char **argv) {
         pb_archive_open(&engine_archive, "sdmc:/3ds/PaperBoat3DS/paperboat.o2r");
     const bool game_archive_available =
         pb_archive_open(&game_archive, "sdmc:/3ds/PaperBoat3DS/pm64.o2r");
+    show_boot_checkpoint("3/5 creating PICA renderer");
     const PBRendererInitResult renderer_result =
         pb_renderer_3ds_create(&renderer);
     PBGfxApiInitResult graphics_result = PB_GFX_API_INIT_INVALID_ARGUMENT;
@@ -265,6 +438,7 @@ int main(int argc, char **argv) {
             graphics = NULL;
         }
     }
+    show_boot_checkpoint("4/5 loading title assets");
     if (graphics != NULL) {
         if (pb_first_frame_load(&first_frame, &game_archive,
                                 &memory_monitor) == PB_FIRST_FRAME_READY) {
@@ -284,7 +458,10 @@ int main(int argc, char **argv) {
     } else if (!game_archive_available) {
         first_frame.result = PB_FIRST_FRAME_ARCHIVE_MISSING;
     }
+    show_boot_checkpoint("5/5 entering title loop");
     state.graphics = graphics;
+    pb_runtime_init(&runtime, &game_archive, &memory_monitor, &input,
+                    graphics, &log);
 
     sample_memory(&memory_monitor);
     const PBMemorySnapshot *memory =
@@ -362,22 +539,56 @@ int main(int argc, char **argv) {
                         engine_archive_available, game_archive_available,
                         memory, &input, false, renderer_result,
                         pb_renderer_3ds_stats(renderer), graphics_result,
-                        pb_gfx_api_3ds_stats(graphics), &first_frame,
+                        pb_gfx_api_3ds_stats(graphics),
+                        pb_gfx_api_3ds_runtime_stats(graphics), &first_frame,
                         first_frame_ready, &title_assets, title_flow_ready,
-                        &title_flow);
+                        &title_flow, &runtime);
 
     u32 memory_sample_frames = 0;
     u32 diagnostics_refresh_frames = 0;
     u32 active_input_refresh_frames = 0;
     bool menu_request_seen = false;
     bool renderer_frame_failed = false;
+    bool runtime_failure_logged = false;
     while (aptMainLoop()) {
         pb_input_poll(&input);
         if ((input.native_pressed & KEY_START) != 0 &&
             (input.native_held & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) {
             break;
         }
-        if (title_flow_ready && state.lifecycle == LIFECYCLE_ACTIVE) {
+        if (runtime.state == PB_RUNTIME_LOADING &&
+            state.lifecycle == LIFECYCLE_ACTIVE) {
+            if (!pb_runtime_continue_startup(&runtime) &&
+                !runtime_failure_logged) {
+                runtime_failure_logged = true;
+                pb_log_write(&log, PB_LOG_ERROR, "runtime-launch",
+                             "startup failed stage=\"%s\" error=%s "
+                             "resource=%s",
+                             runtime.startup_stage != NULL
+                                 ? runtime.startup_stage : "unknown",
+                             runtime.error != NULL
+                                 ? runtime.error : "unknown",
+                             runtime.resources.error != NULL
+                                 ? runtime.resources.error : "none");
+            }
+            state.redraw_bottom = true;
+        } else if (runtime.state == PB_RUNTIME_ACTIVE &&
+            state.lifecycle == LIFECYCLE_ACTIVE) {
+            if (!pb_runtime_update(&runtime)) {
+                state.redraw_bottom = true;
+                if (!runtime_failure_logged) {
+                    runtime_failure_logged = true;
+                    pb_log_write(&log, PB_LOG_ERROR, "runtime",
+                                 "update failed: %s resource=%s",
+                                 runtime.error != NULL
+                                     ? runtime.error : "unknown",
+                                 runtime.resources.error != NULL
+                                     ? runtime.resources.error : "none");
+                }
+            }
+        } else if (title_flow_ready &&
+                   runtime.state == PB_RUNTIME_INACTIVE &&
+                   state.lifecycle == LIFECYCLE_ACTIVE) {
             const PBTitleFlowEvent event =
                 pb_title_flow_update(&title_flow, &input);
             if (event != PB_TITLE_FLOW_EVENT_NONE) {
@@ -387,6 +598,21 @@ int main(int argc, char **argv) {
                              pb_title_flow_event_name(event),
                              pb_title_flow_screen_name(title_flow.screen),
                              (unsigned int)title_flow.selected_slot + 1U);
+                if (event == PB_TITLE_FLOW_EVENT_CONFIRM_SLOT) {
+                    state.redraw_bottom = true;
+                    show_boot_checkpoint(
+                        "Loading indexed upstream runtime");
+                    const bool started =
+                        pb_runtime_begin_toad_town(&runtime);
+                    pb_log_write(&log,
+                                 started ? PB_LOG_INFO : PB_LOG_ERROR,
+                                 "runtime-launch",
+                                 "slot=%u state=%s error=%s",
+                                 (unsigned int)title_flow.selected_slot + 1U,
+                                 pb_runtime_state_name(runtime.state),
+                                 runtime.error != NULL
+                                     ? runtime.error : "none");
+                }
             }
         }
         if (input.menu_requested) {
@@ -434,12 +660,20 @@ int main(int argc, char **argv) {
                                 menu_request_seen, renderer_result,
                                 pb_renderer_3ds_stats(renderer),
                                 graphics_result,
-                                pb_gfx_api_3ds_stats(graphics), &first_frame,
+                                pb_gfx_api_3ds_stats(graphics),
+                                pb_gfx_api_3ds_runtime_stats(graphics),
+                                &first_frame,
                                 first_frame_ready, &title_assets,
-                                title_flow_ready, &title_flow);
+                                title_flow_ready, &title_flow, &runtime);
         }
 
         if (graphics != NULL && state.lifecycle == LIFECYCLE_ACTIVE) {
+            if (runtime.state != PB_RUNTIME_INACTIVE) {
+                if (!runtime.frame_submitted) {
+                    gspWaitForVBlank();
+                }
+                continue;
+            }
             const bool rendered = title_flow_ready
                 ? pb_gfx_api_3ds_render_title_flow(graphics, &title_flow)
                 : (first_frame_ready
@@ -483,12 +717,66 @@ int main(int argc, char **argv) {
                      (unsigned long)graphics_stats->rejected_commands,
                      (unsigned long)graphics_stats->frame_failures);
     }
+    const PBRuntimeGfxStats *runtime_gfx_stats =
+        pb_gfx_api_3ds_runtime_stats(graphics);
+    if (runtime_gfx_stats != NULL) {
+        pb_log_write(&log, PB_LOG_INFO, "runtime-gfx-shutdown",
+                     "commands=%llu lists=%llu semantic_combiner_batches=%llu "
+                     "semantic_two_cycle_batches=%llu "
+                     "semantic_fog_batches=%llu legacy_fog_fallbacks=%llu "
+                     "semantic_key_convert_batches=%llu "
+                     "legacy_key_convert_fallbacks=%llu "
+                     "legacy_combiner_fallbacks=%llu "
+                     "legacy_unsafe_modulate_batches=%llu "
+                     "texture_fallbacks=%llu "
+                     "texture_evictions=%llu "
+                     "unknown=%lu missing=%lu malformed=%lu "
+                     "clipped=%lu huge=%lu culled=%lu invalid=%lu "
+                     "game_viewport=%ld,%ld,%lu,%lu "
+                     "scissor=%ld,%ld,%lu,%lu",
+                     (unsigned long long)runtime_gfx_stats->commands,
+                     (unsigned long long)runtime_gfx_stats->display_lists,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_combiner_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_two_cycle_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_fog_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_fog_fallbacks,
+                     (unsigned long long)
+                         runtime_gfx_stats->semantic_key_convert_batches,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_key_convert_fallbacks,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_combiner_fallbacks,
+                     (unsigned long long)
+                         runtime_gfx_stats->legacy_unsafe_modulate_batches,
+                     (unsigned long long)runtime_gfx_stats->texture_fallbacks,
+                     (unsigned long long)runtime_gfx_stats->texture_evictions,
+                     (unsigned long)runtime_gfx_stats->unknown_commands,
+                     (unsigned long)runtime_gfx_stats->missing_resources,
+                     (unsigned long)runtime_gfx_stats->malformed_lists,
+                     (unsigned long)runtime_gfx_stats->clipped_triangles,
+                     (unsigned long)runtime_gfx_stats->huge_triangles,
+                     (unsigned long)runtime_gfx_stats->culled_triangles,
+                     (unsigned long)runtime_gfx_stats->invalid_triangles,
+                     (long)runtime_gfx_stats->game_viewport_x,
+                     (long)runtime_gfx_stats->game_viewport_y,
+                     (unsigned long)runtime_gfx_stats->game_viewport_w,
+                     (unsigned long)runtime_gfx_stats->game_viewport_h,
+                     (long)runtime_gfx_stats->scissor_x,
+                     (long)runtime_gfx_stats->scissor_y,
+                     (unsigned long)runtime_gfx_stats->scissor_w,
+                     (unsigned long)runtime_gfx_stats->scissor_h);
+    }
     if (renderer_stats != NULL) {
         pb_log_write(&log, PB_LOG_INFO, "renderer-shutdown",
                      "frames=%llu draws=%llu vertices=%llu frame_failures=%lu "
                      "command_peak_permille=%lu state_changes=%lu cached=%lu "
                      "rejected=%lu stream_peak_vertices=%lu "
-                     "stream_overflows=%lu",
+                     "stream_overflows=%lu texture_retirements=%llu "
+                     "retired_texture_peak=%lu texture_retire_failures=%lu",
                      (unsigned long long)renderer_stats->frames,
                      (unsigned long long)renderer_stats->draw_calls,
                      (unsigned long long)renderer_stats->vertices,
@@ -499,7 +787,10 @@ int main(int argc, char **argv) {
                      (unsigned long)renderer_stats->state_deduplicated,
                      (unsigned long)renderer_stats->rejected_commands,
                      (unsigned long)renderer_stats->stream_peak_vertices,
-                     (unsigned long)renderer_stats->stream_overflows);
+                     (unsigned long)renderer_stats->stream_overflows,
+                     (unsigned long long)renderer_stats->texture_retirements,
+                     (unsigned long)renderer_stats->retired_texture_peak,
+                     (unsigned long)renderer_stats->texture_retire_failures);
     }
     pb_log_write(&log, PB_LOG_INFO, "shutdown",
                  "application_free=%lu linear_free=%lu peak_application=%lu "
@@ -517,6 +808,7 @@ int main(int argc, char **argv) {
                  (unsigned long long)input.frame_index,
                  menu_request_seen ? "yes" : "no");
 
+    pb_runtime_shutdown(&runtime);
     pb_archive_close(&game_archive);
     pb_archive_close(&engine_archive);
     pb_title_assets_release_pixels(&title_assets, &memory_monitor);

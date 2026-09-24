@@ -1,0 +1,3130 @@
+#include "pb3ds/gfx_rendering_api_3ds.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#ifndef __3DS__
+#include <cstdio>
+#endif
+#include <limits>
+#include <new>
+#include <vector>
+
+#include "pb3ds/debug.h"
+#include "pb3ds/fast3d_semantics.h"
+#include "pb3ds/gbi_resolve.h"
+#include "pb3ds/runtime_resources.h"
+#include "pb3ds/texture.h"
+
+namespace {
+
+constexpr uint8_t G_VTX = 0x01;
+constexpr uint8_t G_MODIFYVTX = 0x02;
+constexpr uint8_t G_TRI1 = 0x05;
+constexpr uint8_t G_TRI2 = 0x06;
+constexpr uint8_t G_QUAD = 0x07;
+constexpr uint8_t G_SETTIMG_OTR_HASH = 0x20;
+constexpr uint8_t G_VTX_OTR_FILEPATH = 0x24;
+constexpr uint8_t G_SETTIMG_OTR_FILEPATH = 0x25;
+constexpr uint8_t G_TRI1_OTR = 0x26;
+constexpr uint8_t G_DL_OTR_FILEPATH = 0x27;
+constexpr uint8_t G_MTX_OTR_FILEPATH = 0x29;
+constexpr uint8_t G_INVAL_TEX_BY_PAL = 0x2A;
+constexpr uint8_t G_DL_OTR_HASH = 0x31;
+constexpr uint8_t G_VTX_OTR_HASH = 0x32;
+constexpr uint8_t G_MARKER = 0x33;
+constexpr uint8_t G_INVALTEXCACHE = 0x34;
+constexpr uint8_t G_BRANCH_Z_OTR = 0x35;
+constexpr uint8_t G_MTX_OTR = 0x36;
+constexpr uint8_t G_TEXRECT_WIDE = 0x37;
+constexpr uint8_t G_FILLWIDERECT = 0x38;
+constexpr uint8_t G_COPYFB = 0x3B;
+constexpr uint8_t G_IMAGERECT = 0x3C;
+constexpr uint8_t G_DL_INDEX = 0x3D;
+constexpr uint8_t G_SETTIMG_PAL = 0x41;
+constexpr uint8_t G_MOVEMEM_HASH = 0x42;
+constexpr uint8_t G_PUSH_SHADER = 0x43;
+constexpr uint8_t G_POP_SHADER = 0x44;
+constexpr uint8_t G_SETTILESIZE_INTERP = 0x45;
+constexpr uint8_t G_SETTARGETINTERPINDEX = 0x46;
+constexpr uint8_t G_LOADBLOCK_WIDE = 0x47;
+constexpr uint8_t G_VTX_WIDE = 0x48;
+constexpr uint8_t G_TRI1_WIDE = 0x49;
+constexpr uint8_t G_SETTILESIZE_LERP = 0x4A;
+constexpr uint8_t G_SET_STRICT_DECAL = 0x4B;
+constexpr uint8_t G_SETUNIFORM = 0x4C;
+constexpr uint8_t G_SETTILESCROLL_INTERP = 0x4D;
+
+constexpr uint8_t G_TEXTURE = 0xD7;
+constexpr uint8_t G_POPMTX = 0xD8;
+constexpr uint8_t G_GEOMETRYMODE = 0xD9;
+constexpr uint8_t G_MTX = 0xDA;
+constexpr uint8_t G_MOVEWORD = 0xDB;
+constexpr uint8_t G_MOVEMEM = 0xDC;
+constexpr uint8_t G_DL = 0xDE;
+constexpr uint8_t G_ENDDL = 0xDF;
+constexpr uint8_t G_SETOTHERMODE_L = 0xE2;
+constexpr uint8_t G_SETOTHERMODE_H = 0xE3;
+constexpr uint8_t G_TEXRECT = 0xE4;
+constexpr uint8_t G_TEXRECTFLIP = 0xE5;
+constexpr uint8_t G_RDPLOADSYNC = 0xE6;
+constexpr uint8_t G_RDPPIPESYNC = 0xE7;
+constexpr uint8_t G_RDPTILESYNC = 0xE8;
+constexpr uint8_t G_RDPFULLSYNC = 0xE9;
+constexpr uint8_t G_SETKEYGB = 0xEA;
+constexpr uint8_t G_SETKEYR = 0xEB;
+constexpr uint8_t G_SETCONVERT = 0xEC;
+constexpr uint8_t G_SETSCISSOR = 0xED;
+constexpr uint8_t G_SETPRIMDEPTH = 0xEE;
+constexpr uint8_t G_RDPSETOTHERMODE = 0xEF;
+constexpr uint8_t G_LOADTLUT = 0xF0;
+constexpr uint8_t G_SETTILESIZE = 0xF2;
+constexpr uint8_t G_LOADBLOCK = 0xF3;
+constexpr uint8_t G_LOADTILE = 0xF4;
+constexpr uint8_t G_SETTILE = 0xF5;
+constexpr uint8_t G_FILLRECT = 0xF6;
+constexpr uint8_t G_SETFILLCOLOR = 0xF7;
+constexpr uint8_t G_SETFOGCOLOR = 0xF8;
+constexpr uint8_t G_SETBLENDCOLOR = 0xF9;
+constexpr uint8_t G_SETPRIMCOLOR = 0xFA;
+constexpr uint8_t G_SETENVCOLOR = 0xFB;
+constexpr uint8_t G_SETCOMBINE = 0xFC;
+constexpr uint8_t G_SETTIMG = 0xFD;
+constexpr uint8_t G_SETZIMG = 0xFE;
+constexpr uint8_t G_SETCIMG = 0xFF;
+
+constexpr uint32_t G_ZBUFFER = 0x00000001U;
+constexpr uint32_t G_FOG = 0x00010000U;
+constexpr uint32_t G_LIGHTING = 0x00020000U;
+constexpr uint32_t G_CULL_FRONT = 0x00000200U;
+constexpr uint32_t G_CULL_BACK = 0x00000400U;
+constexpr uint32_t G_CULL_BOTH = G_CULL_FRONT | G_CULL_BACK;
+constexpr uint32_t Z_CMP = 0x10U;
+constexpr uint32_t Z_UPD = 0x20U;
+constexpr uint32_t ZMODE_DEC = 0xC00U;
+constexpr uint32_t CVG_X_ALPHA = 0x1000U;
+constexpr uint32_t FORCE_BL = 0x4000U;
+constexpr uint32_t G_ZS_PRIM = 1U << 2U;
+constexpr uint8_t G_BL_CLR_BL = 2U;
+constexpr uint8_t G_BL_CLR_FOG = 3U;
+constexpr uint32_t G_CYCLE_TYPE_MASK = 3U << 20U;
+constexpr uint32_t G_CYCLE_2 = 1U << 20U;
+constexpr uint32_t G_CYCLE_COPY = 2U << 20U;
+constexpr uint32_t G_CYCLE_FILL = 3U << 20U;
+constexpr uint8_t G_MW_NUMLIGHT = 0x02;
+constexpr uint8_t G_MW_SEGMENT = 0x06;
+constexpr uint8_t G_MW_FOG = 0x08;
+constexpr uint8_t G_MV_VIEWPORT = 0x08;
+constexpr uint8_t G_MV_LIGHT = 0x0A;
+constexpr uint8_t G_MWO_POINT_ST = 0x14;
+
+#ifdef __3DS__
+extern "C" int32_t get_game_mode(void);
+extern "C" uint16_t *nuGfxZBuffer;
+constexpr int32_t GAME_MODE_PAUSE = 10;
+#endif
+
+constexpr size_t kMaxVertices = 80U;
+constexpr size_t kMaxMatrixStack = 12U;
+constexpr size_t kBatchTriangleLimit = 384U;
+constexpr size_t kRuntimeTextureLimit = PB_GFX_MAX_TEXTURES - 12U;
+/* Normal Toad Town frames are below 10k commands.  Bound malformed/custom
+ * lists so a device reports a failed frame instead of appearing frozen. */
+constexpr size_t kCommandBudget = 250000U;
+constexpr unsigned int kCallDepthLimit = 48U;
+
+constexpr int16_t SignExtendNine(uint32_t value) {
+    value &= 0x1FFU;
+    return value >= 0x100U
+               ? static_cast<int16_t>(static_cast<int32_t>(value) - 0x200)
+               : static_cast<int16_t>(value);
+}
+static_assert(SignExtendNine(0x0FFU) == 255 &&
+                  SignExtendNine(0x100U) == -256 &&
+                  SignExtendNine(0x1E0U) == -32,
+              "RDP signed-nine-bit conversion changed");
+
+constexpr uint64_t PackFormula(uint8_t a, uint8_t b, uint8_t c, uint8_t d,
+                               unsigned int shift) {
+    return (static_cast<uint64_t>(a) << shift) |
+           (static_cast<uint64_t>(b) << (shift + 4U)) |
+           (static_cast<uint64_t>(c) << (shift + 8U)) |
+           (static_cast<uint64_t>(d) << (shift + 12U));
+}
+
+constexpr uint64_t kShadeShader =
+    PackFormula(0, 0, 0, PB_GFX_SHADER_SHADE, 0) |
+    PackFormula(0, 0, 0, PB_GFX_SHADER_SHADE, 16);
+constexpr uint64_t kTextureShadeShader =
+    PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 0) |
+    PackFormula(PB_GFX_SHADER_TEXEL0, 0, PB_GFX_SHADER_SHADE, 0, 16);
+constexpr uint64_t kAlphaOption = uint64_t{1} << PB_GFX_OPT_ALPHA;
+
+struct N64Vertex {
+    int16_t position[3];
+    uint16_t flag;
+    int16_t texture[2];
+    uint8_t color[4];
+};
+static_assert(sizeof(N64Vertex) == 16U, "N64 vertex ABI changed");
+
+struct N64Viewport {
+    int16_t scale[4];
+    int16_t translate[4];
+};
+
+struct N64Light {
+    uint8_t color[3];
+    uint8_t pad1;
+    uint8_t colorCopy[3];
+    uint8_t pad2;
+    int8_t direction[3];
+    uint8_t pad3;
+    uint8_t alignment[4];
+};
+static_assert(sizeof(N64Light) == 16U, "N64 light ABI changed");
+
+struct Matrix {
+    float value[4][4] = {};
+};
+
+Matrix IdentityMatrix() {
+    Matrix matrix = {};
+    for (size_t index = 0U; index < 4U; index++) {
+        matrix.value[index][index] = 1.0f;
+    }
+    return matrix;
+}
+
+Matrix Multiply(const Matrix &left, const Matrix &right) {
+    Matrix output = {};
+    for (size_t row = 0U; row < 4U; row++) {
+        for (size_t column = 0U; column < 4U; column++) {
+            for (size_t inner = 0U; inner < 4U; inner++) {
+                output.value[row][column] +=
+                    left.value[row][inner] * right.value[inner][column];
+            }
+        }
+    }
+    return output;
+}
+
+Matrix DecodeMatrix(const int32_t *address) {
+    Matrix matrix = {};
+    if (address == nullptr) {
+        return IdentityMatrix();
+    }
+    for (size_t row = 0U; row < 4U; row++) {
+        for (size_t column = 0U; column < 4U; column += 2U) {
+            int32_t integerPart = 0;
+            uint32_t fractionalPart = 0;
+            std::memcpy(&integerPart,
+                        &address[row * 2U + column / 2U],
+                        sizeof(integerPart));
+            std::memcpy(&fractionalPart,
+                        &address[8U + row * 2U + column / 2U],
+                        sizeof(fractionalPart));
+            const int32_t first = static_cast<int32_t>(
+                (static_cast<uint32_t>(integerPart) & 0xFFFF0000U) |
+                (fractionalPart >> 16U));
+            const int32_t second = static_cast<int32_t>(
+                (static_cast<uint32_t>(integerPart) << 16U) |
+                (fractionalPart & 0xFFFFU));
+            matrix.value[row][column] =
+                static_cast<float>(first) / 65536.0f;
+            matrix.value[row][column + 1U] =
+                static_cast<float>(second) / 65536.0f;
+        }
+    }
+    return matrix;
+}
+
+uint16_t NextTextureDimension(uint32_t dimension) {
+    if (dimension == 0U || dimension > PB_RENDER_TEXTURE_MAX_DIMENSION) {
+        return 0U;
+    }
+    uint32_t result = PB_RENDER_TEXTURE_MIN_DIMENSION;
+    while (result < dimension) {
+        result <<= 1U;
+    }
+    return static_cast<uint16_t>(result);
+}
+
+uint8_t ExpandFive(uint16_t value) {
+    value &= 0x1FU;
+    return static_cast<uint8_t>((value << 3U) | (value >> 2U));
+}
+
+uint16_t ReadBig16(const uint8_t *bytes) {
+    return static_cast<uint16_t>((static_cast<uint16_t>(bytes[0]) << 8U) |
+                                 bytes[1]);
+}
+
+uint64_t HashCommand(const PBRuntimeGfx &command) {
+    return (static_cast<uint64_t>(
+                static_cast<uint32_t>(command.words.w0)) << 32U) |
+           static_cast<uint32_t>(command.words.w1);
+}
+
+float Clamp01(float value) {
+    return std::max(0.0f, std::min(1.0f, value));
+}
+
+} // namespace
+
+namespace PB3DS {
+
+class RuntimeDisplayListRenderer {
+  public:
+    explicit RuntimeDisplayListRenderer(GfxRenderingAPI3DS *renderingApi)
+        : api(renderingApi) {
+        /*
+         * PaperBoat emits many small triangles. Keep one bounded CPU staging
+         * allocation for the lifetime of the renderer instead of repeatedly
+         * growing std::vector storage in the hot path.
+         */
+        batch.reserve(kBatchTriangleLimit * 3U * 11U);
+        ResetFrameState();
+    }
+
+    ~RuntimeDisplayListRenderer() { InvalidateTexture(nullptr); }
+
+    bool Render(const PBRuntimeGfx *displayList) {
+        stats.frames_started++;
+        if (api == nullptr || displayList == nullptr || !PrepareShaders()) {
+#ifndef __3DS__
+            std::fprintf(stderr,
+                         "runtime gfx: setup failed api=%p dl=%p shade=%p "
+                         "texture=%p\n",
+                         static_cast<void *>(api),
+                         static_cast<const void *>(displayList),
+                         static_cast<void *>(shadeShader),
+                         static_cast<void *>(textureShader));
+#endif
+            return false;
+        }
+        ResetFrameState();
+        const uint64_t previousFrame = frameSerial++;
+        (void)previousFrame;
+#ifdef __3DS__
+        pauseFrame = get_game_mode() == GAME_MODE_PAUSE;
+#else
+        pauseFrame = false;
+#endif
+        /* StartFrame performs this clear in the native renderer, honoring the
+         * preserve-color flag for pause frames. Avoid issuing the same full
+         * framebuffer clear twice on PICA200. */
+        api->PreserveColorOnNextFrame(pauseFrame);
+        api->StartFrame();
+        depthClearPending = false;
+        api->SetViewport(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+        api->SetScissor(0, 0, PB_RENDER_TOP_WIDTH, PB_RENDER_TOP_HEIGHT);
+        stats.scissor_x = 0;
+        stats.scissor_y = 0;
+        stats.scissor_w = PB_RENDER_TOP_WIDTH;
+        stats.scissor_h = PB_RENDER_TOP_HEIGHT;
+        const bool interpreted = RunList(displayList, 0U);
+        const bool flushed = Flush();
+        api->EndFrame();
+        stats.commands += commandCount;
+        stats.commands_last_frame = static_cast<uint32_t>(commandCount);
+        stats.commands_peak_frame = std::max(
+            stats.commands_peak_frame,
+            static_cast<uint32_t>(commandCount));
+        stats.last_geometry_mode = geometryMode;
+        stats.last_othermode_l = otherModeLow;
+        if (screenBoundsValid) {
+            stats.screen_min_x = static_cast<int32_t>(screenMinX);
+            stats.screen_min_y = static_cast<int32_t>(screenMinY);
+            stats.screen_max_x = static_cast<int32_t>(screenMaxX);
+            stats.screen_max_y = static_cast<int32_t>(screenMaxY);
+        } else {
+            stats.screen_min_x = 0;
+            stats.screen_min_y = 0;
+            stats.screen_max_x = 0;
+            stats.screen_max_y = 0;
+        }
+        if (interpreted && flushed) {
+            stats.frames_rendered++;
+        }
+        if (malformed) {
+            stats.malformed_lists++;
+        }
+#ifndef __3DS__
+        if (!interpreted || !flushed || malformed) {
+            std::fprintf(stderr,
+                         "runtime gfx: rejected interpreted=%u flushed=%u "
+                         "malformed=%u commands=%zu last=%02x index=%zu "
+                         "depth=%u\n",
+                         interpreted ? 1U : 0U, flushed ? 1U : 0U,
+                         malformed ? 1U : 0U, commandCount, lastOpcode,
+                         lastCommandIndex, lastDepth);
+        }
+#endif
+        /* A single malformed opcode must not kill the game loop. Pause HUD
+         * lists can contain leftover pointers; skipping those commands is
+         * enough for START to keep stepping. */
+        return flushed;
+    }
+
+    void InvalidateTexture(const void *address) {
+        if (api == nullptr) {
+            textures.clear();
+            return;
+        }
+        Flush();
+        for (size_t index = 0U; index < textures.size();) {
+            const TextureCacheEntry &entry = textures[index];
+            if (address == nullptr || address == entry.source ||
+                address == entry.palette || address == entry.path) {
+                api->DeleteTexture(entry.id);
+                textures.erase(textures.begin() +
+                               static_cast<std::ptrdiff_t>(index));
+            } else {
+                index++;
+            }
+        }
+    }
+
+    void RequestDepthClear() { depthClearPending = true; }
+
+    const PBRuntimeGfxStats *GetStats() const { return &stats; }
+
+  private:
+    struct Color {
+        uint8_t red = 255U;
+        uint8_t green = 255U;
+        uint8_t blue = 255U;
+        uint8_t alpha = 255U;
+    };
+
+    struct LoadedVertex {
+        float screenX = 0.0f;
+        float screenY = 0.0f;
+        float depth = 0.5f;
+        float clipX = 0.0f;
+        float clipY = 0.0f;
+        float clipZ = 0.0f;
+        float clipW = 1.0f;
+        float objectZ = 0.0f;
+        float textureS = 0.0f;
+        float textureT = 0.0f;
+        Color color = {};
+        bool valid = false;
+    };
+
+    struct Tile {
+        uint8_t format = 0U;
+        uint8_t size = 0U;
+        uint16_t line = 0U;
+        uint16_t tmem = 0U;
+        uint8_t palette = 0U;
+        uint8_t clampT = 0U;
+        uint8_t maskT = 0U;
+        uint8_t shiftT = 0U;
+        uint8_t clampS = 0U;
+        uint8_t maskS = 0U;
+        uint8_t shiftS = 0U;
+        uint16_t upperS = 0U;
+        uint16_t upperT = 0U;
+        uint16_t lowerS = 0U;
+        uint16_t lowerT = 0U;
+    };
+
+    struct TextureSource {
+        const uint8_t *data = nullptr;
+        const char *path = nullptr;
+        uint16_t resourceWidth = 0U;
+        uint16_t resourceHeight = 0U;
+        uint16_t imageWidth = 0U;
+        uint16_t loadedWidth = 0U;
+        uint16_t loadedHeight = 0U;
+        uint8_t format = 0U;
+        uint8_t size = 0U;
+        uint32_t resourceType = 0U;
+        uint32_t rowStrideTexels = 0U;
+        uint32_t offsetTexels = 0U;
+        size_t payloadSize = 0U;
+        bool framebufferSentinel = false;
+    };
+
+    struct TextureCacheEntry {
+        const void *source = nullptr;
+        const void *palette = nullptr;
+        const void *path = nullptr;
+        uint32_t id = 0U;
+        uint32_t key = 0U;
+        uint64_t paletteHash = 0U;
+        uint32_t type = 0U;
+        uint32_t rowStrideTexels = 0U;
+        uint32_t offsetTexels = 0U;
+        uint16_t sourceWidth = 0U;
+        uint16_t sourceHeight = 0U;
+        uint16_t textureWidth = 0U;
+        uint16_t textureHeight = 0U;
+        uint64_t lastUse = 0U;
+    };
+
+    struct CombinerUse {
+        bool texture = false;
+        bool shade = false;
+        bool primitive = false;
+        bool environment = false;
+    };
+
+    struct CombinerCycle {
+        uint8_t rgb[4] = { 31U, 31U, 31U, 31U };
+        uint8_t alpha[4] = { 7U, 7U, 7U, 7U };
+    };
+
+    struct DecodedCombiner {
+        std::array<CombinerCycle, 2U> cycles = {};
+        size_t cycleCount = 1U;
+        CombinerUse use = {};
+    };
+
+    struct SemanticBatch {
+        PBFast3DCombiner combiner = {};
+        Fast::CombinerUniforms uniforms = {};
+        Fast::ShaderProgram *shader = nullptr;
+    };
+
+    enum class FogSource : uint8_t {
+        None,
+        Depth,
+        Constant,
+        VertexAlpha,
+    };
+
+    struct FloatColor {
+        float red = 0.0f;
+        float green = 0.0f;
+        float blue = 0.0f;
+        float alpha = 0.0f;
+    };
+
+    bool PrepareShaders() {
+        if (shadeShader != nullptr && textureShader != nullptr) {
+            return true;
+        }
+        api->Init();
+        textureShader =
+            api->CreateAndLoadNewShader(kTextureShadeShader, kAlphaOption);
+        shadeShader = api->CreateAndLoadNewShader(kShadeShader, kAlphaOption);
+        return shadeShader != nullptr && textureShader != nullptr;
+    }
+
+    void ResetFrameState() {
+        projection = IdentityMatrix();
+        modelView.fill(IdentityMatrix());
+        modelViewTop = 0U;
+        combined = Multiply(modelView[modelViewTop], projection);
+        vertices = {};
+        tiles = {};
+        textureToLoad = {};
+        loadedTextures = {};
+        paletteTmem.fill(0U);
+        paletteEntriesValid.fill(false);
+        segmentPointers.fill(0U);
+        lights = {};
+        lightCount = 1U;
+        geometryMode = 0U;
+        otherModeHigh = 0U;
+        otherModeLow = 0U;
+        textureScaleS = UINT16_MAX;
+        textureScaleT = UINT16_MAX;
+        firstTile = 0U;
+        PBN64ScreenViewport viewport = {};
+        pb_renderer_default_game_viewport(&viewport);
+        ApplyGameViewport(viewport);
+        primColor = {};
+        envColor = {};
+        primLodFraction = 0U;
+        keyCenter = {};
+        keyScale = {};
+        convertK.fill(0);
+        fogColor = { 0U, 0U, 0U, 0U };
+        blendColor = {};
+        fillColor = 0U;
+        primDepth = 0.5f;
+        fogMultiply = 0;
+        fogOffset = 0;
+        combineWord0 = 0U;
+        combineWord1 = 0U;
+        commandCount = 0U;
+        lastOpcode = 0U;
+        lastCommandIndex = 0U;
+        lastDepth = 0U;
+        malformed = false;
+        stats.clipped_triangles = 0U;
+        stats.huge_triangles = 0U;
+        stats.culled_triangles = 0U;
+        stats.invalid_triangles = 0U;
+        stats.matrix_stack_overflows = 0U;
+        stats.matrix_stack_underflows = 0U;
+        stats.nan_vertices = 0U;
+        stats.draws_last_frame = 0U;
+        screenMinX = 0.0f;
+        screenMinY = 0.0f;
+        screenMaxX = 0.0f;
+        screenMaxY = 0.0f;
+        screenBoundsValid = false;
+        batch.clear();
+        batchTriangles = 0U;
+        batchTextured = false;
+        batchHasTexture = {};
+        batchFill = false;
+        batchScreenSpace = false;
+        batchTextureReplace = false;
+        batchSemantic = false;
+        batchShaderUsesTexture0 = false;
+        batchShaderUsesTexture1 = false;
+        batchShaderUsesShade = true;
+        batchShaderUsesAlpha = true;
+        batchFogSource = FogSource::None;
+        batchCombiner = {};
+        batchTextureTiles = {};
+        batchTextureInfo = {};
+        fillRectangleColor = {};
+        depthImageAddress = 0U;
+        colorImageAddress = 0U;
+        colorTargetIsDepth = false;
+    }
+
+    const void *Resolve(uintptr_t address) const {
+        if ((address & 1U) != 0U && address <= UINT32_MAX) {
+            const uint32_t encoded = static_cast<uint32_t>(address);
+            const uint32_t segment = encoded >> 24U;
+            const uint32_t offset = encoded & 0x00FFFFFEU;
+            if (segment < segmentPointers.size() &&
+                segmentPointers[segment] != 0U) {
+                return reinterpret_cast<const void *>(
+                    segmentPointers[segment] + offset);
+            }
+        }
+        if (!pb_gbi_host_pointer_ok(address)) return nullptr;
+        return reinterpret_cast<const void *>(address);
+    }
+
+    const void *ResolveMaybeOtr(uintptr_t address, bool *otrMissing = nullptr) {
+        if (otrMissing != nullptr) *otrMissing = false;
+        const void *resolved = Resolve(address);
+        if (resolved != nullptr &&
+            GameEngine_OTRSigCheck(
+                static_cast<const char *>(resolved))) {
+            const void *data = ResourceGetDataByName(
+                static_cast<const char *>(resolved));
+            if (data == nullptr) {
+                stats.missing_resources++;
+                if (otrMissing != nullptr) *otrMissing = true;
+            }
+            return data;
+        }
+        return resolved;
+    }
+
+    void RebuildCombined() {
+        combined = Multiply(modelView[modelViewTop], projection);
+        if (!MatrixFinite(combined) || !MatrixFinite(projection) ||
+            !MatrixFinite(modelView[modelViewTop])) {
+            stats.nan_vertices++;
+        }
+        stats.last_matrix_hash = pb_renderer_mtx_hash(combined.value);
+    }
+
+    bool MatrixFinite(const Matrix &matrix) const {
+        return pb_renderer_mtx_finite(matrix.value);
+    }
+
+    void ApplyGameViewport(const PBN64ScreenViewport &viewport) {
+        viewportX = viewport.x;
+        viewportY = viewport.y;
+        viewportWidth = viewport.width;
+        viewportHeight = viewport.height;
+        stats.game_viewport_x = static_cast<int32_t>(viewportX);
+        stats.game_viewport_y = static_cast<int32_t>(viewportY);
+        stats.game_viewport_w = static_cast<uint32_t>(viewportWidth);
+        stats.game_viewport_h = static_cast<uint32_t>(viewportHeight);
+    }
+
+    void ApplyN64Viewport(const N64Viewport *viewport) {
+        PBN64ScreenViewport converted = {};
+        if (viewport == nullptr ||
+            !pb_renderer_viewport_from_n64(viewport->scale[0],
+                                           viewport->scale[1],
+                                           viewport->translate[0],
+                                           viewport->translate[1],
+                                           &converted)) {
+            return;
+        }
+        ApplyGameViewport(converted);
+    }
+
+    void MapClipToScreen(LoadedVertex &output) const {
+        const PBN64ScreenViewport viewport = {
+            viewportX, viewportY, viewportWidth, viewportHeight,
+        };
+        pb_renderer_clip_to_screen_xy(output.clipX, output.clipY, output.clipW,
+                                      &viewport, &output.screenX,
+                                      &output.screenY);
+        const float ndcZ =
+            std::fabs(output.clipW) > 0.0001f ? output.clipZ / output.clipW
+                                              : 0.0f;
+        output.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
+    }
+
+    void ApplyMatrix(uint8_t parameters, const int32_t *address) {
+        if (address == nullptr) {
+            stats.missing_resources++;
+            return;
+        }
+        const Matrix decoded = DecodeMatrix(address);
+        if (!MatrixFinite(decoded)) {
+            stats.nan_vertices++;
+            return;
+        }
+        const bool projectionMatrix = (parameters & 0x04U) != 0U;
+        const bool load = (parameters & 0x02U) != 0U;
+        const bool push = (parameters & 0x01U) != 0U;
+        if (projectionMatrix) {
+            projection = load ? decoded : Multiply(decoded, projection);
+        } else {
+            if (push) {
+                if (modelViewTop + 1U < modelView.size()) {
+                    modelView[modelViewTop + 1U] = modelView[modelViewTop];
+                    modelViewTop++;
+                } else {
+                    stats.matrix_stack_overflows++;
+                }
+            }
+            modelView[modelViewTop] =
+                load ? decoded : Multiply(decoded, modelView[modelViewTop]);
+        }
+        RebuildCombined();
+    }
+
+    Color Illuminate(const N64Vertex &source) const {
+        if ((geometryMode & G_LIGHTING) == 0U || lightCount == 0U) {
+            return { source.color[0], source.color[1], source.color[2],
+                     source.color[3] };
+        }
+        const size_t ambientIndex = std::min<size_t>(lightCount - 1U,
+                                                     lights.size() - 1U);
+        float red = lights[ambientIndex].color[0];
+        float green = lights[ambientIndex].color[1];
+        float blue = lights[ambientIndex].color[2];
+        float normal[3] = {
+            static_cast<float>(static_cast<int8_t>(source.color[0])) / 127.0f,
+            static_cast<float>(static_cast<int8_t>(source.color[1])) / 127.0f,
+            static_cast<float>(static_cast<int8_t>(source.color[2])) / 127.0f,
+        };
+        const float normalLength = std::sqrt(normal[0] * normal[0] +
+                                             normal[1] * normal[1] +
+                                             normal[2] * normal[2]);
+        if (normalLength > 0.0001f) {
+            for (float &component : normal) component /= normalLength;
+        }
+        for (size_t index = 0U; index + 1U < lightCount &&
+                               index < lights.size(); index++) {
+            float direction[3] = {
+                static_cast<float>(lights[index].direction[0]) / 127.0f,
+                static_cast<float>(lights[index].direction[1]) / 127.0f,
+                static_cast<float>(lights[index].direction[2]) / 127.0f,
+            };
+            const float contribution = std::max(
+                0.0f, normal[0] * direction[0] + normal[1] * direction[1] +
+                          normal[2] * direction[2]);
+            red += lights[index].color[0] * contribution;
+            green += lights[index].color[1] * contribution;
+            blue += lights[index].color[2] * contribution;
+        }
+        return {
+            static_cast<uint8_t>(std::min(255.0f, red)),
+            static_cast<uint8_t>(std::min(255.0f, green)),
+            static_cast<uint8_t>(std::min(255.0f, blue)),
+            source.color[3],
+        };
+    }
+
+    void LoadVertices(const N64Vertex *source, size_t count,
+                      size_t destination) {
+        if (source == nullptr) {
+            stats.missing_resources++;
+            return;
+        }
+        if (destination >= vertices.size() ||
+            count > vertices.size() - destination) {
+            return;
+        }
+        for (size_t index = 0U; index < count; index++) {
+            const N64Vertex &input = source[index];
+            float object[4] = {
+                static_cast<float>(input.position[0]),
+                static_cast<float>(input.position[1]),
+                static_cast<float>(input.position[2]), 1.0f,
+            };
+            float clip[4] = {};
+            for (size_t column = 0U; column < 4U; column++) {
+                for (size_t row = 0U; row < 4U; row++) {
+                    clip[column] +=
+                        object[row] * combined.value[row][column];
+                }
+            }
+            LoadedVertex &output = vertices[destination + index];
+            output = {};
+            output.objectZ = object[2];
+            if (!pb_renderer_clip_coord_ok(clip[0], clip[1], clip[2],
+                                           clip[3])) {
+                stats.nan_vertices++;
+                continue;
+            }
+            output.clipX = clip[0];
+            output.clipY = clip[1];
+            output.clipZ = clip[2];
+            output.clipW = clip[3];
+            /*
+             * Do NOT reject W<=0 vertices here.  Fast3D leaves world vertices
+             * in homogeneous clip space and lets the GPU clip triangles that
+             * cross the eye/near plane.  XY is the viewport affine form
+             * (already multiplied by W).  Z stays as N64 clip Z so AppendVertex
+             * can map it into PICA's [-w, 0] window without a CPU 1/W.
+             * Screen Y uses Fast3D invertY: N64 +clipY is framebuffer-down.
+             */
+            MapClipToScreen(output);
+            output.textureS = static_cast<float>(
+                (static_cast<int32_t>(input.texture[0]) * textureScaleS) >>
+                16);
+            output.textureT = static_cast<float>(
+                (static_cast<int32_t>(input.texture[1]) * textureScaleT) >>
+                16);
+            output.color = Illuminate(input);
+            output.valid = std::isfinite(output.screenX) &&
+                           std::isfinite(output.screenY) &&
+                           std::isfinite(output.depth);
+        }
+    }
+
+    DecodedCombiner DecodeCombiner() const {
+        DecodedCombiner decoded = {};
+        const uint32_t word0 = combineWord0;
+        const uint32_t word1 = combineWord1;
+        decoded.cycles[0] = {
+            { static_cast<uint8_t>((word0 >> 20U) & 0xFU),
+              static_cast<uint8_t>((word1 >> 28U) & 0xFU),
+              static_cast<uint8_t>((word0 >> 15U) & 0x1FU),
+              static_cast<uint8_t>((word1 >> 15U) & 0x7U) },
+            { static_cast<uint8_t>((word0 >> 12U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 12U) & 0x7U),
+              static_cast<uint8_t>((word0 >> 9U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 9U) & 0x7U) },
+        };
+        decoded.cycles[1] = {
+            { static_cast<uint8_t>((word0 >> 5U) & 0xFU),
+              static_cast<uint8_t>((word1 >> 24U) & 0xFU),
+              static_cast<uint8_t>(word0 & 0x1FU),
+              static_cast<uint8_t>((word1 >> 6U) & 0x7U) },
+            { static_cast<uint8_t>((word1 >> 21U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 3U) & 0x7U),
+              static_cast<uint8_t>((word1 >> 18U) & 0x7U),
+              static_cast<uint8_t>(word1 & 0x7U) },
+        };
+        decoded.cycleCount =
+            (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_2 ? 2U : 1U;
+
+        /* Match PaperBoat/Fast's contract: a one-cycle draw consumes the first
+         * decoded cycle. Selecting the second raw half makes many Paper Mario
+         * materials evaluate to transparent black even though their geometry
+         * and texture data are valid. */
+
+        for (size_t cycleIndex = 0U;
+             cycleIndex < decoded.cycleCount; cycleIndex++) {
+            CombinerCycle &cycle = decoded.cycles[cycleIndex];
+            if (cycle.rgb[0] >= 8U) cycle.rgb[0] = 31U;
+            if (cycle.rgb[1] >= 8U) cycle.rgb[1] = 31U;
+            if (cycle.rgb[2] >= 16U) cycle.rgb[2] = 31U;
+            if (cycle.rgb[3] == 7U) cycle.rgb[3] = 31U;
+            if (cycle.rgb[0] == cycle.rgb[1] || cycle.rgb[2] == 31U) {
+                cycle.rgb[0] = cycle.rgb[1] = cycle.rgb[2] = 31U;
+            }
+            if (cycle.alpha[0] == cycle.alpha[1] ||
+                cycle.alpha[2] == 7U) {
+                cycle.alpha[0] = cycle.alpha[1] = cycle.alpha[2] = 7U;
+            }
+        }
+        if (decoded.cycleCount == 1U) {
+            for (uint8_t &value : decoded.cycles[0].rgb) {
+                if (value == 2U) value = 1U;
+                if (value == 9U) value = 8U;
+            }
+            for (uint8_t &value : decoded.cycles[0].alpha) {
+                if (value == 2U) value = 1U;
+            }
+        }
+
+        for (size_t cycleIndex = 0U;
+             cycleIndex < decoded.cycleCount; cycleIndex++) {
+            const CombinerCycle &cycle = decoded.cycles[cycleIndex];
+            for (uint8_t value : cycle.rgb) {
+                decoded.use.texture = decoded.use.texture || value == 1U ||
+                                      value == 2U || value == 8U ||
+                                      value == 9U;
+                decoded.use.shade = decoded.use.shade || value == 4U ||
+                                    value == 11U;
+                decoded.use.primitive = decoded.use.primitive ||
+                                        value == 3U || value == 10U ||
+                                        value == 14U;
+                decoded.use.environment = decoded.use.environment ||
+                                          value == 5U || value == 12U;
+            }
+            for (size_t slot = 0U; slot < 4U; slot++) {
+                const uint8_t value = cycle.alpha[slot];
+                decoded.use.texture = decoded.use.texture || value == 1U ||
+                                      value == 2U;
+                decoded.use.shade = decoded.use.shade || value == 4U;
+                decoded.use.primitive = decoded.use.primitive ||
+                                        value == 3U ||
+                                        (value == 6U && slot == 2U);
+                decoded.use.environment = decoded.use.environment ||
+                                          value == 5U;
+            }
+        }
+        return decoded;
+    }
+
+    static FloatColor ToFloatColor(const Color &color) {
+        return {
+            static_cast<float>(color.red) / 255.0f,
+            static_cast<float>(color.green) / 255.0f,
+            static_cast<float>(color.blue) / 255.0f,
+            static_cast<float>(color.alpha) / 255.0f,
+        };
+    }
+
+    static FloatColor ScalarColor(float value) {
+        return { value, value, value, value };
+    }
+
+    static FloatColor ClampColor(const FloatColor &color) {
+        return { Clamp01(color.red), Clamp01(color.green),
+                 Clamp01(color.blue), Clamp01(color.alpha) };
+    }
+
+    bool FillSemanticUniforms(const PBFast3DCombiner &combiner,
+                              Fast::CombinerUniforms *uniforms) const {
+        if (uniforms == nullptr) return false;
+        *uniforms = {};
+        const FloatColor primitive = ToFloatColor(primColor);
+        const FloatColor environment = ToFloatColor(envColor);
+        const float primLod =
+            static_cast<float>(primLodFraction) / 255.0f;
+        for (size_t input = 0U; input < PB_FAST3D_COMBINER_INPUTS;
+             input++) {
+            switch (combiner.input_mapping[0][input]) {
+                case 0U:
+                    break;
+                case PB_FAST3D_INPUT_PRIMITIVE:
+                    uniforms->inputs[input][0] = primitive.red;
+                    uniforms->inputs[input][1] = primitive.green;
+                    uniforms->inputs[input][2] = primitive.blue;
+                    break;
+                case PB_FAST3D_INPUT_ENVIRONMENT:
+                    uniforms->inputs[input][0] = environment.red;
+                    uniforms->inputs[input][1] = environment.green;
+                    uniforms->inputs[input][2] = environment.blue;
+                    break;
+                case PB_FAST3D_INPUT_PRIMITIVE_ALPHA:
+                    uniforms->inputs[input][0] = primitive.alpha;
+                    uniforms->inputs[input][1] = primitive.alpha;
+                    uniforms->inputs[input][2] = primitive.alpha;
+                    break;
+                case PB_FAST3D_INPUT_ENVIRONMENT_ALPHA:
+                    uniforms->inputs[input][0] = environment.alpha;
+                    uniforms->inputs[input][1] = environment.alpha;
+                    uniforms->inputs[input][2] = environment.alpha;
+                    break;
+                case PB_FAST3D_INPUT_PRIM_LOD_FRACTION:
+                    uniforms->inputs[input][0] = primLod;
+                    uniforms->inputs[input][1] = primLod;
+                    uniforms->inputs[input][2] = primLod;
+                    break;
+                case PB_FAST3D_INPUT_KEY_CENTER:
+                    uniforms->inputs[input][0] =
+                        static_cast<float>(keyCenter.red) / 255.0f;
+                    uniforms->inputs[input][1] =
+                        static_cast<float>(keyCenter.green) / 255.0f;
+                    uniforms->inputs[input][2] =
+                        static_cast<float>(keyCenter.blue) / 255.0f;
+                    break;
+                case PB_FAST3D_INPUT_KEY_SCALE:
+                    uniforms->inputs[input][0] =
+                        static_cast<float>(keyScale.red) / 255.0f;
+                    uniforms->inputs[input][1] =
+                        static_cast<float>(keyScale.green) / 255.0f;
+                    uniforms->inputs[input][2] =
+                        static_cast<float>(keyScale.blue) / 255.0f;
+                    break;
+                case PB_FAST3D_INPUT_CONVERT_K4:
+                case PB_FAST3D_INPUT_CONVERT_K5: {
+                    const size_t coefficient =
+                        combiner.input_mapping[0][input] ==
+                                PB_FAST3D_INPUT_CONVERT_K4
+                            ? 4U
+                            : 5U;
+                    const float value =
+                        static_cast<float>(convertK[coefficient]) / 255.0f;
+                    uniforms->inputs[input][0] = value;
+                    uniforms->inputs[input][1] = value;
+                    uniforms->inputs[input][2] = value;
+                    break;
+                }
+                default:
+                    return false;
+            }
+
+            switch (combiner.input_mapping[1][input]) {
+                case 0U:
+                    break;
+                case PB_FAST3D_INPUT_PRIMITIVE:
+                    uniforms->inputs[input][3] = primitive.alpha;
+                    break;
+                case PB_FAST3D_INPUT_ENVIRONMENT:
+                    uniforms->inputs[input][3] = environment.alpha;
+                    break;
+                case PB_FAST3D_INPUT_ALPHA_PRIM_LOD_FRACTION:
+                    uniforms->inputs[input][3] = primLod;
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    static bool UsesKeyConvert(const PBFast3DCombiner &combiner) {
+        for (size_t input = 0U; input < PB_FAST3D_COMBINER_INPUTS; input++) {
+            const uint8_t mapping = combiner.input_mapping[0][input];
+            if (mapping == PB_FAST3D_INPUT_KEY_CENTER ||
+                mapping == PB_FAST3D_INPUT_KEY_SCALE ||
+                mapping == PB_FAST3D_INPUT_CONVERT_K4 ||
+                mapping == PB_FAST3D_INPUT_CONVERT_K5) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    FogSource CurrentFogSource() const {
+        const uint8_t blendSource =
+            static_cast<uint8_t>((otherModeLow >> 30U) & 3U);
+        if (blendSource == G_BL_CLR_BL) {
+            return FogSource::Constant;
+        }
+        if (blendSource != G_BL_CLR_FOG) {
+            return FogSource::None;
+        }
+        return (geometryMode & G_FOG) != 0U
+                   ? FogSource::Depth
+                   : FogSource::VertexAlpha;
+    }
+
+    bool BuildSemanticBatch(const DecodedCombiner &decoded,
+                            SemanticBatch *semantic) {
+        if (semantic == nullptr || api == nullptr) {
+            return false;
+        }
+        *semantic = {};
+        uint64_t options = pb_gfx_shader_option(PB_GFX_OPT_ALPHA);
+        if (decoded.cycleCount == 2U) {
+            options |= pb_gfx_shader_option(PB_GFX_OPT_TWO_CYCLE);
+        }
+        if (!pb_fast3d_generate_combiner(&semantic->combiner, combineWord0,
+                                         combineWord1, options)) {
+            return false;
+        }
+        if (CurrentFogSource() == FogSource::VertexAlpha ||
+            !FillSemanticUniforms(semantic->combiner,
+                                  &semantic->uniforms)) {
+            return false;
+        }
+        semantic->shader = api->LookupShader(
+            semantic->combiner.shader_id0, semantic->combiner.shader_id1);
+        if (semantic->shader == nullptr) {
+            semantic->shader = api->CreateAndLoadNewShader(
+                semantic->combiner.shader_id0,
+                semantic->combiner.shader_id1);
+        }
+        if (!api->ShaderIsSupported(semantic->shader)) {
+            return false;
+        }
+
+        /* The backend deliberately reserves both texture streams for a
+         * textured two-cycle program because cycle two swaps TEXEL0/TEXEL1.
+         * Consume its final layout instead of assuming GenerateCC's narrower
+         * per-operand usage is also the vertex contract. */
+        bool usedTextures[PB_GFX_TEXTURE_UNITS] = {};
+        api->ShaderGetInfo(semantic->shader, nullptr, usedTextures);
+        for (size_t unit = 0U; unit < PB_GFX_TEXTURE_UNITS; unit++) {
+            semantic->combiner.used_textures[unit] = usedTextures[unit];
+        }
+        return true;
+    }
+
+    FloatColor RgbCombinerSource(uint8_t value, size_t slot,
+                                 const FloatColor &combined,
+                                 const FloatColor &shade) const {
+        const FloatColor white = { 1.0f, 1.0f, 1.0f, 1.0f };
+        switch (value) {
+            case 0U: return combined;
+            case 1U:
+            case 2U: return white;
+            case 3U: return ToFloatColor(primColor);
+            case 4U: return shade;
+            case 5U: return ToFloatColor(envColor);
+            case 6U:
+                if (slot == 1U) return ToFloatColor(keyCenter);
+                if (slot == 2U) return ToFloatColor(keyScale);
+                return white;
+            case 7U:
+                if (slot == 1U) {
+                    return ScalarColor(
+                        static_cast<float>(convertK[4]) / 255.0f);
+                }
+                return slot == 2U ? ScalarColor(combined.alpha)
+                                  : FloatColor{};
+            case 8U:
+            case 9U: return white;
+            case 10U: return ScalarColor(ToFloatColor(primColor).alpha);
+            case 11U: return ScalarColor(shade.alpha);
+            case 12U: return ScalarColor(ToFloatColor(envColor).alpha);
+            case 13U:
+            case 14U: return white;
+            case 15U:
+                return slot == 2U
+                           ? ScalarColor(
+                                 static_cast<float>(convertK[5]) / 255.0f)
+                           : FloatColor{};
+            case 31U:
+            default: return {};
+        }
+    }
+
+    float AlphaCombinerSource(uint8_t value, size_t slot,
+                              const FloatColor &combined,
+                              const FloatColor &shade) const {
+        switch (value) {
+            case 0U: return slot == 2U ? 1.0f : combined.alpha;
+            case 1U:
+            case 2U: return 1.0f;
+            case 3U: return ToFloatColor(primColor).alpha;
+            case 4U: return shade.alpha;
+            case 5U: return ToFloatColor(envColor).alpha;
+            case 6U: return 1.0f;
+            case 7U:
+            default: return 0.0f;
+        }
+    }
+
+    /*
+     * The legacy CPU evaluator substitutes white for texture operands, then
+     * the legacy texture shader multiplies that approximation by TEXEL0.
+     * This reconstruction is only valid for one pure `(texel - 0) * c + 0`
+     * RGB term. For any subtractive, additive, multi-texture, or differently
+     * placed texture operand, applying another GPU texture multiply compounds
+     * the approximation and can drive the result toward black.
+     */
+    bool CombinerTextureSafeForModulate(
+        const DecodedCombiner &combiner) const {
+        size_t textureSlotCount = 0U;
+        bool pureModulate = true;
+        for (size_t cycleIndex = 0U; cycleIndex < combiner.cycleCount;
+             cycleIndex++) {
+            const CombinerCycle &cycle = combiner.cycles[cycleIndex];
+            for (size_t slot = 0U; slot < 4U; slot++) {
+                const uint8_t value = cycle.rgb[slot];
+                const bool isTexture = value == 1U || value == 2U ||
+                                       value == 8U || value == 9U;
+                if (!isTexture) continue;
+                textureSlotCount++;
+                const bool pureCycle = slot == 0U && cycle.rgb[1] == 31U &&
+                                       cycle.rgb[3] == 31U;
+                if (!pureCycle) pureModulate = false;
+            }
+        }
+        return textureSlotCount == 1U && pureModulate;
+    }
+
+    FloatColor EvaluateCombiner(const LoadedVertex &vertex) const {
+        FloatColor combined = {};
+        const FloatColor shade = ToFloatColor(vertex.color);
+        for (size_t cycleIndex = 0U;
+             cycleIndex < batchCombiner.cycleCount; cycleIndex++) {
+            const CombinerCycle &cycle =
+                batchCombiner.cycles[cycleIndex];
+            const FloatColor a =
+                RgbCombinerSource(cycle.rgb[0], 0U, combined, shade);
+            const FloatColor b =
+                RgbCombinerSource(cycle.rgb[1], 1U, combined, shade);
+            const FloatColor c =
+                RgbCombinerSource(cycle.rgb[2], 2U, combined, shade);
+            const FloatColor d =
+                RgbCombinerSource(cycle.rgb[3], 3U, combined, shade);
+            FloatColor next = {
+                (a.red - b.red) * c.red + d.red,
+                (a.green - b.green) * c.green + d.green,
+                (a.blue - b.blue) * c.blue + d.blue,
+                0.0f,
+            };
+            const float alphaA = AlphaCombinerSource(
+                cycle.alpha[0], 0U, combined, shade);
+            const float alphaB = AlphaCombinerSource(
+                cycle.alpha[1], 1U, combined, shade);
+            const float alphaC = AlphaCombinerSource(
+                cycle.alpha[2], 2U, combined, shade);
+            const float alphaD = AlphaCombinerSource(
+                cycle.alpha[3], 3U, combined, shade);
+            next.alpha = (alphaA - alphaB) * alphaC + alphaD;
+            combined = ClampColor(next);
+        }
+        return combined;
+    }
+
+    Color ShadeForVertex(const LoadedVertex &vertex) const {
+        const FogSource fogSource = CurrentFogSource();
+        LoadedVertex combinerVertex = vertex;
+        if (fogSource == FogSource::Depth ||
+            fogSource == FogSource::VertexAlpha) {
+            /* Fast3D carries the fog factor separately and forces the shade
+             * alpha consumed by the combiner to one for these fog modes. */
+            combinerVertex.color.alpha = 255U;
+        }
+        FloatColor evaluated = batchFill
+                                   ? ToFloatColor(fillRectangleColor)
+                                   : (batchTextureReplace
+                                          ? FloatColor{ 1.0f, 1.0f, 1.0f,
+                                                        1.0f }
+                                          : EvaluateCombiner(combinerVertex));
+        Color output = {
+            static_cast<uint8_t>(evaluated.red * 255.0f + 0.5f),
+            static_cast<uint8_t>(evaluated.green * 255.0f + 0.5f),
+            static_cast<uint8_t>(evaluated.blue * 255.0f + 0.5f),
+            static_cast<uint8_t>(evaluated.alpha * 255.0f + 0.5f),
+        };
+        if (fogSource != FogSource::None) {
+            const Color &fogBlendColor =
+                fogSource == FogSource::Constant ? blendColor : fogColor;
+            float factor = 0.0f;
+            if (fogSource == FogSource::Depth) {
+                const float divisor = std::fabs(vertex.clipW) < 0.001f
+                                          ? std::copysign(0.001f, vertex.clipW)
+                                          : vertex.clipW;
+                factor = Clamp01((vertex.clipZ / divisor * fogMultiply +
+                                  fogOffset) / 255.0f);
+            } else if (fogSource == FogSource::Constant) {
+                factor = static_cast<float>(fogColor.alpha) / 255.0f;
+            } else {
+                factor = static_cast<float>(vertex.color.alpha) / 255.0f;
+            }
+            output.red = static_cast<uint8_t>(
+                output.red * (1.0f - factor) + fogBlendColor.red * factor);
+            output.green = static_cast<uint8_t>(
+                output.green * (1.0f - factor) + fogBlendColor.green * factor);
+            output.blue = static_cast<uint8_t>(
+                output.blue * (1.0f - factor) + fogBlendColor.blue * factor);
+        }
+        return output;
+    }
+
+    float ShiftTextureCoordinate(float coordinate, uint8_t shift) const {
+        if (shift == 0U) return coordinate;
+        if (shift <= 10U) {
+            return coordinate / static_cast<float>(1U << shift);
+        }
+        return coordinate * static_cast<float>(1U << (16U - shift));
+    }
+
+    static uint32_t TextureTypeFor(uint8_t format, uint8_t size) {
+        if (format == 0U && size == 3U) return PB_RESOURCE_TEXTURE_RGBA32;
+        if (format == 0U && size == 2U) return PB_RESOURCE_TEXTURE_RGBA16;
+        if (format == 2U && size == 0U) return PB_RESOURCE_TEXTURE_CI4;
+        if (format == 2U && size == 1U) return PB_RESOURCE_TEXTURE_CI8;
+        if (format == 3U && size == 0U) return PB_RESOURCE_TEXTURE_IA4;
+        if (format == 3U && size == 1U) return PB_RESOURCE_TEXTURE_IA8;
+        if (format == 3U && size == 2U) return PB_RESOURCE_TEXTURE_IA16;
+        if (format == 4U && size == 0U) return PB_RESOURCE_TEXTURE_I4;
+        if (format == 4U && size == 1U) return PB_RESOURCE_TEXTURE_I8;
+        return PB_RESOURCE_TEXTURE_ERROR;
+    }
+
+    const uint8_t *PaletteFor(const Tile &tile, uint32_t type) const {
+        if (type == PB_RESOURCE_TEXTURE_CI4) {
+            const size_t firstEntry = (tile.palette & 0xFU) * 16U;
+            for (size_t entry = firstEntry; entry < firstEntry + 16U;
+                 entry++) {
+                if (!paletteEntriesValid[entry]) return nullptr;
+            }
+            return paletteTmem.data() + firstEntry * 2U;
+        }
+        if (type == PB_RESOURCE_TEXTURE_CI8) {
+            /*
+             * Paper Mario CI8 sprites, glyphs, and menus typically load a
+             * 16-entry pal16 into one TLUT bank.  RDP TMEM keeps unloaded
+             * entries as zero; requiring all 256 validity flags made every
+             * pal16 CI8 texture miss and render as a black/fallback surface.
+             */
+            if (!std::any_of(paletteEntriesValid.begin(),
+                             paletteEntriesValid.end(),
+                             [](bool valid) { return valid; })) {
+                return nullptr;
+            }
+            return paletteTmem.data();
+        }
+        return nullptr;
+    }
+
+    static uint64_t PaletteHash(const uint8_t *palette, uint32_t type) {
+        if (palette == nullptr) return 0U;
+        const size_t bytes = type == PB_RESOURCE_TEXTURE_CI4 ? 32U : 512U;
+        uint64_t hash = UINT64_C(1469598103934665603);
+        for (size_t index = 0U; index < bytes; index++) {
+            hash = (hash ^ palette[index]) * UINT64_C(1099511628211);
+        }
+        return hash;
+    }
+
+    bool DecodeTexture(const TextureSource &source, const Tile &tile,
+                       const uint8_t *palette, std::vector<uint8_t> *rgba,
+                       uint16_t *textureWidth, uint16_t *textureHeight,
+                       uint16_t *sourceWidth, uint16_t *sourceHeight,
+                       uint32_t *typeOut) const {
+        if (source.data == nullptr || rgba == nullptr ||
+            textureWidth == nullptr || textureHeight == nullptr ||
+            sourceWidth == nullptr || sourceHeight == nullptr ||
+            typeOut == nullptr) {
+            return false;
+        }
+        uint32_t width = source.loadedWidth;
+        uint32_t height = source.loadedHeight;
+        if (width == 0U) width = source.resourceWidth;
+        if (height == 0U) height = source.resourceHeight;
+        if (width == 0U) {
+            width = tile.lowerS >= tile.upperS
+                        ? ((tile.lowerS - tile.upperS) >> 2U) + 1U
+                        : source.imageWidth;
+        }
+        if (height == 0U) {
+            height = tile.lowerT >= tile.upperT
+                         ? ((tile.lowerT - tile.upperT) >> 2U) + 1U
+                         : 1U;
+        }
+        if (width == 0U) width = source.imageWidth;
+        if (width == 0U || height == 0U || width > UINT16_MAX ||
+            height > UINT16_MAX) {
+            return false;
+        }
+        const uint16_t paddedWidth = NextTextureDimension(width);
+        const uint16_t paddedHeight = NextTextureDimension(height);
+        if (paddedWidth == 0U || paddedHeight == 0U) return false;
+        const uint32_t type = source.resourceType != 0U
+                                  ? source.resourceType
+                                  : TextureTypeFor(tile.format, tile.size);
+        if (type == PB_RESOURCE_TEXTURE_ERROR) return false;
+        const size_t rowStride = source.rowStrideTexels != 0U
+                                     ? source.rowStrideTexels
+                                     : width;
+        if (rowStride < width || source.offsetTexels > SIZE_MAX - width ||
+            height - 1U >
+                (SIZE_MAX - source.offsetTexels - width) / rowStride) {
+            return false;
+        }
+        const size_t addressedTexels = source.offsetTexels +
+            (static_cast<size_t>(height) - 1U) * rowStride + width;
+        size_t required = 0U;
+        switch (type) {
+            case PB_RESOURCE_TEXTURE_RGBA32:
+                if (addressedTexels > SIZE_MAX / 4U) return false;
+                required = addressedTexels * 4U;
+                break;
+            case PB_RESOURCE_TEXTURE_RGBA16:
+            case PB_RESOURCE_TEXTURE_IA16:
+                if (addressedTexels > SIZE_MAX / 2U) return false;
+                required = addressedTexels * 2U;
+                break;
+            case PB_RESOURCE_TEXTURE_CI4:
+            case PB_RESOURCE_TEXTURE_I4:
+            case PB_RESOURCE_TEXTURE_IA4:
+                required = (addressedTexels + 1U) / 2U;
+                break;
+            case PB_RESOURCE_TEXTURE_CI8:
+            case PB_RESOURCE_TEXTURE_I8:
+            case PB_RESOURCE_TEXTURE_IA8: required = addressedTexels; break;
+            default: return false;
+        }
+        if (source.payloadSize != 0U && required > source.payloadSize) {
+            return false;
+        }
+        if ((type == PB_RESOURCE_TEXTURE_CI4 ||
+             type == PB_RESOURCE_TEXTURE_CI8) && palette == nullptr) {
+            return false;
+        }
+        rgba->assign(static_cast<size_t>(paddedWidth) * paddedHeight * 4U,
+                     0U);
+        const auto nibble = [&source](size_t texel) {
+            const uint8_t packed = source.data[texel / 2U];
+            return (texel & 1U) == 0U
+                       ? static_cast<uint8_t>(packed >> 4U)
+                       : static_cast<uint8_t>(packed & 0xFU);
+        };
+        const auto rgba16 = [](uint8_t *destination, const uint8_t *input) {
+            const uint16_t color = ReadBig16(input);
+            destination[0] = ExpandFive(color >> 11U);
+            destination[1] = ExpandFive(color >> 6U);
+            destination[2] = ExpandFive(color >> 1U);
+            destination[3] = (color & 1U) != 0U ? 255U : 0U;
+        };
+        for (uint32_t y = 0U; y < height; y++) {
+            for (uint32_t x = 0U; x < width; x++) {
+                const size_t texel = source.offsetTexels +
+                                     static_cast<size_t>(y) * rowStride + x;
+                uint8_t *destination =
+                    &(*rgba)[(static_cast<size_t>(y) * paddedWidth + x) * 4U];
+                switch (type) {
+                    case PB_RESOURCE_TEXTURE_RGBA32:
+                        std::memcpy(destination, source.data + texel * 4U, 4U);
+                        break;
+                    case PB_RESOURCE_TEXTURE_RGBA16:
+                        rgba16(destination, source.data + texel * 2U);
+                        break;
+                    case PB_RESOURCE_TEXTURE_CI4:
+                        rgba16(destination,
+                               palette + static_cast<size_t>(nibble(texel)) *
+                                             2U);
+                        break;
+                    case PB_RESOURCE_TEXTURE_CI8:
+                        rgba16(destination,
+                               palette + static_cast<size_t>(source.data[texel]) *
+                                             2U);
+                        break;
+                    case PB_RESOURCE_TEXTURE_I4: {
+                        const uint8_t intensity =
+                            static_cast<uint8_t>(nibble(texel) * 17U);
+                        destination[0] = destination[1] = destination[2] =
+                            intensity;
+                        destination[3] = 255U;
+                        break;
+                    }
+                    case PB_RESOURCE_TEXTURE_I8:
+                        destination[0] = destination[1] = destination[2] =
+                            source.data[texel];
+                        destination[3] = 255U;
+                        break;
+                    case PB_RESOURCE_TEXTURE_IA4: {
+                        const uint8_t packed = nibble(texel);
+                        const uint8_t intensity = static_cast<uint8_t>(
+                            ((packed >> 1U) * 255U + 3U) / 7U);
+                        destination[0] = destination[1] = destination[2] =
+                            intensity;
+                        destination[3] =
+                            (packed & 1U) != 0U ? 255U : 0U;
+                        break;
+                    }
+                    case PB_RESOURCE_TEXTURE_IA8: {
+                        const uint8_t packed = source.data[texel];
+                        destination[0] = destination[1] = destination[2] =
+                            static_cast<uint8_t>((packed >> 4U) * 17U);
+                        destination[3] =
+                            static_cast<uint8_t>((packed & 0xFU) * 17U);
+                        break;
+                    }
+                    case PB_RESOURCE_TEXTURE_IA16:
+                        destination[0] = destination[1] = destination[2] =
+                            source.data[texel * 2U];
+                        destination[3] = source.data[texel * 2U + 1U];
+                        break;
+                    default: return false;
+                }
+            }
+        }
+        *textureWidth = paddedWidth;
+        *textureHeight = paddedHeight;
+        *sourceWidth = static_cast<uint16_t>(width);
+        *sourceHeight = static_cast<uint16_t>(height);
+        *typeOut = type;
+        return true;
+    }
+
+    uint32_t TextureKey(const TextureSource &source, const Tile &tile,
+                        const void *palette, uint16_t width,
+                        uint16_t height, uint32_t type) const {
+        uint64_t key = reinterpret_cast<uintptr_t>(source.data);
+        key ^= reinterpret_cast<uintptr_t>(palette) * UINT64_C(0x9E3779B1);
+        key ^= static_cast<uint64_t>(width) << 5U;
+        key ^= static_cast<uint64_t>(height) << 17U;
+        key ^= static_cast<uint64_t>(type) << 27U;
+        key ^= static_cast<uint64_t>(tile.palette) << 2U;
+        key ^= static_cast<uint64_t>(source.rowStrideTexels) *
+               UINT64_C(0x85EBCA6B);
+        key ^= static_cast<uint64_t>(source.offsetTexels) *
+               UINT64_C(0xC2B2AE35);
+        key ^= key >> 32U;
+        return static_cast<uint32_t>(key);
+    }
+
+    void EvictOldestTexture() {
+        if (textures.empty()) return;
+        auto oldest = std::min_element(
+            textures.begin(), textures.end(),
+            [](const TextureCacheEntry &left,
+               const TextureCacheEntry &right) {
+                return left.lastUse < right.lastUse;
+            });
+        api->DeleteTexture(oldest->id);
+        textures.erase(oldest);
+        stats.texture_evictions++;
+    }
+
+    TextureCacheEntry *FallbackTexture(size_t uploadUnit) {
+        for (TextureCacheEntry &entry : textures) {
+            if (entry.source == this) {
+                entry.lastUse = ++textureUseClock;
+                return &entry;
+            }
+        }
+        if (textures.size() >= kRuntimeTextureLimit) EvictOldestTexture();
+        const uint32_t id = api->NewTexture();
+        if (id == 0U) return nullptr;
+        std::array<uint8_t, 8U * 8U * 4U> pixels = {};
+        for (size_t y = 0U; y < 8U; y++) {
+            for (size_t x = 0U; x < 8U; x++) {
+                uint8_t *pixel = &pixels[(y * 8U + x) * 4U];
+                const bool alternate = ((x / 2U) ^ (y / 2U)) != 0U;
+                pixel[0] = 255U;
+                pixel[1] = alternate ? 0U : 64U;
+                pixel[2] = 255U;
+                pixel[3] = 255U;
+            }
+        }
+        api->SelectTexture(static_cast<int>(uploadUnit), id);
+        api->UploadTexture(pixels.data(), 8U, 8U);
+        textures.push_back({ this, nullptr, nullptr, id, 0U, 0U, 0U, 0U,
+                             0U, 8U, 8U, 8U, 8U, ++textureUseClock });
+        return &textures.back();
+    }
+
+    TextureCacheEntry *AcquireTexture(const Tile &tile, size_t uploadUnit) {
+        /*
+         * TMEM is addressed in 64-bit words (0..511).  Treating every
+         * non-zero TMEM address as one shared slot aliases unrelated Paper
+         * Mario textures: later loads overwrite earlier bindings and surfaces
+         * can render black, duplicated, or with the wrong material.  Preserve
+         * the exact TMEM destination selected by gDPSetTile/gDPLoad*.
+         */
+        const size_t tmemIndex =
+            std::min<size_t>(tile.tmem, loadedTextures.size() - 1U);
+        const TextureSource &source =
+            loadedTextures[tmemIndex].data != nullptr
+                ? loadedTextures[tmemIndex]
+                : textureToLoad;
+        uint32_t type = source.resourceType != 0U
+                            ? source.resourceType
+                            : TextureTypeFor(tile.format, tile.size);
+        const uint8_t *palette = PaletteFor(tile, type);
+        const uint64_t paletteHash = PaletteHash(palette, type);
+        uint32_t width = source.loadedWidth;
+        uint32_t height = source.loadedHeight;
+        if (width == 0U) width = source.resourceWidth;
+        if (height == 0U) height = source.resourceHeight;
+        if (width == 0U && tile.lowerS >= tile.upperS) {
+            width = ((tile.lowerS - tile.upperS) >> 2U) + 1U;
+        }
+        if (height == 0U && tile.lowerT >= tile.upperT) {
+            height = ((tile.lowerT - tile.upperT) >> 2U) + 1U;
+        }
+        if (width == 0U) width = source.imageWidth;
+        /* Match DecodeTexture's final fallback exactly so cache lookup and
+         * insertion use the same dimensions. */
+        if (height == 0U) height = 1U;
+        if (width > UINT16_MAX || height > UINT16_MAX) {
+            stats.texture_fallbacks++;
+            return FallbackTexture(uploadUnit);
+        }
+        const uint32_t key = TextureKey(
+            source, tile, palette, static_cast<uint16_t>(width),
+            static_cast<uint16_t>(height), type);
+        for (TextureCacheEntry &entry : textures) {
+            if (entry.source == source.data && entry.palette == palette &&
+                entry.key == key && entry.paletteHash == paletteHash &&
+                entry.type == type &&
+                entry.rowStrideTexels == source.rowStrideTexels &&
+                entry.offsetTexels == source.offsetTexels &&
+                entry.sourceWidth == width && entry.sourceHeight == height) {
+                entry.lastUse = ++textureUseClock;
+                return &entry;
+            }
+        }
+
+        std::vector<uint8_t> rgba;
+        uint16_t textureWidth = 0U, textureHeight = 0U;
+        uint16_t sourceWidth = 0U, sourceHeight = 0U;
+        if (!DecodeTexture(source, tile, palette, &rgba, &textureWidth,
+                           &textureHeight, &sourceWidth, &sourceHeight,
+                           &type)) {
+            stats.texture_fallbacks++;
+            return FallbackTexture(uploadUnit);
+        }
+        if (textures.size() >= kRuntimeTextureLimit) EvictOldestTexture();
+        uint32_t id = api->NewTexture();
+        if (id == 0U) {
+            EvictOldestTexture();
+            id = api->NewTexture();
+        }
+        if (id == 0U) return nullptr;
+        api->SelectTexture(static_cast<int>(uploadUnit), id);
+        api->UploadTexture(rgba.data(), textureWidth, textureHeight);
+        textures.push_back({
+            source.data, palette, source.path, id,
+            TextureKey(source, tile, palette, sourceWidth, sourceHeight, type),
+            paletteHash, type, source.rowStrideTexels, source.offsetTexels,
+            sourceWidth, sourceHeight, textureWidth, textureHeight,
+            ++textureUseClock,
+        });
+        return &textures.back();
+    }
+
+    uint8_t EffectiveTextureTile(size_t unit) const {
+        const uint8_t base = firstTile & 7U;
+        /* Match the pinned Fast3D path. TEXEL1 normally consumes the tile
+         * following TEXEL0. Without LOD support, draws whose base tile is in
+         * the non-mipmap range (2..7) bind that same tile to both units. */
+        return unit == 1U && base < 2U
+                   ? static_cast<uint8_t>(base + 1U)
+                   : base;
+    }
+
+    bool BeginBatch(bool textureRequested, bool fill = false,
+                    bool screenSpace = false) {
+        const DecodedCombiner combiner = DecodeCombiner();
+        const bool copyCycle =
+            (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY;
+        bool textured = textureRequested &&
+                        (combiner.use.texture || copyCycle);
+        if (batchTriangles != 0U && batchTextured == textured &&
+            batchFill == fill && batchScreenSpace == screenSpace) {
+            return true;
+        }
+        if (!Flush()) return false;
+        batchFill = fill;
+        batchScreenSpace = screenSpace;
+        batchHasTexture = {};
+        batchTextureTiles = {};
+        batchTextureInfo = {};
+        batchCombiner = combiner;
+        batchSemantic = false;
+        batchShaderUsesTexture0 = false;
+        batchShaderUsesTexture1 = false;
+        batchShaderUsesShade = true;
+        batchShaderUsesAlpha = true;
+        batchFogSource = CurrentFogSource();
+        SemanticBatch semantic = {};
+        const bool semanticCandidate = !fill && !copyCycle;
+        const bool semanticAccepted =
+            semanticCandidate && BuildSemanticBatch(combiner, &semantic);
+        const bool usesKeyConvert = UsesKeyConvert(semantic.combiner);
+        if (semanticAccepted) {
+            batchSemantic = true;
+            batchShaderUsesTexture0 = semantic.combiner.used_textures[0];
+            batchShaderUsesTexture1 = semantic.combiner.used_textures[1];
+            batchShaderUsesShade = semantic.combiner.uses_shade;
+            textured = batchShaderUsesTexture0 || batchShaderUsesTexture1;
+            stats.semantic_combiner_batches++;
+            if (semantic.combiner.two_cycle) {
+                stats.semantic_two_cycle_batches++;
+            }
+            if (batchFogSource != FogSource::None) {
+                stats.semantic_fog_batches++;
+            }
+            if (usesKeyConvert) {
+                stats.semantic_key_convert_batches++;
+            }
+        } else if (semanticCandidate) {
+            stats.legacy_combiner_fallbacks++;
+            if (batchFogSource != FogSource::None) {
+                stats.legacy_fog_fallbacks++;
+            }
+            if (usesKeyConvert) {
+                stats.legacy_key_convert_fallbacks++;
+            }
+        }
+        batchTextured = textured;
+        batchTextureReplace = !batchSemantic && textured &&
+                              (!batchCombiner.use.texture || copyCycle);
+        const bool sampleTexture =
+            textured && (batchSemantic || batchTextureReplace ||
+                         CombinerTextureSafeForModulate(batchCombiner));
+        const bool depthTest =
+            ((geometryMode & G_ZBUFFER) != 0U ||
+             (otherModeLow & G_ZS_PRIM) != 0U) &&
+            (otherModeLow & Z_CMP) != 0U;
+        const bool depthWrite = (otherModeLow & Z_UPD) != 0U;
+        /* RDP COPY/FILL ignore the blender and geometry cull, and texrects
+         * are screen-space. Enabling alpha test on every textured batch made
+         * CI backdrop palettes whose RGBA5551 LSB is clear fully invisible.
+         * PaperBoat sprites and HUD instead punch through with CVG_X_ALPHA
+         * (not G_AC_THRESHOLD); r17 left those quads as black rectangles. */
+        const bool opaqueCopyOrFill = copyCycle || fill;
+        /*
+         * PICA face winding after OrthoTilt does not match Fast3D/OpenGL.
+         * Leave the GPU uncullled and drop back-faces in N64 clip space
+         * inside EmitTriangle, which is the same keep-sign contract as
+         * PaperBoat's interpreter.
+         */
+        const int8_t cullKeepSign = 0;
+        const uint32_t alphaCompare = otherModeLow & 3U;
+        const bool useAlpha = !opaqueCopyOrFill &&
+                              ((otherModeLow & FORCE_BL) != 0U ||
+                               primColor.alpha != 255U ||
+                               envColor.alpha != 255U);
+        const bool alphaTest =
+            !opaqueCopyOrFill &&
+            (alphaCompare != 0U || (otherModeLow & CVG_X_ALPHA) != 0U);
+        const uint8_t alphaReference =
+            alphaCompare == 1U ? blendColor.alpha : 0U;
+        api->ConfigureRuntimePipeline(
+            depthTest && !opaqueCopyOrFill,
+            depthWrite && !opaqueCopyOrFill,
+            (otherModeLow & ZMODE_DEC) == ZMODE_DEC, cullKeepSign,
+            useAlpha, alphaTest, alphaReference);
+        const bool semanticFog = batchSemantic &&
+                                 batchFogSource != FogSource::None;
+        const Color &fogBlendColor = batchFogSource == FogSource::Constant
+                                         ? blendColor
+                                         : fogColor;
+        api->ConfigureRuntimeFog(
+            semanticFog, fogBlendColor.red, fogBlendColor.green,
+            fogBlendColor.blue,
+            batchFogSource == FogSource::Constant ? 0 : fogMultiply,
+            batchFogSource == FogSource::Constant
+                ? static_cast<int16_t>(fogColor.alpha)
+                : fogOffset);
+        if (sampleTexture) {
+            const bool linear = ((otherModeHigh >> 12U) & 3U) != 0U;
+            api->SetTextureFilter(linear ? Fast::FILTER_LINEAR
+                                         : Fast::FILTER_NONE);
+            const bool usedUnits[PB_GFX_TEXTURE_UNITS] = {
+                batchSemantic ? batchShaderUsesTexture0 : true,
+                batchSemantic ? batchShaderUsesTexture1 : false,
+            };
+            for (size_t unit = 0U; unit < PB_GFX_TEXTURE_UNITS; unit++) {
+                if (!usedUnits[unit]) continue;
+                const uint8_t tileIndex = EffectiveTextureTile(unit);
+                const Tile &tile = tiles[tileIndex];
+                TextureCacheEntry *texture = AcquireTexture(tile, unit);
+                if (texture == nullptr) return false;
+                batchTextureTiles[unit] = tile;
+                batchTextureInfo[unit] = *texture;
+                batchHasTexture[unit] = true;
+                api->SelectTexture(static_cast<int>(unit), texture->id);
+                api->SetSamplerParameters(static_cast<int>(unit), linear,
+                                          tile.clampS, tile.clampT);
+            }
+        }
+        if (batchSemantic) {
+            api->SetCombinerUniforms(semantic.uniforms);
+            api->LoadShader(semantic.shader);
+        } else {
+            batchShaderUsesTexture0 = sampleTexture;
+            api->LoadShader(sampleTexture ? textureShader : shadeShader);
+            if (textured && !sampleTexture) {
+                stats.legacy_unsafe_modulate_batches++;
+            }
+        }
+        return true;
+    }
+
+    bool Flush() {
+        if (batchTriangles == 0U) return true;
+        if (batch.empty()) return false;
+#if PB3DS_DEBUG_TRACE
+        if (stats.draws_last_frame < PB3DS_DEBUG_LOG_LIMIT) {
+#ifndef __3DS__
+            std::fprintf(stderr,
+                         "pb3ds draw %u tris=%zu vp=%.1f,%.1f,%.1f,%.1f "
+                         "sc=%d,%d,%u,%u mtx=%08x geom=%08x rm=%08x\n",
+                         stats.draws_last_frame,
+                         batchTriangles, viewportX, viewportY, viewportWidth,
+                         viewportHeight, stats.scissor_x, stats.scissor_y,
+                         stats.scissor_w, stats.scissor_h,
+                         stats.last_matrix_hash, geometryMode, otherModeLow);
+#endif
+        }
+#endif
+        api->DrawTriangles(batch.data(), batch.size(), batchTriangles);
+        stats.draws_last_frame++;
+        batch.clear();
+        batchTriangles = 0U;
+        return true;
+    }
+
+    void AppendVertex(const LoadedVertex &vertex) {
+        const float clipW = std::fabs(vertex.clipW) < 0.0001f
+                                ? std::copysign(0.0001f, vertex.clipW)
+                                : vertex.clipW;
+        batch.push_back(vertex.screenX);
+        batch.push_back(vertex.screenY);
+        batch.push_back(
+            pb_renderer_n64_to_pica_clip_z(vertex.clipZ, clipW));
+        batch.push_back(clipW);
+        batch.push_back(0.0f);
+        const bool usedUnits[PB_GFX_TEXTURE_UNITS] = {
+            batchShaderUsesTexture0,
+            batchShaderUsesTexture1,
+        };
+        for (size_t unit = 0U; unit < PB_GFX_TEXTURE_UNITS; unit++) {
+            if (!usedUnits[unit] || !batchHasTexture[unit]) continue;
+            const Tile &tile = batchTextureTiles[unit];
+            const TextureCacheEntry &texture = batchTextureInfo[unit];
+            const float s =
+                ShiftTextureCoordinate(vertex.textureS / 32.0f,
+                                       tile.shiftS) -
+                static_cast<float>(tile.upperS) / 4.0f;
+            const float t =
+                ShiftTextureCoordinate(vertex.textureT / 32.0f,
+                                       tile.shiftT) -
+                static_cast<float>(tile.upperT) / 4.0f;
+            batch.push_back(s / texture.textureWidth);
+            batch.push_back(pb_renderer_n64_texture_v(
+                t, texture.sourceHeight, texture.textureHeight));
+        }
+        if (batchShaderUsesShade) {
+            Color color = batchSemantic ? vertex.color
+                                        : ShadeForVertex(vertex);
+            if (batchSemantic && batchFogSource == FogSource::Depth) {
+                color.alpha = 255U;
+            }
+            batch.push_back(static_cast<float>(color.red) / 255.0f);
+            batch.push_back(static_cast<float>(color.green) / 255.0f);
+            batch.push_back(static_cast<float>(color.blue) / 255.0f);
+            if (batchShaderUsesAlpha) {
+                batch.push_back(static_cast<float>(color.alpha) / 255.0f);
+            }
+        }
+    }
+
+    LoadedVertex InterpolateClip(const LoadedVertex &a, const LoadedVertex &b,
+                                 float t) const {
+        LoadedVertex out = {};
+        const float s = 1.0f - t;
+        out.clipX = a.clipX * s + b.clipX * t;
+        out.clipY = a.clipY * s + b.clipY * t;
+        out.clipZ = a.clipZ * s + b.clipZ * t;
+        out.clipW = a.clipW * s + b.clipW * t;
+        out.objectZ = a.objectZ * s + b.objectZ * t;
+        out.textureS = a.textureS * s + b.textureS * t;
+        out.textureT = a.textureT * s + b.textureT * t;
+        out.color.red = static_cast<uint8_t>(
+            static_cast<float>(a.color.red) * s +
+            static_cast<float>(b.color.red) * t);
+        out.color.green = static_cast<uint8_t>(
+            static_cast<float>(a.color.green) * s +
+            static_cast<float>(b.color.green) * t);
+        out.color.blue = static_cast<uint8_t>(
+            static_cast<float>(a.color.blue) * s +
+            static_cast<float>(b.color.blue) * t);
+        out.color.alpha = static_cast<uint8_t>(
+            static_cast<float>(a.color.alpha) * s +
+            static_cast<float>(b.color.alpha) * t);
+        MapClipToScreen(out);
+        out.valid = std::isfinite(out.screenX) && std::isfinite(out.screenY) &&
+                    std::isfinite(out.clipW);
+        return out;
+    }
+
+    float ClipPlaneValue(const LoadedVertex &vertex, unsigned int plane) const {
+        const PBClipVertex clip = {
+            vertex.clipX, vertex.clipY, vertex.clipZ, vertex.clipW,
+        };
+        return pb_renderer_n64_clip_plane(&clip, plane);
+    }
+
+    size_t ClipTriangleN64(const LoadedVertex in[3],
+                           LoadedVertex out[PB_RENDER_CLIP_MAX_VERTS]) const {
+        LoadedVertex current[PB_RENDER_CLIP_MAX_VERTS] = { in[0], in[1], in[2] };
+        LoadedVertex next[PB_RENDER_CLIP_MAX_VERTS] = {};
+        size_t count = 3U;
+        for (unsigned int plane = 0U; plane < PB_RENDER_CLIP_PLANE_COUNT;
+             plane++) {
+            size_t produced = 0U;
+            for (size_t index = 0U; index < count; index++) {
+                const LoadedVertex &a = current[index];
+                const LoadedVertex &b = current[(index + 1U) % count];
+                const float fa = ClipPlaneValue(a, plane);
+                const float fb = ClipPlaneValue(b, plane);
+                const bool aInside = fa >= 0.0f;
+                const bool bInside = fb >= 0.0f;
+                if (aInside && produced < PB_RENDER_CLIP_MAX_VERTS) {
+                    next[produced++] = a;
+                }
+                if (aInside != bInside && produced < PB_RENDER_CLIP_MAX_VERTS) {
+                    const float denom = fa - fb;
+                    float t = denom == 0.0f ? 0.0f : fa / denom;
+                    if (t < 0.0f) {
+                        t = 0.0f;
+                    } else if (t > 1.0f) {
+                        t = 1.0f;
+                    }
+                    next[produced++] = InterpolateClip(a, b, t);
+                }
+            }
+            count = produced;
+            if (count < 3U) {
+                return 0U;
+            }
+            for (size_t index = 0U; index < count; index++) {
+                current[index] = next[index];
+            }
+        }
+        for (size_t index = 0U; index < count; index++) {
+            out[index] = current[index];
+        }
+        return count;
+    }
+
+    void NoteScreenArea(const LoadedVertex &a, const LoadedVertex &b,
+                        const LoadedVertex &c) {
+        const float minX = std::min(a.screenX / std::max(a.clipW, 0.001f),
+                                    std::min(b.screenX / std::max(b.clipW, 0.001f),
+                                             c.screenX / std::max(c.clipW, 0.001f)));
+        const float maxX = std::max(a.screenX / std::max(a.clipW, 0.001f),
+                                    std::max(b.screenX / std::max(b.clipW, 0.001f),
+                                             c.screenX / std::max(c.clipW, 0.001f)));
+        const float minY = std::min(a.screenY / std::max(a.clipW, 0.001f),
+                                    std::min(b.screenY / std::max(b.clipW, 0.001f),
+                                             c.screenY / std::max(c.clipW, 0.001f)));
+        const float maxY = std::max(a.screenY / std::max(a.clipW, 0.001f),
+                                    std::max(b.screenY / std::max(b.clipW, 0.001f),
+                                             c.screenY / std::max(c.clipW, 0.001f)));
+        if (maxX - minX > static_cast<float>(PB_RENDER_TOP_WIDTH) * 2.0f ||
+            maxY - minY > static_cast<float>(PB_RENDER_TOP_HEIGHT) * 2.0f) {
+            stats.huge_triangles++;
+#if PB3DS_DEBUG_HUGE_TRI
+            (void)a;
+            (void)b;
+            (void)c;
+#endif
+        }
+        if (!screenBoundsValid) {
+            screenMinX = minX;
+            screenMinY = minY;
+            screenMaxX = maxX;
+            screenMaxY = maxY;
+            screenBoundsValid = true;
+        } else {
+            screenMinX = std::min(screenMinX, minX);
+            screenMinY = std::min(screenMinY, minY);
+            screenMaxX = std::max(screenMaxX, maxX);
+            screenMaxY = std::max(screenMaxY, maxY);
+        }
+    }
+
+    bool SubmitClippedTriangle(const LoadedVertex &a, const LoadedVertex &b,
+                               const LoadedVertex &c, bool textured) {
+        if (!a.valid || !b.valid || !c.valid) return true;
+        if (!BeginBatch(textured)) return false;
+        NoteScreenArea(a, b, c);
+        AppendVertex(a);
+        AppendVertex(b);
+        AppendVertex(c);
+        batchTriangles++;
+        if (batchTriangles >= kBatchTriangleLimit) return Flush();
+        return true;
+    }
+
+    bool EmitTriangle(uint8_t first, uint8_t second, uint8_t third) {
+        if (first >= vertices.size() || second >= vertices.size() ||
+            third >= vertices.size()) {
+            stats.invalid_triangles++;
+            return true;
+        }
+        if ((geometryMode & G_CULL_BOTH) == G_CULL_BOTH) {
+            stats.culled_triangles++;
+            return true;
+        }
+        const LoadedVertex in[3] = {
+            vertices[first], vertices[second], vertices[third]
+        };
+        if (!in[0].valid || !in[1].valid || !in[2].valid) {
+            stats.invalid_triangles++;
+            return true;
+        }
+        LoadedVertex clipped[PB_RENDER_CLIP_MAX_VERTS] = {};
+        const size_t count = ClipTriangleN64(in, clipped);
+        if (count < 3U) return true;
+        if (count > 3U) stats.clipped_triangles++;
+        /*
+         * Do not CPU-cull G_CULL_FRONT/BACK. Fast3D keep-sign is defined in
+         * pre-Y-flip clip space; PICA OrthoTilt winding does not match it, so
+         * applying that sign hid Toad Town walls and Mario billboards. The
+         * GPU stays uncullled (BeginBatch). G_CULL_BOTH still drops above.
+         */
+        const bool textured = DecodeCombiner().use.texture;
+        for (size_t index = 1U; index + 1U < count; index++) {
+            if (!SubmitClippedTriangle(clipped[0], clipped[index],
+                                       clipped[index + 1U], textured)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    LoadedVertex RectangleVertex(float x, float y, float u, float v,
+                                 float depth) const {
+        LoadedVertex vertex = {};
+        vertex.screenX = x;
+        vertex.screenY = y;
+        vertex.depth = depth;
+        vertex.clipW = 1.0f;
+        vertex.clipZ = pb_renderer_screen_depth_to_n64_clip_z(depth, 1.0f);
+        vertex.clipX = 0.0f;
+        vertex.clipY = 0.0f;
+        vertex.textureS = u * 32.0f;
+        vertex.textureT = v * 32.0f;
+        vertex.color = {};
+        vertex.valid = true;
+        return vertex;
+    }
+
+    bool EmitRectangle(float left, float top, float right, float bottom,
+                       float upperS, float upperT, float lowerS,
+                       float lowerT, bool textured,
+                       bool flipTexture = false, bool fill = false) {
+        if (right <= left || bottom <= top) return true;
+        if (pauseFrame && textured) {
+            const Tile &tile = tiles[firstTile & 7U];
+            const size_t tmemIndex =
+                std::min<size_t>(tile.tmem, loadedTextures.size() - 1U);
+            const TextureSource &source =
+                loadedTextures[tmemIndex].data != nullptr
+                    ? loadedTextures[tmemIndex]
+                    : textureToLoad;
+            /* PaperBoat's pause path samples the CPU z-buffer sentinel in 40
+             * strips. It is not framebuffer data on 3DS. Keep the previous
+             * color target instead of decoding that zero-filled sentinel into
+             * repeated bands. */
+            if (source.framebufferSentinel) return true;
+        }
+        if (!Flush()) return false;
+        float screenLeft = 0.0f;
+        float screenBottom = 0.0f;
+        float screenRight = 0.0f;
+        float screenTop = 0.0f;
+        pb_renderer_n64_rect_to_logical(left, top, right, bottom, &screenLeft,
+                                        &screenBottom, &screenRight,
+                                        &screenTop);
+        const float depth = primDepth;
+        LoadedVertex rectangle[6] = {};
+        if (flipTexture) {
+            rectangle[0] = RectangleVertex(screenLeft, screenBottom,
+                                            lowerS, upperT, depth);
+            rectangle[1] = RectangleVertex(screenRight, screenBottom,
+                                            lowerS, lowerT, depth);
+            rectangle[2] = RectangleVertex(screenRight, screenTop,
+                                            upperS, lowerT, depth);
+            rectangle[3] = rectangle[2];
+            rectangle[4] = RectangleVertex(screenLeft, screenTop,
+                                            upperS, upperT, depth);
+            rectangle[5] = rectangle[0];
+        } else {
+            rectangle[0] = RectangleVertex(screenLeft, screenBottom,
+                                            upperS, lowerT, depth);
+            rectangle[1] = RectangleVertex(screenRight, screenBottom,
+                                            lowerS, lowerT, depth);
+            rectangle[2] = RectangleVertex(screenRight, screenTop,
+                                            lowerS, upperT, depth);
+            rectangle[3] = rectangle[2];
+            rectangle[4] = RectangleVertex(screenLeft, screenTop,
+                                            upperS, upperT, depth);
+            rectangle[5] = rectangle[0];
+        }
+        if (!BeginBatch(textured, fill, true)) return false;
+        for (const LoadedVertex &vertex : rectangle) {
+            AppendVertex(vertex);
+        }
+        batchTriangles += 2U;
+        return Flush();
+    }
+
+    void SetTextureImage(uint32_t word0, uintptr_t address,
+                         const char *path = nullptr) {
+        TextureSource source = {};
+        source.format = static_cast<uint8_t>((word0 >> 21U) & 7U);
+        source.size = static_cast<uint8_t>((word0 >> 19U) & 3U);
+        source.imageWidth = static_cast<uint16_t>((word0 & 0xFFFU) + 1U);
+        if (path != nullptr) {
+            source.path = path;
+            source.data = static_cast<const uint8_t *>(
+                ResourceGetDataByName(path));
+            source.resourceWidth = ResourceGetTexWidthByName(path);
+            source.resourceHeight = ResourceGetTexHeightByName(path);
+            source.resourceType = pb_runtime_resource_texture_type(path);
+            source.payloadSize = pb_runtime_resource_payload_size(path);
+            if (source.data == nullptr) stats.missing_resources++;
+        } else {
+            const void *resolved = Resolve(address);
+            if (resolved != nullptr &&
+                GameEngine_OTRSigCheck(static_cast<const char *>(resolved))) {
+                path = static_cast<const char *>(resolved);
+                source.path = path;
+                source.data = static_cast<const uint8_t *>(
+                    ResourceGetDataByName(path));
+                source.resourceWidth = ResourceGetTexWidthByName(path);
+                source.resourceHeight = ResourceGetTexHeightByName(path);
+                source.resourceType = pb_runtime_resource_texture_type(path);
+                source.payloadSize = pb_runtime_resource_payload_size(path);
+                if (source.data == nullptr) stats.missing_resources++;
+            } else {
+                source.data = static_cast<const uint8_t *>(resolved);
+            }
+        }
+#ifdef __3DS__
+        if (nuGfxZBuffer != nullptr && source.data != nullptr) {
+            const uintptr_t begin = reinterpret_cast<uintptr_t>(nuGfxZBuffer);
+            const uintptr_t end = begin + 320U * 240U * sizeof(uint16_t);
+            const uintptr_t candidate =
+                reinterpret_cast<uintptr_t>(source.data);
+            source.framebufferSentinel = candidate >= begin && candidate < end;
+        }
+#endif
+        textureToLoad = source;
+    }
+
+    void SetTile(uint32_t word0, uint32_t word1) {
+        const size_t index = (word1 >> 24U) & 7U;
+        Tile &tile = tiles[index];
+        tile.format = static_cast<uint8_t>((word0 >> 21U) & 7U);
+        tile.size = static_cast<uint8_t>((word0 >> 19U) & 3U);
+        tile.line = static_cast<uint16_t>((word0 >> 9U) & 0x1FFU);
+        tile.tmem = static_cast<uint16_t>(word0 & 0x1FFU);
+        tile.palette = static_cast<uint8_t>((word1 >> 20U) & 0xFU);
+        tile.clampT = static_cast<uint8_t>((word1 >> 18U) & 3U);
+        tile.maskT = static_cast<uint8_t>((word1 >> 14U) & 0xFU);
+        tile.shiftT = static_cast<uint8_t>((word1 >> 10U) & 0xFU);
+        tile.clampS = static_cast<uint8_t>((word1 >> 8U) & 3U);
+        tile.maskS = static_cast<uint8_t>((word1 >> 4U) & 0xFU);
+        tile.shiftS = static_cast<uint8_t>(word1 & 0xFU);
+        if (tile.clampS == 0U && tile.maskS == 0U) tile.clampS = 2U;
+        if (tile.clampT == 0U && tile.maskT == 0U) tile.clampT = 2U;
+    }
+
+    void SetTileSize(uint32_t word0, uint32_t word1) {
+        Tile &tile = tiles[(word1 >> 24U) & 7U];
+        tile.upperS = static_cast<uint16_t>((word0 >> 12U) & 0xFFFU);
+        tile.upperT = static_cast<uint16_t>(word0 & 0xFFFU);
+        tile.lowerS = static_cast<uint16_t>((word1 >> 12U) & 0xFFFU);
+        tile.lowerT = static_cast<uint16_t>(word1 & 0xFFFU);
+    }
+
+    void LoadTexture(size_t tileIndex, uint32_t word0 = 0U,
+                     uint32_t word1 = 0U, bool loadTile = false) {
+        if (tileIndex >= tiles.size()) return;
+        const size_t tmemIndex =
+            std::min<size_t>(tiles[tileIndex].tmem,
+                             loadedTextures.size() - 1U);
+        TextureSource loaded = textureToLoad;
+        const uint32_t upperS = (word0 >> 12U) & 0xFFFU;
+        const uint32_t upperT = word0 & 0xFFFU;
+        const uint32_t lowerS = (word1 >> 12U) & 0xFFFU;
+        const uint32_t lowerT = word1 & 0xFFFU;
+        if (loadTile) {
+            const uint32_t stride = loaded.resourceWidth != 0U
+                                        ? loaded.resourceWidth
+                                        : loaded.imageWidth;
+            const uint32_t offsetX = upperS >> 2U;
+            const uint32_t offsetY = upperT >> 2U;
+            loaded.rowStrideTexels = stride;
+            loaded.offsetTexels = offsetY * stride + offsetX;
+            if (lowerS >= upperS && lowerT >= upperT) {
+                loaded.loadedWidth = static_cast<uint16_t>(
+                    ((lowerS - upperS) >> 2U) + 1U);
+                loaded.loadedHeight = static_cast<uint16_t>(
+                    ((lowerT - upperT) >> 2U) + 1U);
+            }
+        } else {
+            /* LoadBlock sources are contiguous even though the command's
+             * texture-image width is conventionally one.  Let DecodeTexture
+             * derive the row width from the render tile instead of treating
+             * every row as a single texel. */
+            loaded.rowStrideTexels = 0U;
+            loaded.offsetTexels = 0U;
+        }
+        loadedTextures[tmemIndex] = loaded;
+    }
+
+    void LoadPalette(size_t tileIndex, size_t entries) {
+        if (tileIndex >= tiles.size() || textureToLoad.data == nullptr) return;
+        const Tile &tile = tiles[tileIndex];
+        if (tile.tmem < 256U) return;
+        const size_t firstEntry = tile.tmem - 256U;
+        if (firstEntry >= paletteEntriesValid.size() ||
+            entries > paletteEntriesValid.size() - firstEntry ||
+            entries > SIZE_MAX / 2U) {
+            return;
+        }
+        const size_t bytes = entries * 2U;
+        if (textureToLoad.payloadSize != 0U &&
+            bytes > textureToLoad.payloadSize) {
+            return;
+        }
+        /* RDP TLUT is persistent 512-byte TMEM. CI8 palettes commonly arrive
+         * as two independent 128-entry loads; retaining source pointers makes
+         * the upper half an out-of-bounds read and corrupts dark/black texels. */
+        std::memmove(paletteTmem.data() + firstEntry * 2U,
+                     textureToLoad.data, bytes);
+        std::fill(paletteEntriesValid.begin() + firstEntry,
+                  paletteEntriesValid.begin() + firstEntry + entries, true);
+    }
+
+    void ApplyOtherMode(uint32_t *destination, uint32_t word0,
+                        uint32_t word1) {
+        const uint32_t length = (word0 & 0xFFU) + 1U;
+        const uint32_t shift = 31U - ((word0 >> 8U) & 0xFFU) -
+                               (word0 & 0xFFU);
+        const uint32_t mask = length >= 32U
+                                  ? UINT32_MAX
+                                  : ((UINT32_C(1) << length) - 1U) << shift;
+        *destination = (*destination & ~mask) | (word1 & mask);
+    }
+
+    bool RunList(const PBRuntimeGfx *displayList, unsigned int depth) {
+        if (displayList == nullptr || depth > kCallDepthLimit) {
+            malformed = true;
+            return false;
+        }
+        stats.display_lists++;
+        stats.max_call_depth =
+            std::max(stats.max_call_depth, static_cast<uint32_t>(depth));
+        for (size_t index = 0U; index < kCommandBudget; index++) {
+            if (++commandCount > kCommandBudget) {
+                malformed = true;
+                return false;
+            }
+            const PBRuntimeGfx &command = displayList[index];
+            const uint32_t word0 = static_cast<uint32_t>(command.words.w0);
+            const uint32_t word1 = static_cast<uint32_t>(command.words.w1);
+            const uint8_t opcode = static_cast<uint8_t>(word0 >> 24U);
+            lastOpcode = opcode;
+            lastCommandIndex = index;
+            lastDepth = depth;
+            switch (opcode) {
+                case G_VTX: {
+                    const size_t count = (word0 >> 12U) & 0xFFU;
+                    const size_t end = (word0 >> 1U) & 0x7FU;
+                    if (count == 0U || end < count) break;
+                    bool otrMissing = false;
+                    const N64Vertex *verticesData =
+                        static_cast<const N64Vertex *>(
+                            ResolveMaybeOtr(command.words.w1, &otrMissing));
+                    if (otrMissing) break;
+                    LoadVertices(verticesData, count, end - count);
+                    break;
+                }
+                case G_VTX_WIDE: {
+                    const size_t count = (word0 >> 12U) & 0xFFU;
+                    const size_t end = (word0 >> 1U) & 0x7FU;
+                    if (count == 0U || end < count) break;
+                    bool otrMissing = false;
+                    const N64Vertex *verticesData =
+                        static_cast<const N64Vertex *>(
+                            ResolveMaybeOtr(command.words.w1, &otrMissing));
+                    if (otrMissing) break;
+                    LoadVertices(verticesData, count, end - count);
+                    break;
+                }
+                case G_VTX_OTR_FILEPATH: {
+                    const char *path =
+                        reinterpret_cast<const char *>(command.words.w1);
+                    const PBRuntimeGfx &extra = displayList[++index];
+                    commandCount++;
+                    const size_t count = extra.words.w0;
+                    const size_t destination = extra.words.w1 >> 16U;
+                    const size_t offset = extra.words.w1 & 0xFFFFU;
+                    const N64Vertex *data = static_cast<const N64Vertex *>(
+                        ResourceGetDataByName(path));
+                    if (data != nullptr) {
+                        LoadVertices(data + offset, count, destination);
+                    } else {
+                        stats.missing_resources++;
+                    }
+                    break;
+                }
+                case G_VTX_OTR_HASH: {
+                    const uintptr_t offset = command.words.w1;
+                    const uint64_t hash = HashCommand(displayList[++index]);
+                    commandCount++;
+                    const size_t count = (word0 >> 12U) & 0xFFU;
+                    const size_t end = (word0 >> 1U) & 0x7FU;
+                    const uint8_t *data = offset > 0xFFFFFU
+                                              ? reinterpret_cast<const uint8_t *>(
+                                                    offset)
+                                              : static_cast<const uint8_t *>(
+                                                    ResourceGetDataByCrc(hash));
+                    if (data != nullptr && offset <= 0xFFFFFU) data += offset;
+                    if (data != nullptr && count != 0U && end >= count) {
+                        LoadVertices(reinterpret_cast<const N64Vertex *>(data),
+                                     count, end - count);
+                    } else {
+                        stats.missing_resources++;
+                    }
+                    break;
+                }
+                case G_MODIFYVTX: {
+                    const size_t vertex = (word0 >> 1U) & 0x7FFFU;
+                    const uint8_t where = static_cast<uint8_t>(word0 >> 16U);
+                    if (vertex < vertices.size() && where == G_MWO_POINT_ST) {
+                        vertices[vertex].textureS =
+                            static_cast<float>(static_cast<int16_t>(word1 >> 16U));
+                        vertices[vertex].textureT =
+                            static_cast<float>(static_cast<int16_t>(word1));
+                    }
+                    break;
+                }
+                case G_TRI1:
+                    if (!EmitTriangle(
+                            static_cast<uint8_t>(
+                                ((word0 >> 16U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>(
+                                ((word0 >> 8U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>((word0 & 0xFFU) / 2U))) {
+                        return false;
+                    }
+                    break;
+                case G_TRI2:
+                    if (!EmitTriangle(static_cast<uint8_t>((word0 >> 17U) &
+                                                           0x7FU),
+                                      static_cast<uint8_t>((word0 >> 9U) &
+                                                           0x7FU),
+                                      static_cast<uint8_t>((word0 >> 1U) &
+                                                           0x7FU)) ||
+                        !EmitTriangle(static_cast<uint8_t>((word1 >> 17U) &
+                                                           0x7FU),
+                                      static_cast<uint8_t>((word1 >> 9U) &
+                                                           0x7FU),
+                                      static_cast<uint8_t>((word1 >> 1U) &
+                                                           0x7FU))) {
+                        return false;
+                    }
+                    break;
+                case G_QUAD:
+                    if (!EmitTriangle(
+                            static_cast<uint8_t>(
+                                ((word0 >> 16U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>(
+                                ((word0 >> 8U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>((word0 & 0xFFU) / 2U)) ||
+                        !EmitTriangle(
+                            static_cast<uint8_t>(
+                                ((word1 >> 16U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>(
+                                ((word1 >> 8U) & 0xFFU) / 2U),
+                            static_cast<uint8_t>((word1 & 0xFFU) / 2U))) {
+                        return false;
+                    }
+                    break;
+                case G_TRI1_OTR:
+                    if (!EmitTriangle(static_cast<uint8_t>(word0),
+                                      static_cast<uint8_t>(word1 >> 16U),
+                                      static_cast<uint8_t>(word1))) {
+                        return false;
+                    }
+                    break;
+                case G_TRI1_WIDE:
+                    if (!EmitTriangle(static_cast<uint8_t>((word0 >> 16U) &
+                                                           0xFFU),
+                                      static_cast<uint8_t>((word0 >> 8U) &
+                                                           0xFFU),
+                                      static_cast<uint8_t>(word0 & 0xFFU))) {
+                        return false;
+                    }
+                    break;
+                case G_MTX: {
+                    Flush();
+                    const uint8_t parameters =
+                        static_cast<uint8_t>(word0 & 0xFFU) ^ 0x01U;
+                    ApplyMatrix(parameters,
+                                static_cast<const int32_t *>(
+                                    Resolve(command.words.w1)));
+                    break;
+                }
+                case G_MTX_OTR_FILEPATH:
+                    Flush();
+                    if (const void *matrix = ResourceGetDataByName(
+                            reinterpret_cast<const char *>(
+                                command.words.w1));
+                        matrix != nullptr) {
+                        ApplyMatrix(
+                            static_cast<uint8_t>(word0 & 0xFFU) ^ 0x01U,
+                            static_cast<const int32_t *>(matrix));
+                    } else {
+                        stats.missing_resources++;
+                    }
+                    break;
+                case G_MTX_OTR: {
+                    Flush();
+                    const uint64_t hash = HashCommand(displayList[++index]);
+                    commandCount++;
+                    if (const void *matrix = ResourceGetDataByCrc(hash);
+                        matrix != nullptr) {
+                        ApplyMatrix(
+                            static_cast<uint8_t>(word0 & 0xFFU) ^ 0x01U,
+                            static_cast<const int32_t *>(matrix));
+                    } else {
+                        stats.missing_resources++;
+                    }
+                    break;
+                }
+                case G_POPMTX: {
+                    Flush();
+                    uint32_t count = word1 / 64U;
+                    while (count-- != 0U) {
+                        if (modelViewTop == 0U) {
+                            stats.matrix_stack_underflows++;
+                            break;
+                        }
+                        modelViewTop--;
+                    }
+                    RebuildCombined();
+                    break;
+                }
+                case G_GEOMETRYMODE:
+                    Flush();
+                    geometryMode &= ~(word0 & 0xFFFFFFU);
+                    geometryMode |= word1;
+                    break;
+                case G_TEXTURE:
+                    Flush();
+                    textureScaleS = static_cast<uint16_t>(word1 >> 16U);
+                    textureScaleT = static_cast<uint16_t>(word1);
+                    firstTile = static_cast<uint8_t>((word0 >> 8U) & 7U);
+                    break;
+                case G_MOVEWORD: {
+                    Flush();
+                    const uint8_t type = static_cast<uint8_t>(word0 >> 16U);
+                    const uint16_t offset = static_cast<uint16_t>(word0);
+                    if (type == G_MW_SEGMENT) {
+                        const size_t segment = offset / 4U;
+                        if (segment < segmentPointers.size()) {
+                            segmentPointers[segment] = command.words.w1;
+                        }
+                    } else if (type == G_MW_NUMLIGHT) {
+                        lightCount = std::min<size_t>(word1 / 24U + 1U,
+                                                      lights.size());
+                    } else if (type == G_MW_FOG) {
+                        fogMultiply = static_cast<int16_t>(word1 >> 16U);
+                        fogOffset = static_cast<int16_t>(word1);
+                    }
+                    break;
+                }
+                case G_MOVEMEM: {
+                    Flush();
+                    const uint8_t type = static_cast<uint8_t>(word0);
+                    const uint8_t offset =
+                        static_cast<uint8_t>(word0 >> 8U) * 8U;
+                    const void *data = Resolve(command.words.w1);
+                    if (type == G_MV_VIEWPORT && data != nullptr) {
+                        ApplyN64Viewport(
+                            static_cast<const N64Viewport *>(data));
+                    } else if (type == G_MV_LIGHT && data != nullptr) {
+                        const int light = static_cast<int>(offset) / 24 - 2;
+                        if (light >= 0 &&
+                            static_cast<size_t>(light) < lights.size()) {
+                            std::memcpy(&lights[static_cast<size_t>(light)],
+                                        data, sizeof(N64Light));
+                        }
+                    }
+                    break;
+                }
+                case G_MOVEMEM_HASH: {
+                    Flush();
+                    const uint8_t type = static_cast<uint8_t>(word0);
+                    const uint8_t offset =
+                        static_cast<uint8_t>(word0 >> 8U) * 8U;
+                    const uint64_t hash = HashCommand(displayList[++index]);
+                    commandCount++;
+                    const void *data = ResourceGetDataByCrc(hash);
+                    if (data == nullptr) stats.missing_resources++;
+                    if (type == G_MV_VIEWPORT && data != nullptr) {
+                        ApplyN64Viewport(
+                            static_cast<const N64Viewport *>(data));
+                    } else if (type == G_MV_LIGHT && data != nullptr) {
+                        const int light = static_cast<int>(offset) / 24 - 2;
+                        if (light >= 0 &&
+                            static_cast<size_t>(light) < lights.size()) {
+                            std::memcpy(&lights[static_cast<size_t>(light)],
+                                        data, sizeof(N64Light));
+                        }
+                    }
+                    break;
+                }
+                case G_DL: {
+                    Flush();
+                    bool otrMissing = false;
+                    const PBRuntimeGfx *nested =
+                        static_cast<const PBRuntimeGfx *>(
+                            ResolveMaybeOtr(command.words.w1, &otrMissing));
+                    if (nested != nullptr &&
+                        !RunList(nested, depth + 1U)) return false;
+                    if (((word0 >> 16U) & 1U) != 0U) return true;
+                    (void)otrMissing;
+                    break;
+                }
+                case G_DL_OTR_FILEPATH: {
+                    Flush();
+                    const PBRuntimeGfx *nested =
+                        static_cast<const PBRuntimeGfx *>(
+                            ResourceGetDataByName(
+                                reinterpret_cast<const char *>(
+                                    command.words.w1)));
+                    if (nested != nullptr && !RunList(nested, depth + 1U)) {
+                        return false;
+                    }
+                    if (nested == nullptr) stats.missing_resources++;
+                    if (((word0 >> 16U) & 1U) != 0U) return true;
+                    break;
+                }
+                case G_DL_OTR_HASH: {
+                    Flush();
+                    const uint64_t hash = HashCommand(displayList[++index]);
+                    commandCount++;
+                    const PBRuntimeGfx *nested =
+                        static_cast<const PBRuntimeGfx *>(
+                            ResourceGetDataByCrc(hash));
+                    if (nested != nullptr && !RunList(nested, depth + 1U)) {
+                        return false;
+                    }
+                    if (nested == nullptr) stats.missing_resources++;
+                    if (((word0 >> 16U) & 1U) != 0U) return true;
+                    break;
+                }
+                case G_DL_INDEX: {
+                    Flush();
+                    const uint32_t segment = word1 >> 24U;
+                    const uint32_t listIndex = word1 & 0xFFFFFFU;
+                    const uintptr_t encoded =
+                        (segment << 24U) |
+                        static_cast<uint32_t>(listIndex *
+                                              sizeof(PBRuntimeGfx)) |
+                        1U;
+                    if (!RunList(static_cast<const PBRuntimeGfx *>(
+                                     Resolve(encoded)),
+                                 depth + 1U)) {
+                        return false;
+                    }
+                    if (((word0 >> 16U) & 1U) != 0U) return true;
+                    break;
+                }
+                case G_BRANCH_Z_OTR: {
+                    Flush();
+                    const size_t vertex = word0 & 0xFFFU;
+                    const uint64_t hash = HashCommand(displayList[++index]);
+                    commandCount++;
+                    if (vertex < vertices.size() &&
+                        vertices[vertex].objectZ <= word1) {
+                        const PBRuntimeGfx *branch =
+                            static_cast<const PBRuntimeGfx *>(
+                                ResourceGetDataByCrc(hash));
+                        if (branch == nullptr) {
+                            stats.missing_resources++;
+                            break;
+                        }
+                        return RunList(branch, depth + 1U);
+                    }
+                    break;
+                }
+                case G_ENDDL:
+                    return Flush();
+                case G_SETTIMG:
+                    Flush();
+                    SetTextureImage(word0, command.words.w1);
+                    break;
+                case G_SETTIMG_OTR_FILEPATH:
+                    Flush();
+                    SetTextureImage(word0, command.words.w1,
+                                    reinterpret_cast<const char *>(
+                                        command.words.w1));
+                    break;
+                case G_SETTIMG_OTR_HASH: {
+                    Flush();
+                    const uint64_t hash = HashCommand(displayList[++index]);
+                    commandCount++;
+                    const char *path = ResourceGetNameByCrc(hash);
+                    if (path != nullptr) {
+                        SetTextureImage(word0, command.words.w1, path);
+                    } else {
+                        stats.missing_resources++;
+                        textureToLoad = {};
+                    }
+                    break;
+                }
+                case G_SETTIMG_PAL: {
+                    Flush();
+                    const size_t palette = word0 & 0xFFU;
+                    textureToLoad = {};
+                    const size_t firstEntry = palette * 16U;
+                    textureToLoad.data =
+                        firstEntry < paletteEntriesValid.size() &&
+                                paletteEntriesValid[firstEntry]
+                            ? paletteTmem.data() + firstEntry * 2U
+                            : nullptr;
+                    textureToLoad.payloadSize =
+                        textureToLoad.data != nullptr ? 32U : 0U;
+                    textureToLoad.format = 0U;
+                    textureToLoad.size = 2U;
+                    break;
+                }
+                case G_SETTILE:
+                    Flush();
+                    SetTile(word0, word1);
+                    break;
+                case G_SETTILESIZE:
+                    Flush();
+                    SetTileSize(word0, word1);
+                    break;
+                case G_SETTILESIZE_INTERP:
+                case G_SETTILESIZE_LERP:
+                    Flush();
+                    SetTileSize(word0, word1);
+                    index += 2U;
+                    commandCount += 2U;
+                    break;
+                case G_SETTILESCROLL_INTERP:
+                    Flush();
+                    SetTileSize(word0, word1);
+                    index += 1U;
+                    commandCount += 1U;
+                    break;
+                case G_LOADBLOCK:
+                    Flush();
+                    LoadTexture((word1 >> 24U) & 7U, word0, word1, false);
+                    break;
+                case G_LOADTILE:
+                    Flush();
+                    LoadTexture((word1 >> 24U) & 7U, word0, word1, true);
+                    break;
+                case G_LOADBLOCK_WIDE:
+                    Flush();
+                    {
+                        const PBRuntimeGfx &parameters = displayList[++index];
+                        const uint32_t parametersWord =
+                            static_cast<uint32_t>(parameters.words.w0);
+                        const uint32_t loadWord0 =
+                            (((parametersWord >> 16U) & 0xFFFU) << 12U) |
+                            (parametersWord & 0xFFFU);
+                        LoadTexture(word0 & 7U, loadWord0, 0U, false);
+                    }
+                    commandCount++;
+                    break;
+                case G_LOADTLUT:
+                    Flush();
+                    LoadPalette((word1 >> 24U) & 7U,
+                                ((word1 >> 14U) & 0x3FFU) + 1U);
+                    break;
+                case G_SETCOMBINE:
+                    Flush();
+                    combineWord0 = word0;
+                    combineWord1 = word1;
+                    break;
+                case G_SETOTHERMODE_L:
+                    Flush();
+                    ApplyOtherMode(&otherModeLow, word0, word1);
+                    break;
+                case G_SETOTHERMODE_H:
+                    Flush();
+                    ApplyOtherMode(&otherModeHigh, word0, word1);
+                    break;
+                case G_RDPSETOTHERMODE:
+                    Flush();
+                    otherModeHigh = word0 & 0xFFFFFFU;
+                    otherModeLow = word1;
+                    break;
+                case G_SETKEYR:
+                    Flush();
+                    keyCenter.red = static_cast<uint8_t>(word1 >> 8U);
+                    keyScale.red = static_cast<uint8_t>(word1);
+                    break;
+                case G_SETKEYGB:
+                    Flush();
+                    keyCenter.green = static_cast<uint8_t>(word1 >> 24U);
+                    keyScale.green = static_cast<uint8_t>(word1 >> 16U);
+                    keyCenter.blue = static_cast<uint8_t>(word1 >> 8U);
+                    keyScale.blue = static_cast<uint8_t>(word1);
+                    break;
+                case G_SETCONVERT:
+                    Flush();
+                    convertK[0] = SignExtendNine((word0 >> 13U) & 0x1FFU);
+                    convertK[1] = SignExtendNine((word0 >> 4U) & 0x1FFU);
+                    convertK[2] = SignExtendNine(
+                        ((word0 & 0xFU) << 5U) | ((word1 >> 27U) & 0x1FU));
+                    convertK[3] = SignExtendNine((word1 >> 18U) & 0x1FFU);
+                    convertK[4] = SignExtendNine((word1 >> 9U) & 0x1FFU);
+                    convertK[5] = SignExtendNine(word1 & 0x1FFU);
+                    break;
+                case G_SETPRIMCOLOR:
+                    Flush();
+                    primLodFraction = static_cast<uint8_t>(word0);
+                    primColor = {
+                        static_cast<uint8_t>(word1 >> 24U),
+                        static_cast<uint8_t>(word1 >> 16U),
+                        static_cast<uint8_t>(word1 >> 8U),
+                        static_cast<uint8_t>(word1),
+                    };
+                    break;
+                case G_SETENVCOLOR:
+                    Flush();
+                    envColor = {
+                        static_cast<uint8_t>(word1 >> 24U),
+                        static_cast<uint8_t>(word1 >> 16U),
+                        static_cast<uint8_t>(word1 >> 8U),
+                        static_cast<uint8_t>(word1),
+                    };
+                    break;
+                case G_SETFOGCOLOR:
+                    Flush();
+                    fogColor = {
+                        static_cast<uint8_t>(word1 >> 24U),
+                        static_cast<uint8_t>(word1 >> 16U),
+                        static_cast<uint8_t>(word1 >> 8U),
+                        static_cast<uint8_t>(word1),
+                    };
+                    break;
+                case G_SETBLENDCOLOR:
+                    Flush();
+                    blendColor = {
+                        static_cast<uint8_t>(word1 >> 24U),
+                        static_cast<uint8_t>(word1 >> 16U),
+                        static_cast<uint8_t>(word1 >> 8U),
+                        static_cast<uint8_t>(word1),
+                    };
+                    break;
+                case G_SETFILLCOLOR:
+                    Flush();
+                    fillColor = word1;
+                    {
+                        const uint16_t color =
+                            static_cast<uint16_t>(fillColor);
+                        fillRectangleColor = {
+                            ExpandFive(color >> 11U),
+                            ExpandFive(color >> 6U),
+                            ExpandFive(color >> 1U),
+                            static_cast<uint8_t>((color & 1U) != 0U
+                                                     ? 255U
+                                                     : 0U),
+                        };
+                    }
+                    break;
+                case G_SETSCISSOR: {
+                    Flush();
+                    const int left =
+                        static_cast<int>((word0 >> 12U) & 0xFFFU) / 4;
+                    const int top = static_cast<int>(word0 & 0xFFFU) / 4;
+                    const int right =
+                        static_cast<int>((word1 >> 12U) & 0xFFFU) / 4;
+                    const int bottom = static_cast<int>(word1 & 0xFFFU) / 4;
+                    PBViewport scissor = {};
+                    if (pb_renderer_scissor_from_n64(left, top, right, bottom,
+                                                     &scissor)) {
+                        stats.scissor_x = scissor.x;
+                        stats.scissor_y = scissor.y;
+                        stats.scissor_w = scissor.width;
+                        stats.scissor_h = scissor.height;
+                        api->SetScissor(stats.scissor_x, stats.scissor_y,
+                                        static_cast<int>(stats.scissor_w),
+                                        static_cast<int>(stats.scissor_h));
+                    }
+                    break;
+                }
+                case G_SETPRIMDEPTH:
+                    Flush();
+                    primDepth = 1.0f -
+                        static_cast<float>((word1 >> 16U) & 0x7FFFU) /
+                            32767.0f;
+                    break;
+                case G_TEXRECT:
+                case G_TEXRECTFLIP: {
+                    Flush();
+                    const PBRuntimeGfx &texture = displayList[++index];
+                    const PBRuntimeGfx &delta = displayList[++index];
+                    commandCount += 2U;
+                    float right = ((word0 >> 12U) & 0xFFFU) / 4.0f;
+                    float bottom = (word0 & 0xFFFU) / 4.0f;
+                    const float left = ((word1 >> 12U) & 0xFFFU) / 4.0f;
+                    const float top = (word1 & 0xFFFU) / 4.0f;
+                    const uint8_t savedTile = firstTile;
+                    firstTile = static_cast<uint8_t>((word1 >> 24U) & 7U);
+                    const float upperS =
+                        static_cast<int16_t>(texture.words.w1 >> 16U) / 32.0f;
+                    const float upperT =
+                        static_cast<int16_t>(texture.words.w1) / 32.0f;
+                    int16_t deltaSRaw =
+                        static_cast<int16_t>(delta.words.w1 >> 16U);
+                    int16_t deltaTRaw =
+                        static_cast<int16_t>(delta.words.w1);
+                    const bool copyCycle =
+                        (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY;
+                    if (copyCycle) {
+                        deltaSRaw = static_cast<int16_t>(deltaSRaw >> 2U);
+                        right += 1.0f;
+                        bottom += 1.0f;
+                        stats.copy_rectangles++;
+                    }
+                    const float deltaS = deltaSRaw / 1024.0f;
+                    const float deltaT = deltaTRaw / 1024.0f;
+                    const bool flip = opcode == G_TEXRECTFLIP;
+                    const float lowerS = upperS +
+                        (flip ? -(bottom - top) : (right - left)) * deltaS;
+                    const float lowerT = upperT +
+                        (flip ? -(right - left) : (bottom - top)) * deltaT;
+                    const bool emitted = EmitRectangle(
+                        left, top, right, bottom, upperS, upperT,
+                        lowerS, lowerT, true, flip);
+                    firstTile = savedTile;
+                    if (!emitted) {
+                        return false;
+                    }
+                    break;
+                }
+                case G_TEXRECT_WIDE: {
+                    Flush();
+                    const auto signed24 = [](uint32_t value) {
+                        return static_cast<int32_t>(value << 8U) >> 8U;
+                    };
+                    float right = signed24(word0 & 0xFFFFFFU) / 4.0f;
+                    float bottom = signed24(word1 & 0xFFFFFFU) / 4.0f;
+                    const PBRuntimeGfx &corner = displayList[++index];
+                    const PBRuntimeGfx &texture = displayList[++index];
+                    commandCount += 2U;
+                    const float left =
+                        signed24(static_cast<uint32_t>(corner.words.w0)) /
+                        4.0f;
+                    const float top =
+                        signed24(static_cast<uint32_t>(corner.words.w1)) /
+                        4.0f;
+                    const uint8_t savedTile = firstTile;
+                    firstTile = static_cast<uint8_t>(
+                        (static_cast<uint32_t>(corner.words.w0) >> 24U) & 7U);
+                    const float upperS =
+                        static_cast<int16_t>(texture.words.w0 >> 16U) / 32.0f;
+                    const float upperT =
+                        static_cast<int16_t>(texture.words.w0) / 32.0f;
+                    int16_t deltaSRaw =
+                        static_cast<int16_t>(texture.words.w1 >> 16U);
+                    const float deltaT =
+                        static_cast<int16_t>(texture.words.w1) / 1024.0f;
+                    if ((otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY) {
+                        deltaSRaw = static_cast<int16_t>(deltaSRaw >> 2U);
+                        right += 1.0f;
+                        bottom += 1.0f;
+                        stats.copy_rectangles++;
+                    }
+                    const float deltaS = deltaSRaw / 1024.0f;
+                    const bool emitted = EmitRectangle(
+                        left, top, right, bottom, upperS, upperT,
+                        upperS + (right - left) * deltaS,
+                        upperT + (bottom - top) * deltaT, true);
+                    firstTile = savedTile;
+                    if (!emitted) {
+                        return false;
+                    }
+                    break;
+                }
+                case G_FILLRECT: {
+                    Flush();
+                    if (colorTargetIsDepth) {
+                        api->ClearFramebuffer(false, true);
+                        stats.depth_target_clears++;
+                        break;
+                    }
+                    const bool inclusiveEdge =
+                        (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_COPY ||
+                        (otherModeHigh & G_CYCLE_TYPE_MASK) == G_CYCLE_FILL;
+                    const float fillLeft =
+                        ((word1 >> 12U) & 0xFFFU) / 4.0f;
+                    const float fillTop = (word1 & 0xFFFU) / 4.0f;
+                    const float fillRight =
+                        ((word0 >> 12U) & 0xFFFU) / 4.0f +
+                        (inclusiveEdge ? 1.0f : 0.0f);
+                    const float fillBottom =
+                        (word0 & 0xFFFU) / 4.0f +
+                        (inclusiveEdge ? 1.0f : 0.0f);
+                    /* Pause coverage and filtered-background passes target
+                     * dummy CPU buffers in this port. Preserve the last PICA
+                     * color image instead of painting those passes on-screen. */
+                    if (pauseFrame && fillLeft <= 0.0f && fillTop <= 0.0f &&
+                        fillRight >= 320.0f && fillBottom >= 240.0f) {
+                        break;
+                    }
+                    if (!EmitRectangle(fillLeft, fillTop, fillRight, fillBottom,
+                                       0.0f, 0.0f, 0.0f, 0.0f, false,
+                                       false, true)) {
+                        return false;
+                    }
+                    break;
+                }
+                case G_FILLWIDERECT: {
+                    Flush();
+                    if (colorTargetIsDepth) {
+                        api->ClearFramebuffer(false, true);
+                        stats.depth_target_clears++;
+                        index++;
+                        commandCount++;
+                        break;
+                    }
+                    const auto signed24 = [](uint32_t value) {
+                        return static_cast<int32_t>(value << 8U) >> 8U;
+                    };
+                    float right = signed24(word0 & 0xFFFFFFU) / 4.0f;
+                    float bottom = signed24(word1 & 0xFFFFFFU) / 4.0f;
+                    const PBRuntimeGfx &corner = displayList[++index];
+                    commandCount++;
+                    const uint32_t cycle =
+                        otherModeHigh & G_CYCLE_TYPE_MASK;
+                    if (cycle == G_CYCLE_COPY || cycle == G_CYCLE_FILL) {
+                        right += 1.0f;
+                        bottom += 1.0f;
+                    }
+                    if (!EmitRectangle(
+                            signed24(static_cast<uint32_t>(corner.words.w0)) /
+                                4.0f,
+                            signed24(static_cast<uint32_t>(corner.words.w1)) /
+                                4.0f,
+                            right, bottom, 0.0f, 0.0f, 0.0f, 0.0f, false,
+                            false, true)) {
+                        return false;
+                    }
+                    break;
+                }
+                case G_INVALTEXCACHE:
+                    InvalidateTexture(reinterpret_cast<const void *>(
+                        command.words.w1));
+                    break;
+                case G_INVAL_TEX_BY_PAL:
+                    InvalidateTexture(reinterpret_cast<const void *>(
+                        command.words.w1));
+                    break;
+                case G_SET_STRICT_DECAL:
+                    Flush();
+                    api->SetStrictDecal(command.words.w1 != 0U);
+                    break;
+                case G_MARKER:
+                    index++;
+                    commandCount++;
+                    break;
+                case G_IMAGERECT: {
+                    const PBRuntimeGfx &upper = displayList[++index];
+                    const PBRuntimeGfx &lower = displayList[++index];
+                    commandCount += 2U;
+                    const uint8_t savedTile = firstTile;
+                    firstTile = static_cast<uint8_t>(word0 & 7U);
+                    Tile &imageTile = tiles[firstTile];
+                    const uint16_t imageWidth =
+                        static_cast<uint16_t>(word1 >> 16U);
+                    const uint16_t imageHeight =
+                        static_cast<uint16_t>(word1);
+                    imageTile.upperS = 0U;
+                    imageTile.upperT = 0U;
+                    imageTile.lowerS = imageWidth == 0U
+                        ? 0U
+                        : static_cast<uint16_t>((imageWidth - 1U) * 4U);
+                    imageTile.lowerT = imageHeight == 0U
+                        ? 0U
+                        : static_cast<uint16_t>((imageHeight - 1U) * 4U);
+                    imageTile.shiftS = 0U;
+                    imageTile.shiftT = 0U;
+                    imageTile.clampS = 0U;
+                    imageTile.clampT = 0U;
+                    const float left =
+                        static_cast<int16_t>(upper.words.w0 >> 16U) / 4.0f;
+                    const float top =
+                        static_cast<int16_t>(upper.words.w0) / 4.0f;
+                    const float right =
+                        static_cast<int16_t>(lower.words.w0 >> 16U) / 4.0f;
+                    const float bottom =
+                        static_cast<int16_t>(lower.words.w0) / 4.0f;
+                    const float upperS =
+                        static_cast<int16_t>(upper.words.w1 >> 16U);
+                    const float upperT =
+                        static_cast<int16_t>(upper.words.w1);
+                    const float lowerS =
+                        static_cast<int16_t>(lower.words.w1 >> 16U);
+                    const float lowerT =
+                        static_cast<int16_t>(lower.words.w1);
+                    const bool emitted = EmitRectangle(
+                        left, top, right, bottom, upperS, upperT,
+                        lowerS, lowerT, true);
+                    firstTile = savedTile;
+                    if (!emitted) return false;
+                    break;
+                }
+                case G_SETZIMG:
+                    Flush();
+                    depthImageAddress = command.words.w1;
+                    colorTargetIsDepth = colorImageAddress != 0U &&
+                                         colorImageAddress == depthImageAddress;
+                    break;
+                case G_SETCIMG:
+                    Flush();
+                    colorImageAddress = command.words.w1;
+                    colorTargetIsDepth = depthImageAddress != 0U &&
+                                         colorImageAddress == depthImageAddress;
+                    break;
+                case G_COPYFB:
+                case G_PUSH_SHADER:
+                case G_POP_SHADER:
+                case G_SETTARGETINTERPINDEX:
+                case G_SETUNIFORM:
+                case G_RDPLOADSYNC:
+                case G_RDPPIPESYNC:
+                case G_RDPTILESYNC:
+                case G_RDPFULLSYNC:
+                case 0x00:
+                case 0x21:
+                case 0x22:
+                case 0x23:
+                case 0x28:
+                case 0x39:
+                case 0x3A:
+                case 0x3E:
+                case 0x3F:
+                case 0x40:
+                    break;
+                default:
+                    if (unknownCommands[opcode]++ == 0U) {
+#ifndef __3DS__
+                        std::fprintf(stderr,
+                                     "runtime gfx: unknown opcode=%02x "
+                                     "w0=%08x w1=%08x depth=%u index=%zu\n",
+                                     opcode, word0, word1, depth, index);
+#endif
+                    }
+                    stats.unknown_commands++;
+                    stats.last_unknown_opcode = opcode;
+                    break;
+            }
+        }
+        malformed = true;
+        return false;
+    }
+
+    GfxRenderingAPI3DS *api = nullptr;
+    Fast::ShaderProgram *shadeShader = nullptr;
+    Fast::ShaderProgram *textureShader = nullptr;
+    Matrix projection = {};
+    std::array<Matrix, kMaxMatrixStack> modelView = {};
+    size_t modelViewTop = 0U;
+    Matrix combined = {};
+    std::array<LoadedVertex, kMaxVertices> vertices = {};
+    std::array<Tile, 8U> tiles = {};
+    TextureSource textureToLoad = {};
+    /* N64 RDP TMEM contains 512 64-bit words. */
+    std::array<TextureSource, 512U> loadedTextures = {};
+    std::array<uint8_t, 512U> paletteTmem = {};
+    std::array<bool, 256U> paletteEntriesValid = {};
+    std::array<uintptr_t, 16U> segmentPointers = {};
+    std::array<N64Light, 9U> lights = {};
+    size_t lightCount = 1U;
+    uint32_t geometryMode = 0U;
+    uint32_t otherModeHigh = 0U;
+    uint32_t otherModeLow = 0U;
+    uint16_t textureScaleS = UINT16_MAX;
+    uint16_t textureScaleT = UINT16_MAX;
+    uint8_t firstTile = 0U;
+    float viewportX = static_cast<float>(PB_RENDER_GAME_X_INSET);
+    float viewportY = 0.0f;
+    float viewportWidth = static_cast<float>(PB_RENDER_GAME_WIDTH);
+    float viewportHeight = static_cast<float>(PB_RENDER_GAME_HEIGHT);
+    float screenMinX = 0.0f;
+    float screenMinY = 0.0f;
+    float screenMaxX = 0.0f;
+    float screenMaxY = 0.0f;
+    bool screenBoundsValid = false;
+    Color primColor = {};
+    Color envColor = {};
+    uint8_t primLodFraction = 0U;
+    Color keyCenter = {};
+    Color keyScale = {};
+    std::array<int16_t, 6U> convertK = {};
+    Color fogColor = {};
+    Color blendColor = {};
+    uint32_t fillColor = 0U;
+    float primDepth = 0.5f;
+    int16_t fogMultiply = 0;
+    int16_t fogOffset = 0;
+    uint32_t combineWord0 = 0U;
+    uint32_t combineWord1 = 0U;
+    size_t commandCount = 0U;
+    uint8_t lastOpcode = 0U;
+    size_t lastCommandIndex = 0U;
+    unsigned int lastDepth = 0U;
+    std::array<uint32_t, 256U> unknownCommands = {};
+    bool malformed = false;
+    bool depthClearPending = false;
+    uintptr_t depthImageAddress = 0U;
+    uintptr_t colorImageAddress = 0U;
+    bool colorTargetIsDepth = false;
+    bool pauseFrame = false;
+    std::vector<float> batch;
+    size_t batchTriangles = 0U;
+    bool batchTextured = false;
+    std::array<bool, PB_GFX_TEXTURE_UNITS> batchHasTexture = {};
+    bool batchFill = false;
+    bool batchScreenSpace = false;
+    bool batchTextureReplace = false;
+    bool batchSemantic = false;
+    bool batchShaderUsesTexture0 = false;
+    bool batchShaderUsesTexture1 = false;
+    bool batchShaderUsesShade = true;
+    bool batchShaderUsesAlpha = true;
+    FogSource batchFogSource = FogSource::None;
+    DecodedCombiner batchCombiner = {};
+    std::array<Tile, PB_GFX_TEXTURE_UNITS> batchTextureTiles = {};
+    std::array<TextureCacheEntry, PB_GFX_TEXTURE_UNITS> batchTextureInfo = {};
+    Color fillRectangleColor = {};
+    std::vector<TextureCacheEntry> textures;
+    uint64_t textureUseClock = 0U;
+    uint64_t frameSerial = 0U;
+    PBRuntimeGfxStats stats = {};
+};
+
+bool GfxRenderingAPI3DS::RenderDisplayList(
+    const PBRuntimeGfx *displayList) {
+    if (mRuntimeRenderer == nullptr) {
+        mRuntimeRenderer =
+            new (std::nothrow) RuntimeDisplayListRenderer(this);
+    }
+    return mRuntimeRenderer != nullptr &&
+           mRuntimeRenderer->Render(displayList);
+}
+
+void GfxRenderingAPI3DS::InvalidateRuntimeTexture(const void *address) {
+    if (mRuntimeRenderer != nullptr) {
+        mRuntimeRenderer->InvalidateTexture(address);
+    }
+}
+
+void GfxRenderingAPI3DS::ClearRuntimeDepth() {
+    if (mRuntimeRenderer != nullptr) {
+        mRuntimeRenderer->RequestDepthClear();
+    }
+}
+
+const PBRuntimeGfxStats *GfxRenderingAPI3DS::GetRuntimeStats() const {
+    return mRuntimeRenderer != nullptr ? mRuntimeRenderer->GetStats()
+                                       : nullptr;
+}
+
+void GfxRenderingAPI3DS::DestroyRuntimeRenderer() {
+    delete mRuntimeRenderer;
+    mRuntimeRenderer = nullptr;
+}
+
+} // namespace PB3DS

@@ -1,5 +1,6 @@
 #include "pb3ds/renderer.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,6 +155,9 @@ static bool test_textured_quad_orientation(void) {
 
     /* Regression for the M11 Folium capture: bottom gets min V, top max V. */
     CHECK(quad.bottom_v < quad.top_v);
+    CHECK(pb_renderer_n64_texture_v(0.0f, 30U, 32U) == 30.0f / 32.0f);
+    CHECK(pb_renderer_n64_texture_v(30.0f, 30U, 32U) == 0.0f);
+    CHECK(pb_renderer_n64_texture_v(0.0f, 33U, 32U) == 0.0f);
     CHECK(!pb_renderer_textured_quad(NULL, 0.0f, 0.0f, 8.0f, 8.0f,
                                      8, 8, 8, 8));
     CHECK(!pb_renderer_textured_quad(&quad, 0.0f, 0.0f, 0.0f, 8.0f,
@@ -165,6 +169,33 @@ static bool test_textured_quad_orientation(void) {
     return true;
 }
 
+static bool nearly_equal(float left, float right) {
+    const float difference = left - right;
+    return difference > -0.0001f && difference < 0.0001f;
+}
+
+static bool test_fast3d_fog_lut(void) {
+    float values[PB_RENDER_FOG_LUT_VALUES];
+    CHECK(!pb_renderer_fast3d_fog_lut(NULL, 0, 0));
+    CHECK(pb_renderer_fast3d_fog_lut(values, 0, 0));
+    for (size_t index = 0; index < 128U; index++) {
+        CHECK(nearly_equal(values[index], 1.0f));
+        CHECK(nearly_equal(values[index + 128U], 0.0f));
+    }
+
+    /* factor=clamp((ndcZ*128+128)/255): visibility runs from 1 at
+     * NDC -1 to 0 at NDC +1.  The second half stores segment deltas. */
+    CHECK(pb_renderer_fast3d_fog_lut(values, 128, 128));
+    CHECK(nearly_equal(values[0], 1.0f));
+    CHECK(values[64] > 0.49f && values[64] < 0.51f);
+    CHECK(values[127] > 0.0f && values[127] < 0.02f);
+    CHECK(nearly_equal(values[127] + values[255], 0.0f));
+    for (size_t index = 128U; index < PB_RENDER_FOG_LUT_VALUES; index++) {
+        CHECK(values[index] <= 0.0f);
+    }
+    return true;
+}
+
 static PBRenderPipeline valid_pipeline(void) {
     const PBRenderPipeline pipeline = {
         .cull_mode = PB_CULL_BACK_CCW,
@@ -172,6 +203,9 @@ static PBRenderPipeline valid_pipeline(void) {
         .depth_write_enabled = true,
         .depth_function = PB_COMPARE_GREATER,
         .blend_mode = PB_BLEND_ALPHA,
+        .alpha_test_enabled = true,
+        .alpha_function = PB_COMPARE_GREATER,
+        .alpha_reference = 0,
         .min_filter = PB_FILTER_NEAREST,
         .mag_filter = PB_FILTER_LINEAR,
         .wrap_s = PB_WRAP_REPEAT,
@@ -187,6 +221,9 @@ static bool test_pipeline_and_cache(void) {
     CHECK(pb_renderer_pipeline_is_valid(&pipeline));
     pipeline.depth_write_enabled = false;
     CHECK(pb_renderer_pipeline_is_valid(&pipeline));
+    pipeline = valid_pipeline();
+    pipeline.alpha_function = (PBCompareFunction)PB_COMPARE_COUNT;
+    CHECK(!pb_renderer_pipeline_is_valid(&pipeline));
     pipeline = valid_pipeline();
     pipeline.wrap_s = (PBTextureWrap)PB_WRAP_COUNT;
     CHECK(!pb_renderer_pipeline_is_valid(&pipeline));
@@ -265,10 +302,223 @@ static bool test_buffer_contract_and_status(void) {
     return true;
 }
 
+static bool test_ortho_depth_slack(void) {
+    /* PICA clip Z is [-w, 0]. N64 near (-w) maps to -w; N64 far (+w) to 0.
+     * Vertices inside the camera frustum stay inside; a second 0..1 ortho
+     * window is not applied to Z. */
+    const float w = 4.0f;
+    const float near_z = pb_renderer_n64_to_pica_clip_z(-w, w);
+    const float far_z = pb_renderer_n64_to_pica_clip_z(w, w);
+    const float inside_z = pb_renderer_n64_to_pica_clip_z(0.0f, w);
+    const float closer_than_near =
+        pb_renderer_n64_to_pica_clip_z(-3.0f * w, w);
+    CHECK(near_z == -w);
+    CHECK(far_z == 0.0f);
+    CHECK(inside_z == -0.5f * w);
+    CHECK(near_z >= -w && near_z <= 0.0f);
+    CHECK(far_z >= -w && far_z <= 0.0f);
+    CHECK(inside_z >= -w && inside_z <= 0.0f);
+    CHECK(closer_than_near < -w);
+    CHECK(PB_RENDER_ORTHO_Z_IDENTITY_ZZ == 1.0f);
+    CHECK(PB_RENDER_ORTHO_Z_IDENTITY_ZW == 0.0f);
+    const float sprite_near =
+        pb_renderer_n64_to_pica_clip_z(
+            pb_renderer_screen_depth_to_n64_clip_z(1.0f, 1.0f), 1.0f);
+    const float sprite_far =
+        pb_renderer_n64_to_pica_clip_z(
+            pb_renderer_screen_depth_to_n64_clip_z(0.0f, 1.0f), 1.0f);
+    CHECK(sprite_near == -1.0f);
+    CHECK(sprite_far == 0.0f);
+    CHECK(pb_renderer_screen_depth_to_pica_z(0.45f, 1.0f) == -0.45f);
+    CHECK(pb_renderer_screen_depth_to_pica_z(0.55f, 1.0f) == -0.55f);
+    CHECK(pb_renderer_screen_depth_to_pica_z(1.0f, 2.0f) == -2.0f);
+    CHECK(pb_renderer_clip_w_inside(1.0f));
+    CHECK(pb_renderer_clip_w_inside(0.02f));
+    CHECK(!pb_renderer_clip_w_inside(0.0f));
+    CHECK(!pb_renderer_clip_w_inside(-4.0f));
+    CHECK(pb_renderer_clip_w_edge_t(-4.0f, 4.0f) > 0.0f);
+    CHECK(pb_renderer_clip_w_edge_t(-4.0f, 4.0f) < 1.0f);
+    {
+        const float t = pb_renderer_clip_w_edge_t(-1.0f, 1.0f);
+        const float w = -1.0f + (1.0f - (-1.0f)) * t;
+        CHECK(w > PB_RENDER_CLIP_W_EPS - 0.0001f);
+        CHECK(w < PB_RENDER_CLIP_W_EPS + 0.0001f);
+    }
+    {
+        /* A vertex behind the eye must not survive N64 frustum clipping. */
+        const PBClipVertex behind[3] = {
+            { 0.0f, 0.0f, 0.0f, -4.0f },
+            { 1.0f, 0.0f, 0.0f, -2.0f },
+            { 0.0f, 1.0f, 0.0f, -2.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        CHECK(pb_renderer_clip_n64_triangle(behind, out) == 0U);
+    }
+    {
+        /* One vertex behind the eye becomes a clipped polygon still inside. */
+        const PBClipVertex crossing[3] = {
+            { 0.0f, 0.0f, 0.0f, -2.0f },
+            { 0.5f, 0.0f, 0.0f, 2.0f },
+            { 0.0f, 0.5f, 0.0f, 2.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        const size_t count = pb_renderer_clip_n64_triangle(crossing, out);
+        CHECK(count >= 3U);
+        CHECK(count <= PB_RENDER_CLIP_MAX_VERTS);
+        for (size_t index = 0; index < count; index++) {
+            CHECK(out[index].w > PB_RENDER_CLIP_W_EPS - 0.0001f);
+            CHECK(out[index].x <= out[index].w + 0.0001f);
+            CHECK(-out[index].x <= out[index].w + 0.0001f);
+            CHECK(out[index].y <= out[index].w + 0.0001f);
+            CHECK(-out[index].y <= out[index].w + 0.0001f);
+            CHECK(out[index].z <= out[index].w + 0.0001f);
+            CHECK(-out[index].z <= out[index].w + 0.0001f);
+        }
+    }
+    {
+        /* A close billboard vertex (small positive W) must remain inside. */
+        const PBClipVertex near_sprite[3] = {
+            { 0.0f, 0.0f, 0.0f, 0.02f },
+            { 0.01f, 0.0f, 0.0f, 1.0f },
+            { 0.0f, 0.01f, 0.0f, 1.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        CHECK(pb_renderer_clip_n64_triangle(near_sprite, out) >= 3U);
+    }
+    {
+        /* Off-axis XY that would span the screen is clipped to |x|,|y| <= w. */
+        const PBClipVertex huge[3] = {
+            { 40.0f, 0.0f, 0.0f, 1.0f },
+            { 0.0f, 0.0f, 0.0f, 1.0f },
+            { 0.0f, 40.0f, 0.0f, 1.0f },
+        };
+        PBClipVertex out[PB_RENDER_CLIP_MAX_VERTS];
+        const size_t count = pb_renderer_clip_n64_triangle(huge, out);
+        CHECK(count >= 3U);
+        for (size_t index = 0; index < count; index++) {
+            CHECK(out[index].x <= out[index].w + 0.001f);
+            CHECK(out[index].y <= out[index].w + 0.001f);
+        }
+    }
+    {
+        const float backFacing = pb_renderer_clip_face_cross(
+            0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f);
+        CHECK(backFacing < 0.0f);
+        CHECK(pb_renderer_clip_keep_face(backFacing, -1));
+        CHECK(!pb_renderer_clip_keep_face(backFacing, 1));
+        CHECK(pb_renderer_clip_keep_face(backFacing, 0));
+    }
+    return true;
+}
+
+static bool test_canonical_coordinates(void) {
+    PBN64ScreenViewport viewport;
+    CHECK(pb_renderer_default_game_viewport(&viewport));
+    CHECK(nearly_equal(viewport.x, 40.0f));
+    CHECK(nearly_equal(viewport.y, 0.0f));
+    CHECK(nearly_equal(viewport.width, 320.0f));
+    CHECK(nearly_equal(viewport.height, 240.0f));
+    CHECK(PB_RENDER_GAME_X_INSET == 40U);
+    CHECK(PB_RENDER_INVERT_CLIP_Y == 1);
+
+    CHECK(pb_renderer_viewport_from_n64(640, 480, 640, 480, &viewport));
+    CHECK(nearly_equal(viewport.x, 40.0f));
+    CHECK(nearly_equal(viewport.width, 320.0f));
+    CHECK(nearly_equal(viewport.height, 240.0f));
+
+    CHECK(pb_renderer_viewport_from_n64(640, 200, 640, 200, &viewport));
+    CHECK(nearly_equal(viewport.x, 40.0f));
+    CHECK(nearly_equal(viewport.y, 140.0f));
+    CHECK(nearly_equal(viewport.width, 320.0f));
+    CHECK(nearly_equal(viewport.height, 100.0f));
+
+    float screen_x = 0.0f;
+    float screen_y = 0.0f;
+    CHECK(pb_renderer_default_game_viewport(&viewport));
+    pb_renderer_clip_to_screen_xy(0.0f, 1.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 200.0f));
+    CHECK(nearly_equal(screen_y, 0.0f));
+    pb_renderer_clip_to_screen_xy(0.0f, -1.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 200.0f));
+    CHECK(nearly_equal(screen_y, 240.0f));
+    pb_renderer_clip_to_screen_xy(-1.0f, 0.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 40.0f));
+    pb_renderer_clip_to_screen_xy(1.0f, 0.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 360.0f));
+
+    float left = 0.0f;
+    float bottom = 0.0f;
+    float right = 0.0f;
+    float top = 0.0f;
+    pb_renderer_n64_rect_to_logical(0.0f, 0.0f, 320.0f, 240.0f, &left, &bottom,
+                                    &right, &top);
+    CHECK(nearly_equal(left, 40.0f));
+    CHECK(nearly_equal(right, 360.0f));
+    CHECK(nearly_equal(bottom, 0.0f));
+    CHECK(nearly_equal(top, 240.0f));
+
+    PBViewport scissor;
+    CHECK(pb_renderer_scissor_from_n64(0, 0, 320, 240, &scissor));
+    CHECK(scissor.x == 40);
+    CHECK(scissor.y == 0);
+    CHECK(scissor.width == 320);
+    CHECK(scissor.height == 240);
+    CHECK(pb_renderer_scissor_from_n64(10, 20, 100, 80, &scissor));
+    CHECK(scissor.x == 50);
+    CHECK(scissor.y == 160);
+    CHECK(scissor.width == 90);
+    CHECK(scissor.height == 60);
+    CHECK(!pb_renderer_scissor_from_n64(10, 20, 10, 80, &scissor));
+
+    CHECK(pb_renderer_n64_wrap(0U) == PB_WRAP_REPEAT);
+    CHECK(pb_renderer_n64_wrap(1U) == PB_WRAP_MIRRORED_REPEAT);
+    CHECK(pb_renderer_n64_wrap(2U) == PB_WRAP_CLAMP_TO_EDGE);
+    CHECK(pb_renderer_n64_wrap(3U) == PB_WRAP_CLAMP_TO_EDGE);
+    return true;
+}
+
+static bool test_matrix_pipeline(void) {
+    float identity[4][4];
+    float translate[4][4];
+    float combined[4][4];
+    float object[4] = { 2.0f, 3.0f, 4.0f, 1.0f };
+    float clip[4];
+
+    pb_renderer_mtx_identity(identity);
+    CHECK(pb_renderer_mtx_finite(identity));
+    pb_renderer_mtx_transform(identity, object, clip);
+    CHECK(nearly_equal(clip[0], 2.0f));
+    CHECK(nearly_equal(clip[1], 3.0f));
+    CHECK(nearly_equal(clip[2], 4.0f));
+    CHECK(nearly_equal(clip[3], 1.0f));
+
+    pb_renderer_mtx_identity(translate);
+    translate[3][0] = 10.0f;
+    pb_renderer_mtx_multiply(translate, identity, combined);
+    pb_renderer_mtx_transform(combined, object, clip);
+    CHECK(nearly_equal(clip[0], 12.0f));
+    CHECK(nearly_equal(clip[1], 3.0f));
+    CHECK(nearly_equal(clip[2], 4.0f));
+    CHECK(nearly_equal(clip[3], 1.0f));
+
+    identity[0][0] = NAN;
+    CHECK(!pb_renderer_mtx_finite(identity));
+    CHECK(!pb_renderer_float_ok(1.0e20f));
+    CHECK(!pb_renderer_clip_coord_ok(0.0f, 0.0f, 0.0f, NAN));
+    CHECK(pb_renderer_clip_coord_ok(0.0f, 0.0f, 0.0f, 1.0f));
+    return true;
+}
+
 int main(void) {
     if (!test_texture_formats() || !test_texture_swizzle() ||
         !test_viewport_rotation() || !test_textured_quad_orientation() ||
-        !test_pipeline_and_cache() || !test_buffer_contract_and_status()) {
+        !test_fast3d_fog_lut() || !test_pipeline_and_cache() ||
+        !test_buffer_contract_and_status() || !test_ortho_depth_slack() ||
+        !test_canonical_coordinates() || !test_matrix_pipeline()) {
         return EXIT_FAILURE;
     }
 

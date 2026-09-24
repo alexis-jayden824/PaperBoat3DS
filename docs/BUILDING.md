@@ -6,9 +6,13 @@ This branch contains the native application shell, the completed M5 compilation
 gate, M6 memory guardrails, the completed M7 legal host-side asset workflow,
 the host-tested M8 native input layer, the M9 citro3d renderer foundation,
 the M10 pinned-libultraship graphics adapter, the M11 bounded legal-archive
-frame path, and the M12 title/file-select checkpoint. It is not yet a playable
-PaperBoat port. A successful package build proves that one ARM11 ELF can
-produce `.3dsx`, `.3ds`, and `.cia` artifacts.
+frame path, and the M12 title/file-select checkpoint. M13 now links the pinned
+PaperBoat runtime closure into the application and hands its authentic frame
+display lists to the 3DS renderer. The older `PBWorldScene` remains a host-
+tested diagnostic scaffold and is no longer the default gameplay path. M13 is
+still open until Toad Town passes side-by-side movement and presentation
+acceptance. Native CI now proves that one ARM11 ELF contains the required
+upstream runtime symbols and produces `.3dsx`, `.3ds`, and `.cia` artifacts.
 
 ## Prerequisites
 
@@ -100,6 +104,32 @@ The M12.1 layout test is asset-free. It locks the New 3DS XL/LL 400x240
 presentation to a centered 320x240 safe canvas with equal 40-pixel pillars and
 checks every title rectangle against the upstream Paper Mario coordinates.
 
+Run the public M13 O2R fixture, complete map-resource translation, texture,
+collision/gameplay, transition, release, retry, and pause-flow checks with:
+
+```sh
+make fetch-upstream
+make m13-world-test
+make m13-core-check
+```
+
+`m13-core-check` cross-compiles the 379-source PaperBoat closure needed by the
+Toad Town route and verifies the real entry, frame-loop, player, collision, and
+camera symbols in the resulting archive. The normal application build links
+that archive into the final ELF and repeats symbol checks there. For an owner-
+only diagnostic-scaffold run, pass the generated private archive as a second
+argument to both older structural and scene tests:
+
+```sh
+sh tools/test_world_boot.sh build/m13-private /path/to/pm64.o2r
+sh tools/test_world_scene.sh build/m13-scene-private /path/to/pm64.o2r
+```
+
+Never commit or upload that private archive. The pinned archive reports 2,040
+native triangles and 41 map textures for `mac_00`, and 2,210 triangles and 48
+textures for `mac_01`. The private diagnostic-scene suite covers both maps and
+both return-entry guards; it does not establish upstream-runtime acceptance.
+
 ## Host-side asset preparation
 
 M7 provides one cross-platform Python entry point that verifies a legally
@@ -114,7 +144,7 @@ Do not upload the ROM or generated game archive to GitHub Actions. See
 `docs/M7_ASSET_PIPELINE.md` for prerequisites, staging, validation, Windows
 usage, and the exact legal boundary.
 
-M11 and M12 read these exact SD paths at runtime:
+M11 through M13 read these exact SD paths at runtime:
 
 - `sdmc:/3ds/PaperBoat3DS/paperboat.o2r`
 - `sdmc:/3ds/PaperBoat3DS/pm64.o2r`

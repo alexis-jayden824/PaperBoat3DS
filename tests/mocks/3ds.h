@@ -7,7 +7,7 @@
 typedef int16_t s16;
 typedef uint16_t u16;
 typedef uint32_t u32;
-typedef uint64_t u64;
+typedef unsigned long long u64;
 
 #define BIT(n) (1U << (n))
 
@@ -80,7 +80,7 @@ void hidCircleRead(circlePosition *position);
 void hidTouchRead(touchPosition *position);
 
 u32 osGetKernelVersion(void);
-u64 osGetTime(void);
+uint64_t osGetTime(void);
 Result APT_CheckNew3DS(bool *is_new_3ds);
 void gfxInitDefault(void);
 void gfxExit(void);

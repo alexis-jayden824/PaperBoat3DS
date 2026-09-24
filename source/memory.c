@@ -1,9 +1,11 @@
+#include <3ds.h>
+
 #include "pb3ds/memory.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-static size_t size_delta(u32 baseline, u32 current) {
+static size_t size_delta(uint32_t baseline, uint32_t current) {
     return current < baseline ? (size_t)(baseline - current) : 0;
 }
 

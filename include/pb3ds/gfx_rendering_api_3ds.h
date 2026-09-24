@@ -1,9 +1,71 @@
 #pragma once
 
 #include "pb3ds/gfx_bridge.h"
+#include "pb3ds/runtime_resource_types.h"
 
 typedef struct PBTitleAssets PBTitleAssets;
 typedef struct PBTitleFlow PBTitleFlow;
+typedef struct PBWorldScene PBWorldScene;
+
+typedef struct {
+    uint64_t frames_started;
+    uint64_t frames_rendered;
+    uint64_t commands;
+    uint64_t display_lists;
+    uint64_t texture_fallbacks;
+    uint64_t texture_evictions;
+    uint64_t semantic_combiner_batches;
+    uint64_t semantic_two_cycle_batches;
+    uint64_t semantic_fog_batches;
+    uint64_t semantic_key_convert_batches;
+    uint64_t legacy_combiner_fallbacks;
+    uint64_t legacy_fog_fallbacks;
+    uint64_t legacy_key_convert_fallbacks;
+    uint64_t legacy_unsafe_modulate_batches;
+    uint64_t depth_target_clears;
+    uint64_t copy_rectangles;
+    uint32_t unknown_commands;
+    uint32_t missing_resources;
+    uint32_t malformed_lists;
+    uint32_t max_call_depth;
+    uint32_t commands_last_frame;
+    uint32_t commands_peak_frame;
+    uint32_t clipped_triangles;
+    uint32_t huge_triangles;
+    uint32_t culled_triangles;
+    uint32_t invalid_triangles;
+    uint32_t matrix_stack_overflows;
+    uint32_t matrix_stack_underflows;
+    uint32_t nan_vertices;
+    uint32_t draws_last_frame;
+    int32_t screen_min_x;
+    int32_t screen_min_y;
+    int32_t screen_max_x;
+    int32_t screen_max_y;
+    uint32_t last_geometry_mode;
+    uint32_t last_othermode_l;
+    uint32_t last_matrix_hash;
+    uint8_t last_unknown_opcode;
+    /* Diagnostics for the "sprites/geometry cut off" class of report: the
+     * most recently established CPU-side game viewport (used to convert
+     * transformed vertices to screen pixels in LoadVertices) and the most
+     * recently established GPU scissor rect (from G_SETSCISSOR, or the
+     * full-screen default applied at the start of every frame), both in
+     * logical 400x240 top-screen pixel space. A scissor or viewport height
+     * smaller than PB_RENDER_TOP_HEIGHT (240), or a nonzero y, here at the
+     * moment a cut-off sprite is on screen pinpoints whether the clipping
+     * comes from one of these versus somewhere else (e.g. vertex position
+     * math). Populated every time either is set; read at any moment (e.g.
+     * from the on-screen debug HUD) to see the value active for that frame. */
+    int32_t game_viewport_x;
+    int32_t game_viewport_y;
+    uint32_t game_viewport_w;
+    uint32_t game_viewport_h;
+    int32_t scissor_x;
+    int32_t scissor_y;
+    uint32_t scissor_w;
+    uint32_t scissor_h;
+} PBRuntimeGfxStats;
 
 #ifdef __cplusplus
 
@@ -16,6 +78,8 @@ typedef struct PBTitleFlow PBTitleFlow;
 #include <fast/backends/gfx_rendering_api.h>
 
 namespace PB3DS {
+
+class RuntimeDisplayListRenderer;
 
 class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
   public:
@@ -35,6 +99,7 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
                                                 uint64_t shaderId1) override;
     Fast::ShaderProgram *LookupShader(uint64_t shaderId0,
                                      uint64_t shaderId1) override;
+    bool ShaderIsSupported(const Fast::ShaderProgram *program) const;
     void ShaderGetInfo(Fast::ShaderProgram *prg, uint8_t *numInputs,
                        bool usedTextures[2]) override;
     uint32_t NewTexture() override;
@@ -49,11 +114,19 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     void SetViewport(int x, int y, int width, int height) override;
     void SetScissor(int x, int y, int width, int height) override;
     void SetUseAlpha(bool useAlpha) override;
+    void ConfigureRuntimePipeline(bool depthTest, bool depthWrite,
+                                  bool decal, int8_t cullKeepSign,
+                                  bool useAlpha, bool alphaTest,
+                                  uint8_t alphaReference);
+    void ConfigureRuntimeFog(bool enabled, uint8_t red, uint8_t green,
+                             uint8_t blue, int16_t fogMultiply,
+                             int16_t fogOffset);
     void DrawTriangles(float bufVbo[], size_t bufVboLen,
                        size_t bufVboNumTris) override;
     void Init() override;
     void OnResize() override;
     void StartFrame() override;
+    void PreserveColorOnNextFrame(bool preserve);
     void EndFrame() override;
     void FinishRender() override;
     int CreateFramebuffer() override;
@@ -91,12 +164,26 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     bool RenderFirstFrame();
     bool PrepareTitleFlow(const PBTitleAssets *assets);
     bool RenderTitleFlow(const PBTitleFlow *flow);
+    bool PrepareWorldBackground(const uint8_t *rgba,
+                                uint16_t textureWidth,
+                                uint16_t textureHeight,
+                                uint16_t sourceWidth,
+                                uint16_t sourceHeight);
+    bool RenderWorldBackground(bool paused);
+    bool PrepareWorldScene(const PBWorldScene *scene);
+    bool RenderWorldScene(const PBWorldScene *scene, bool paused);
+    bool RenderDisplayList(const PBRuntimeGfx *displayList);
+    void InvalidateRuntimeTexture(const void *address);
+    void ClearRuntimeDepth();
     void SetActive(bool active);
     const void *GetBridgeStats() const;
+    const PBRuntimeGfxStats *GetRuntimeStats() const;
 
   private:
+    void DestroyRuntimeRenderer();
     struct Impl;
     Impl *mImpl;
+    RuntimeDisplayListRenderer *mRuntimeRenderer = nullptr;
 };
 
 } // namespace PB3DS
@@ -129,8 +216,24 @@ bool pb_gfx_api_3ds_prepare_title_flow(PBGfxApi3DS *api,
                                        const PBTitleAssets *assets);
 bool pb_gfx_api_3ds_render_title_flow(PBGfxApi3DS *api,
                                       const PBTitleFlow *flow);
+bool pb_gfx_api_3ds_prepare_world_background(
+    PBGfxApi3DS *api, const uint8_t *rgba, uint16_t texture_width,
+    uint16_t texture_height, uint16_t source_width, uint16_t source_height);
+bool pb_gfx_api_3ds_render_world_background(PBGfxApi3DS *api, bool paused);
+bool pb_gfx_api_3ds_prepare_world_scene(PBGfxApi3DS *api,
+                                        const PBWorldScene *scene);
+bool pb_gfx_api_3ds_render_world_scene(PBGfxApi3DS *api,
+                                       const PBWorldScene *scene,
+                                       bool paused);
+bool pb_gfx_api_3ds_render_display_list(PBGfxApi3DS *api,
+                                        const PBRuntimeGfx *display_list);
+void pb_gfx_api_3ds_invalidate_texture(PBGfxApi3DS *api,
+                                       const void *address);
+void pb_gfx_api_3ds_clear_depth(PBGfxApi3DS *api);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
+const PBRuntimeGfxStats *pb_gfx_api_3ds_runtime_stats(
+    const PBGfxApi3DS *api);
 void pb_gfx_api_3ds_destroy(PBGfxApi3DS *api);
 
 #ifdef __cplusplus

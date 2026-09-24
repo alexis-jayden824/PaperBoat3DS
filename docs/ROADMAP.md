@@ -1,5 +1,9 @@
 # PaperBoat3DS M0-M24 Roadmap
 
+This is the binding master milestone list. Older per-milestone docs under
+`docs/M*.md` used a shifted numbering (M0 toolchain, M1 bootstrap, …). Those
+files remain as historical evidence; **this document is the project map**.
+
 ## Binding technical direction
 
 - Output `.3dsx` as the canonical Homebrew Launcher target. Produce `.3ds` for
@@ -8,171 +12,170 @@
 - Old Nintendo 3DS is the baseline. New Nintendo 3DS optimizations stay isolated.
 - Gameplay renders at 400x240 on the top screen without stereoscopic 3D initially.
 - The 320x240 bottom screen becomes a touch-friendly PaperBoat configuration menu sharing the desktop configuration API.
-- The physical menu keybind is selected after the M8 input audit.
+- SELECT is reserved for the future PaperBoat menu (M16). START is the game pause key.
 - Platform stack: devkitARM, libctru, citro3d/citro2d, ndsp, HID, SDMC/RomFS, and a minimal libultraship-3DS compatibility layer.
 - Torch remains a PC-side tool. It generates legal `pm64.o2r`/`paperboat.o2r` assets from a user-provided legal copy; asset extraction never runs on the 3DS.
 - Desktop windows, updaters, native dialogs, and unrelated desktop backends are disabled or replaced.
-- No compile, link, boot, frame, gameplay, audio, performance, or hardware milestone is claimed without reproducible evidence.
+- PaperBoat is the behavioral reference. Do not rebuild Paper Mario from scratch or fake gameplay geometry.
+- M14+ stays gated behind M13 runtime/rendering acceptance.
 
 ## Milestones
 
-### M0 - Toolchain contract
-Pin the platform contract, repository policy, devkitARM Makefile, required libraries, output formats, and reproducible build instructions. Acceptance: the same bootstrap ELF packages successfully as `.3dsx`, `.3ds`, and `.cia` in a real devkitARM environment.
+### M0 - Native 3DS bootstrap — **complete**
 
-### M1 - Native application bootstrap
-Boot a minimal ARM11 application, initialize services/screens, show diagnostics on both displays, and exit cleanly. Acceptance: test `.3ds` in Folium and optionally test `.cia` under CFW; a `.3dsx` test on real hardware remains the authority.
+devkitARM/libctru skeleton, `.3dsx` target, ARM11 lifecycle, top/bottom screens,
+logging, clean shutdown. Evidence: packaged artifacts and Folium boot.
 
-### M2 - Diagnostics foundation
-Add structured logging, fatal-error presentation, toolchain/build metadata, memory counters, and an SDMC log sink with graceful failure.
+### M1 - Reproducible build and CI — **complete**
 
-### M3 - PaperBoat dependency audit
-Import or reference the exact PaperBoat 1.0.1 source and submodules. Classify game/core/platform dependencies and document every desktop-only edge before porting.
+Pinned toolchain image (`devkitpro/devkitarm`), CI in
+`.github/workflows/3ds-build.yml` and `m7-assets.yml`, version/build metadata,
+`.3dsx`/`.3ds`/`.cia` artifacts, `docs/BUILDING.md`.
 
-### M4 - libultraship-3DS core
-Create the smallest 3DS-aware libultraship layer: configuration, archives, resource loading, logging, timing, and platform interfaces without desktop UI/render/audio backends.
+### M2 - Dependency graph / portability audit — **complete**
 
-### M5 - ARM11 game-core compilation
-Cross-compile PaperBoat's game core and generated code for ARM11. Eliminate unsupported compiler, ABI, threading, filesystem, and endian assumptions.
+Pinned PaperBoat 1.0.1 / libultraship / Torch in `upstream/PAPERBOAT.lock`.
+Classification lives in `docs/M3_DEPENDENCY_AUDIT.md` (legacy filename).
 
-Status: **complete**. CI fetches PaperBoat, libultraship, and Torch at the
-commits in `upstream/PAPERBOAT.lock`, then cross-compiles representative
-foundation, game-state, event, battle, entity, and generated map/script units
-as ARM11 objects. The scoped ABI/compiler shims and the final proof run are
-recorded in `docs/M5_COMPATIBILITY.md`. Desktop threading/filesystem backends
-remain excluded at the platform boundary; runtime memory and asset-endian
-validation continue in M6 and M7 rather than being hidden inside this gate.
+### M3 - 3DS platform abstraction — **complete**
 
-### M6 - Memory strategy
-Measure static, linear, heap, stack, archive, and scene costs on Old 3DS. Introduce budgets, bounded caches, streaming, and allocation-failure behavior.
+Isolated headers under `include/pb3ds/` for graphics, input, filesystem, timing,
+memory, logging, and lifecycle. Aggregate contract: `include/pb3ds/platform.h`.
+Audio is declared (`pb_platform_audio_status` → `PB_AUDIO_DEFERRED_M14`) and is
+not implemented until M14. The game is stepped from the APT main loop; extra OS
+threads are not used.
 
-Status: **in progress**. Runtime peak/failure telemetry, allocation-class
-budgets, bounded 64 KiB archive reads, deterministic policy tests, and CI
-ELF-size enforcement are in place. Final calibration requires real-hardware
-logs; see `docs/M6_MEMORY.md`.
+### M4 - Memory, logging, and diagnostics — **complete** (hardware calibration open)
 
-### M7 - Legal PC-side asset pipeline
-Provide a separate PC workflow using Torch to produce required `.o2r` archives from a legally obtained copy. Validate hashes/formats without distributing copyrighted content.
+Heap/linear budgets, SDMC log sink, assertions/panic breadcrumb, bottom-screen
+status, New 3DS detection. See `docs/M6_MEMORY.md` (legacy filename).
 
-Status: **complete**. The pinned cross-platform host workflow rejects
-unsupported ROMs, builds PM64-only Torch, creates deterministic engine/game
-archives, performs ZIP/resource metadata validation, writes a privacy-safe
-manifest, and stages only generated archives to SD. The project-owner input
-passed the supported-ROM contract and produced a verified 57-entry
-`paperboat.o2r` plus 60,826-entry `pm64.o2r`; no ROM or generated archive was
-committed or uploaded to CI. See `docs/M7_ASSET_PIPELINE.md`.
+### M5 - PaperBoat source integration — **complete**
 
-### M8 - Input backend
-Map Circle Pad, D-pad, face/shoulder buttons, touch, and system lifecycle behavior. Audit conflicts before choosing the PaperBoat-menu physical keybind.
+Pinned sources fetched by CI; ARM11 compile of the game-core slice; unsupported
+desktop modules isolated. See `docs/M5_COMPATIBILITY.md`.
 
-Status: **in progress**. The native input boundary, complete Old 3DS mapping,
-optional New 3DS duplicates, touch state, edge semantics, lifecycle neutral
-gate, SELECT menu reservation, live diagnostics, and deterministic host tests
-are implemented. The three packages built successfully at merge
-`0735cd7bde2127b8559061a1b563b0f84ca7a6db`, and Folium confirmed the New 3DS
-profile, active input gate, and SELECT menu request. Full physical-control,
-touch, and lifecycle validation remains; see `docs/M8_INPUT.md`.
+### M6 - libultraship / engine compatibility layer — **complete** (stubs documented)
 
-### M9 - PICA200 renderer foundation
-Implement the citro3d translation layer, shader conversion path, texture formats, buffers, render states, and top-screen viewport.
+Minimum engine surface: config, archives, resources, logging, timing, graphics
+vtable, NuSystem/port hooks. Unsupported calls fail or increment
+`platform_warnings` rather than silently substituting gameplay. Audio hooks stay
+no-ops until M14.
 
-Status: **software complete; hardware pending**. A portable PICA contract, texture sizing/swizzle,
-viewport rotation, render-state cache, Picasso shader build, citro3d target,
-linear VBO, sampled texture, deterministic diagnostic scene, telemetry, and
-host tests are implemented. CI produced `.3dsx`, `.3ds`, and `.cia` packages,
-and Folium build `3c98a1458c01` confirmed the target, compiled shader, sampled
-checker, two draw submissions, advancing counters, and zero failures. The sail
-overlay was not visually distinct in that capture; M10 changes it to a
-shade-only TEV draw. Physical PICA and lifecycle evidence remains; see
-`docs/M9_RENDERER.md`.
+### M7 - Legal asset pipeline — **complete**
 
-### M10 - libultraship graphics integration
-Connect the renderer to libultraship's graphics contract and replace desktop window/context behavior with 3DS lifecycle handling.
+`tools/pb3ds_assets.py`, synthetic CI, owner ROM workflow. ROM data is never
+committed. See `docs/M7_ASSET_PIPELINE.md`.
 
-Status: **software and emulator complete; hardware pending**. A concrete adapter
-implements the exact pinned `Fast::GfxRenderingAPI` vtable with bounded shader,
-texture, streaming, state, frame, and APT-lifecycle behavior. The supported
-one-cycle TEV baseline and all rejected features are explicit. Post-merge CI
-run 114 built `.3dsx`, `.3ds`, and `.cia` from merge
-`4b5e6faef11ef469953a86d1ca84ecde32844d3a`. Folium build
-`bc0139a2f292` confirmed the two TEV programs, advancing two-draw/three-triangle
-counters, visible sail, zero rejects, and zero frame failures. The capture also
-exposed same-frame VBO reuse in the native layer: the sail overwrote one checker
-triangle before GPU consumption. M11 replaces per-draw overwrite with a bounded
-per-frame streaming arena. Physical lifecycle and PICA validation remain
-authoritative. See `docs/M10_GRAPHICS.md`.
+### M8 - Input backend — **complete** (physical matrix still useful)
 
-### M11 - First rendered game frame
-Load legal archives and display a deterministic Paper Mario frame on the top screen with diagnostic fallback on failure.
+HID buttons, Circle Pad, D-Pad shift layer, touch, APT suspend/resume
+neutralization, SELECT menu reservation. Host tests: `make m8-input-test`.
+See `docs/M8_INPUT.md`.
 
-Status: **archive path validated; orientation correction moved into M12**. A bounded O2R reader locates and
-CRC-checks the legal `backgrounds/title_bg` CI8 image and RGBA16 palette,
-inflates only those fixed entries, decodes them into a 512x256 RGBA8 GPU
-texture, and renders the 296x200 frame centered on the top screen through the
-M10 adapter. Missing, malformed, unsupported, oversized, or memory-rejected
-inputs retain the checker/sail fallback with an explicit reason. Synthetic
-ZIP64-local-header tests and a private local test against the project owner's
-generated archive pass. The first Folium capture proved the archive, decode,
-upload, and draw path but exposed a vertically inverted image; the shared M12
-quad mapping contains the correction and regression test.
-See `docs/M11_FIRST_FRAME.md`.
+### M9 - Filesystem and resource I/O — **complete**
 
-### M12 - Title and file-select flow
-Reach title/file-select, validate transitions and input, and document remaining graphical defects.
+SD paths `sdmc:/3ds/PaperBoat3DS/{config.ini,paperboat.o2r,pm64.o2r}`, bounded
+O2R reader, archive/error/lifetime rules. See `docs/M11_FIRST_FRAME.md` and
+`source/o2r.c`.
 
-Status: **functional Folium path validated; M12.1 presentation correction in
-validation**. The checkpoint loads the authentic
-RGBA32 logo plus IA8 prompt/copyright resources through the bounded O2R path,
-renders them over the corrected title background, and mirrors PaperBoat's
-A/START, 2x2 slot navigation, confirm, and B-return contract. Host fixtures and
-the owner's private archive pass. Folium evidence confirms upright assets and
-the title/file-select interaction path, while also exposing the diagnostic
-navy surround and inconclusive prompt visibility addressed by M12.1. The
-file-select panels are a bounded native
-checkpoint compositor; save data, text/message/window display lists, and the
-overworld handoff remain explicit later-milestone work. See
-`docs/M12_TITLE_FLOW.md`.
+### M10 - Timing, game loop, and runtime services — **complete**
 
-#### M12.1 - Title presentation correction
+`osGetTime` monotonic clock, APT hooks, `Graphics_ThreadUpdate` /
+`step_game_loop` stepping, `GameEngine_HoldFrame` sleep, no desktop window loop.
 
-Preserve Paper Mario's fixed 320x240 title composition at integer scale on the
-400x240 top LCD, with equal 40-pixel side pillars on all retail 3DS models.
-Replace the bootstrap navy clear with black, derive every title rectangle from
-one tested safe-area transform, restore PaperBoat's pale-yellow PRESS START
-tint, and expose its live alpha for visual evidence. Do not stretch or crop the
-title art. See `docs/M12_1_PRESENTATION.md`.
+### M11 - Graphics backend foundation — **complete**
 
-### M13 - Core overworld gameplay
-Stabilize map loading, camera, entities, collision, scripts, pause flow, and representative transitions.
+citro3d target, shaders, VBO stream, texture upload, depth, diagnostics.
+See `docs/M9_RENDERER.md` and `docs/M10_GRAPHICS.md` (legacy filenames).
 
-### M14 - ndsp audio backend
-Implement initialization, mixing, streaming, buffering, sample conversion, latency control, suspend/resume, and clean shutdown. Validate Folium with its required DSP firmware as a secondary check, while treating real-hardware ndsp results as authoritative.
+### M12 - Authentic title-screen integration — **complete**
 
-### M15 - Saves and configuration persistence
-Use an explicit SDMC layout, atomic writes, validation, recovery, versioning, and migration. Never overwrite desktop data implicitly.
+Legal O2R title resources, title/file-select flow, runtime/resource bridge.
+See `docs/M12_TITLE_FLOW.md`.
+
+### M12.1 - Title framing / 3DS display correction — **complete**
+
+400×240 presentation, 40 px pillars, upright UVs, PRESS START tint.
+See `docs/M12_1_PRESENTATION.md`. Host: `make m12-layout-test`.
+
+### M13 - Full PaperBoat runtime + renderer integration — **in progress**
+
+Upstream `boot_main` / `step_game_loop` / `gfx_draw_frame` drive `mac_00`.
+Fast3D interpretation, TEV combiners, TLUT, fog, texture retirement, START
+pointer safety, and N64 homogeneous frustum clipping are in the native path.
+
+Sub-gates:
+
+| Gate | Status |
+|---|---|
+| M13-A instrumentation | Clip/huge/cull/invalid HUD; optional `PB3DS_DEBUG_*` |
+| M13-B render state | Cached pipeline, viewport, scissor, combiner uniforms |
+| M13-C textures | Decode, cache, UV, wrap, filter, lifetime |
+| M13-D CI/TLUT | Staged 512-byte TLUT, pal16/pal256 |
+| M13-E combiner | Semantic TEV + measured legacy fallback counters |
+| M13-F viewport/scissor/clip | Canonical 320-in-400 + Fast3D invertY screen map; N64 frustum clip |
+| M13-G framebuffer/depth | Color/Z image tracking; no black depth-clear quad |
+| M13-H START menu | KSEG reject, HUD list spans, aux-cache size, skip badge tutorial |
+| M13-I performance | Lookups hashed; no aggressive opt until visual sign-off |
+| M13-J hardware | Folium/New 3DS XL playtest still required |
+
+M13 is not accepted until Toad Town geometry, sprites, pause, and movement match
+PaperBoat on hardware. `PBWorldScene` remains diagnostic-only.
+
+### M14 - Audio backend
+
+ndsp music/SFX. Blocked on M13.
+
+### M15 - Save data and persistent configuration
+
+Blocked on M13.
 
 ### M16 - Bottom-screen PaperBoat menu
-Build the touch-friendly configuration frontend on the bottom screen, sharing the desktop configuration model. Preserve top-screen gameplay and add the audited physical keybind.
 
-### M17 - Battle-system validation
-Validate representative normal, partner, boss, timed-input, reward, and transition paths.
+Blocked on M13. SELECT is already reserved.
 
-### M18 - Chapter and content coverage
-Run structured coverage across chapters, partners, menus, minigames, cutscenes, loading zones, and ending flow.
+### M17 - Gameplay systems / battle validation
+
+Blocked on M13.
+
+### M18 - Graphics validation harness
+
+Blocked on M13.
 
 ### M19 - Performance and memory optimization
-Profile Old 3DS first, enforce frame/memory budgets, remove stalls, tune caches, and add isolated New 3DS enhancements only when safe.
 
-### M20 - Supported mod boundary
-Define which PaperBoat resource/configuration mods can be supported within 3DS memory, storage, UI, and CPU constraints.
+Blocked on M13 correctness.
 
-### M21 - Platform polish
-Finalize lifecycle behavior, error UX, icon/metadata, accessibility/readability, configuration defaults, and recovery paths.
+### M20 - Stability / long-session hardening
 
-### M22 - Hardware validation matrix
-Project owner tests supported Old/New 3DS models and firmware/homebrew environments. Every result records build SHA, model, steps, logs, and outcome.
+Blocked on M13.
 
-### M23 - Full validation and release candidate
-Run clean builds, asset-pipeline tests, playthrough coverage, suspend/resume, save integrity, performance checks, and known-issue triage.
+### M21 - Compatibility and hardware validation matrix
 
-### M24 - Reproducible release
-Tag a source-only release with build instructions, checksums, licenses/notices, compatibility notes, and no copyrighted game data.
+Blocked on M13.
+
+### M22 - Packaging: 3DSX / 3DS / CIA
+
+Packaging exists today as part of M1; the M22 freeze is the release-format gate.
+
+### M23 - Release candidate / full regression
+
+Blocked.
+
+### M24 - 1.0 release and maintenance baseline
+
+Blocked.
+
+## Global rules
+
+1. PaperBoat is the behavioral reference.
+2. Do not rebuild Paper Mario from scratch.
+3. Do not fake final gameplay or hardcode scenes/textures to hide missing systems.
+4. A successful compile is not runtime proof.
+5. Renderer bugs must be traced to the first incorrect state transition.
+6. Correctness comes before aggressive optimization.
+7. Physical New 3DS hardware validation is required for hardware-sensitive behavior.
+8. Keep 3DS-specific code isolated behind clean platform boundaries.
+9. The top screen is for gameplay; the bottom screen is reserved for the PaperBoat configuration experience.
+10. M14+ does not supersede unresolved M13 correctness blockers.

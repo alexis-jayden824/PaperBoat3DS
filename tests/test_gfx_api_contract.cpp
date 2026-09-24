@@ -1,5 +1,9 @@
+#include "pb3ds/gbi_command_span.h"
+#include "pb3ds/gbi_resolve.h"
 #include "pb3ds/gfx_rendering_api_3ds.h"
+#include "pb3ds/runtime_resources.h"
 #include "pb3ds/title_flow.h"
+#include "pb3ds/world_scene.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,13 +15,27 @@ static uint8_t firstFramePixels[512U * 256U * 4U];
 static uint8_t titleLogoPixels[256U * 128U * 4U];
 static uint8_t titlePromptPixels[128U * 32U * 4U];
 static uint8_t titleCopyrightPixels[256U * 32U * 4U];
+static uint8_t worldMapPixels[8U * 8U * 4U];
+static uint8_t worldActorPixels[8U * 8U * 4U];
+static PBWorldTriangle worldTriangle;
+
+extern "C" void *ResourceGetDataByName(const char *) { return nullptr; }
+extern "C" void *ResourceGetDataByCrc(uint64_t) { return nullptr; }
+extern "C" const char *ResourceGetNameByCrc(uint64_t) { return nullptr; }
+extern "C" size_t pb_runtime_resource_payload_size(const char *) { return 0U; }
+extern "C" uint32_t pb_runtime_resource_texture_type(const char *) {
+    return PB_RESOURCE_TEXTURE_ERROR;
+}
+extern "C" uint16_t ResourceGetTexWidthByName(const char *) { return 0U; }
+extern "C" uint16_t ResourceGetTexHeightByName(const char *) { return 0U; }
+extern "C" uint8_t GameEngine_OTRSigCheck(const char *) { return 0U; }
 
 #define CHECK(expression)                                                    \
     do {                                                                     \
         checksRun++;                                                         \
         if (!(expression)) {                                                 \
             std::fprintf(stderr,                                             \
-                         "M12.1 API contract check failed at %s:%d: %s\n", \
+                         "M13 graphics contract check failed at %s:%d: %s\n", \
                          __FILE__, __LINE__, #expression);                   \
             return false;                                                    \
         }                                                                    \
@@ -44,6 +62,804 @@ static PBTitleAssets makeTitleAssets() {
         PB_RESOURCE_TEXTURE_IA8
     };
     return assets;
+}
+
+static PBWorldScene makeWorldScene() {
+    PBWorldScene scene = {};
+    scene.result = PB_WORLD_SCENE_READY;
+    std::strcpy(scene.map_id, "mac_00");
+    scene.entry_id = 6U;
+    scene.triangles = &worldTriangle;
+    scene.stats.triangles = 1U;
+    scene.stats.textures = 1U;
+    scene.texture_count = 1U;
+    scene.background = { firstFramePixels, sizeof(firstFramePixels),
+                         296U, 200U, 512U, 256U,
+                         PB_RESOURCE_TEXTURE_CI8 };
+    scene.textures[0].decoded = {
+        worldMapPixels, sizeof(worldMapPixels), 8U, 8U, 8U, 8U,
+        PB_RESOURCE_TEXTURE_I8
+    };
+    for (size_t index = 0U; index < PB_WORLD_PLAYER_FRAME_COUNT; index++) {
+        scene.player_frames[index] = {
+            worldActorPixels, sizeof(worldActorPixels), 8U, 8U, 8U, 8U,
+            PB_RESOURCE_TEXTURE_CI4
+        };
+    }
+    scene.star_piece = {
+        worldActorPixels, sizeof(worldActorPixels), 8U, 8U, 8U, 8U,
+        PB_RESOURCE_TEXTURE_CI4
+    };
+    scene.player_position = { 0.0f, 0.0f, 0.0f };
+    scene.camera_target = { 0.0f, 35.0f, 0.0f };
+    scene.star_piece_active = true;
+    scene.transition_state = PB_WORLD_TRANSITION_NONE;
+    worldTriangle = {};
+    worldTriangle.texture_index = 0;
+    worldTriangle.render_class = PB_WORLD_RENDER_OPAQUE;
+    worldTriangle.vertices[0] = {
+        { -100.0f, 0.0f, -100.0f }, 0.0f, 0.0f,
+        255U, 255U, 255U, 255U
+    };
+    worldTriangle.vertices[1] = {
+        { 100.0f, 0.0f, -100.0f }, 1.0f, 0.0f,
+        255U, 255U, 255U, 255U
+    };
+    worldTriangle.vertices[2] = {
+        { 0.0f, 0.0f, 100.0f }, 0.5f, 1.0f,
+        255U, 255U, 255U, 255U
+    };
+    return scene;
+}
+
+static bool testRuntimeDisplayList(PBGfxApi3DS *api) {
+    struct TestVertex {
+        int16_t position[3];
+        uint16_t flag;
+        int16_t texture[2];
+        uint8_t color[4];
+    };
+    static_assert(sizeof(TestVertex) == 16U, "test vertex ABI changed");
+    TestVertex vertices[3] = {
+        { { -1, -1, 0 }, 0U, { 0, 0 }, { 255U, 0U, 0U, 255U } },
+        { { 1, -1, 0 }, 0U, { 0, 0 }, { 0U, 255U, 0U, 255U } },
+        { { 0, 1, 0 }, 0U, { 0, 0 }, { 0U, 0U, 255U, 255U } },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0x01003006),
+                     reinterpret_cast<uintptr_t>(vertices) } },
+        { .words = { UINT32_C(0x05000204), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats before = *pb_gfx_api_3ds_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *after = pb_gfx_api_3ds_stats(api);
+    CHECK(after->frames_presented == before.frames_presented + 1U);
+    CHECK(after->draw_calls == before.draw_calls + 1U);
+    CHECK(after->triangles == before.triangles + 1U);
+    CHECK(after->rejected_commands == before.rejected_commands);
+    const PBRuntimeGfxStats *runtimeStats =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(runtimeStats != nullptr);
+    CHECK(runtimeStats->frames_rendered == 1U);
+    CHECK(runtimeStats->commands == 3U);
+    CHECK(runtimeStats->unknown_commands == 0U);
+    CHECK(runtimeStats->missing_resources == 0U);
+    CHECK(runtimeStats->malformed_lists == 0U);
+    return true;
+}
+
+static bool testRuntimeMovememViewportUsesBottomLeftOrigin(PBGfxApi3DS *api) {
+    /* An N64 Vp_t as delivered by G_MOVEMEM/G_MV_VIEWPORT: scale/translate
+     * are int16_t[4], quarter-pixel translate, half-pixel*2 scale. This uses
+     * a deliberately asymmetric partial-height viewport, where the old and
+     * corrected origin conversions do not coincidentally agree. */
+    struct N64ViewportTest {
+        int16_t scale[4];
+        int16_t translate[4];
+    };
+    static const N64ViewportTest viewport = {
+        { 640, 200, 0, 0 },
+        { 640, 200, 0, 0 },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xDC000008),
+                     reinterpret_cast<uintptr_t>(&viewport) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->game_viewport_x == 40);
+    CHECK(after->game_viewport_y == 140);
+    CHECK(after->game_viewport_w == 320U);
+    CHECK(after->game_viewport_h == 100U);
+    return true;
+}
+
+static bool testRuntimeInvertYMapsPositiveClipYToBottom(PBGfxApi3DS *api) {
+    struct TestVertex {
+        int16_t position[3];
+        uint16_t flag;
+        int16_t texture[2];
+        uint8_t color[4];
+    };
+    static_assert(sizeof(TestVertex) == 16U, "test vertex ABI changed");
+    /* Identity clip. N64 +Y is framebuffer-down; 3DS +screenY is up. */
+    TestVertex vertices[3] = {
+        { { 0, 0, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { 1, 1, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { -1, 1, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0x01003006),
+                     reinterpret_cast<uintptr_t>(vertices) } },
+        { .words = { UINT32_C(0x05000204), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->huge_triangles == 0U);
+    CHECK(after->nan_vertices == 0U);
+    CHECK(after->game_viewport_x == 40);
+    CHECK(after->game_viewport_y == 0);
+    CHECK(after->game_viewport_w == 320U);
+    CHECK(after->game_viewport_h == 240U);
+    CHECK(after->screen_min_x == 40);
+    CHECK(after->screen_max_x == 360);
+    CHECK(after->screen_min_y == 0);
+    CHECK(after->screen_max_y == 120);
+    return true;
+}
+
+static bool testRuntimeScissorConvertsN64Rect(PBGfxApi3DS *api) {
+    /* G_SETSCISSOR 10,20,100,80 in 320x240 top-left pixels. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xED028050), UINT32_C(0x00190140) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->scissor_x == 50);
+    CHECK(after->scissor_y == 160);
+    CHECK(after->scissor_w == 90U);
+    CHECK(after->scissor_h == 60U);
+    return true;
+}
+
+static bool testRuntimeMatrixPopUnderflow(PBGfxApi3DS *api) {
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD8000000), 64U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->matrix_stack_underflows >= 1U);
+    return true;
+}
+
+static bool testRuntimeNearPlaneTriangleDoesNotExplode(PBGfxApi3DS *api) {
+    struct TestVertex {
+        int16_t position[3];
+        uint16_t flag;
+        int16_t texture[2];
+        uint8_t color[4];
+    };
+    TestVertex vertices[3] = {
+        { { 0, 0, -2 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { 1, 0, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { 0, 1, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0x01003006),
+                     reinterpret_cast<uintptr_t>(vertices) } },
+        { .words = { UINT32_C(0x05000204), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->huge_triangles == 0U);
+    CHECK(after->clipped_triangles >= 1U);
+    return true;
+}
+
+static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFE000000), UINT32_C(0x12340000) } },
+        { .words = { UINT32_C(0xFF100007), UINT32_C(0x12340000) } },
+        { .words = { UINT32_C(0xF7000000), UINT32_C(0xFFFFFFFF) } },
+        { .words = { UINT32_C(0xF6008008), 0U } },
+        { .words = { UINT32_C(0xFF100007), UINT32_C(0x56780000) } },
+        { .words = { UINT32_C(0xF6008008), 0U } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFD100000),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0x3C000000), UINT32_C(0x00080008) } },
+        { .words = { 0U, 0U } },
+        { .words = { UINT32_C(0x00200020), UINT32_C(0x00080008) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 3U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 6U);
+    CHECK(afterRuntime->depth_target_clears ==
+          beforeRuntime.depth_target_clears + 1U);
+    CHECK(afterRuntime->copy_rectangles ==
+          beforeRuntime.copy_rectangles + 1U);
+    CHECK(afterRuntime->commands_last_frame ==
+          sizeof(displayList) / sizeof(displayList[0]));
+    CHECK(afterRuntime->commands_peak_frame >=
+          afterRuntime->commands_last_frame);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(
+    PBGfxApi3DS *api) {
+    /* PaperBoat draws the Toad Town backdrop as COPY-cycle TEXRECT_WIDE
+     * strips from a CI8 + pal256. Many palette entries have a clear RGBA5551
+     * LSB. r8 enabled alpha test for every textured batch, which discarded
+     * those pixels and left the sky black while 3D/sprites still drew. */
+    static uint8_t texture[8U * 8U];
+    static uint8_t palette[256U * 2U];
+    std::memset(texture, 1, sizeof(texture));
+    for (size_t entry = 0U; entry < 256U; entry++) {
+        palette[entry * 2U] = 0x84U;
+        palette[entry * 2U + 1U] = 0x10U; /* RGB, alpha bit clear */
+    }
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD9FFFFFF), UINT32_C(0x00000601) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFD1000FF),
+                     reinterpret_cast<uintptr_t>(palette) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x073FC000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0x37000020), UINT32_C(0x00000020) } },
+        { .words = { 0U, 0U } },
+        { .words = { UINT32_C(0x00001000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterRuntime->copy_rectangles ==
+          beforeRuntime.copy_rectangles + 1U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(pb_gbi_command_span(0xE4U) == 3U);
+    CHECK(pb_gbi_command_span(0x37U) == 3U);
+    CHECK(pb_gbi_command_span(0xDFU) == 1U);
+    return true;
+}
+
+static bool testRuntimeSpriteCvgXAlphaPunchthrough(PBGfxApi3DS *api) {
+    /* PaperBoat OpaqueSpriteGfx is 1-cycle DECALRGBA with CVG_X_ALPHA and
+     * no G_AC_THRESHOLD. Transparent CI texels must still submit the quad
+     * (alpha test discards fragments, it must not reject the draw). COPY
+     * zero-alpha backdrops remain a separate opaque path. */
+    static uint8_t texture[8U * 8U];
+    static uint8_t palette[16U * 2U];
+    std::memset(texture, 0, sizeof(texture));
+    for (size_t entry = 0U; entry < 16U; entry++) {
+        palette[entry * 2U] = 0x84U;
+        palette[entry * 2U + 1U] = 0x10U; /* RGB, alpha bit clear */
+    }
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD9FFFFFF), UINT32_C(0x00000001) } },
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0x00001030) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xFD10000F),
+                     reinterpret_cast<uintptr_t>(palette) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x0703C000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterRuntime->copy_rectangles == beforeRuntime.copy_rectangles);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeLoadTileSubregion(PBGfxApi3DS *api) {
+    static uint8_t texture[16U * 16U * 2U] = {};
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD10000F),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100400), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF4010010), UINT32_C(0x0702C02C) } },
+        { .words = { UINT32_C(0xF5100400), 0U } },
+        { .words = { UINT32_C(0xF2010010), UINT32_C(0x0002C02C) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), UINT32_C(0x00800080) } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes + 256U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeSplitCi8Palette(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U];
+    static uint8_t paletteLow[128U * 2U];
+    static uint8_t paletteHigh[128U * 2U];
+    std::memset(texture, 200, sizeof(texture));
+    for (size_t entry = 0U; entry < 128U; entry++) {
+        paletteLow[entry * 2U] = 0xFFU;
+        paletteLow[entry * 2U + 1U] = 0xFFU;
+        paletteHigh[entry * 2U] = 0x07U;
+        paletteHigh[entry * 2U + 1U] = 0xC1U;
+    }
+    /* CI8 TLUTs may be loaded as two unrelated 128-entry buffers. The runtime
+     * must stage both halves in TMEM instead of reading 512 bytes from the
+     * first pointer when a texel selects index 128..255. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD10007F),
+                     reinterpret_cast<uintptr_t>(paletteLow) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x071FC000) } },
+        { .words = { UINT32_C(0xFD10007F),
+                     reinterpret_cast<uintptr_t>(paletteHigh) } },
+        { .words = { UINT32_C(0xF5100180), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x071FC000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes + 256U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeCi8Pal16Palette(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U];
+    static uint8_t palette[16U * 2U];
+    std::memset(texture, 0, sizeof(texture));
+    for (size_t entry = 0U; entry < 16U; entry++) {
+        palette[entry * 2U] = 0xF8U;
+        palette[entry * 2U + 1U] = 0x01U;
+    }
+    /* gDPLoadTLUT_pal16 writes 16 RGBA5551 colors at TMEM 256. CI8 sprites
+     * index that bank; they must decode without waiting for a 256-entry
+     * pal256 fill of the rest of TLUT. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD10000F),
+                     reinterpret_cast<uintptr_t>(palette) } },
+        { .words = { UINT32_C(0xF5100100), UINT32_C(0x07000000) } },
+        { .words = { UINT32_C(0xF0000000), UINT32_C(0x0703C000) } },
+        { .words = { UINT32_C(0xFD480007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5480000), 0U } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x0703F000) } },
+        { .words = { UINT32_C(0xF5480200), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes + 256U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    return true;
+}
+
+static bool testRuntimeOneCycleUsesPaperBoatCombiner(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* Cycle 0 is TEXEL0; cycle 1 is SHADE. PaperBoat/Fast selects cycle 0
+     * for one-cycle rendering, so this rectangle must upload a texture. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->semantic_combiner_batches ==
+          beforeRuntime.semantic_combiner_batches + 1U);
+    CHECK(afterRuntime->legacy_combiner_fallbacks ==
+          beforeRuntime.legacy_combiner_fallbacks);
+    return true;
+}
+
+static bool testRuntimeDepthFogUsesSemanticCombiner(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* The fog blender used to reject every G_FOG draw from the semantic
+     * compiler.  This is a normal textured one-cycle material plus the exact
+     * Fast3D depth-fog state that must now reach PICA's fog LUT. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD9000000), UINT32_C(0x00010000) } },
+        { .words = { UINT32_C(0xDB080000), UINT32_C(0x00800080) } },
+        { .words = { UINT32_C(0xF8000000), UINT32_C(0x406080FF) } },
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0xC0000000) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->semantic_combiner_batches ==
+          before.semantic_combiner_batches + 1U);
+    CHECK(after->semantic_fog_batches == before.semantic_fog_batches + 1U);
+    CHECK(after->legacy_combiner_fallbacks ==
+          before.legacy_combiner_fallbacks);
+    CHECK(after->legacy_fog_fallbacks == before.legacy_fog_fallbacks);
+
+    /* Blend-color fog uses blend RGB with the fog register's alpha as a
+     * constant factor.  It is semantic even without the G_FOG geometry bit. */
+    const PBRuntimeGfx constantFogDisplayList[] = {
+        { .words = { UINT32_C(0xD9000000), 0U } },
+        { .words = { UINT32_C(0xF8000000), UINT32_C(0x00000080) } },
+        { .words = { UINT32_C(0xF9000000), UINT32_C(0x204060FF) } },
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0x80000000) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats beforeConstant =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, constantFogDisplayList));
+    after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->semantic_combiner_batches ==
+          beforeConstant.semantic_combiner_batches + 1U);
+    CHECK(after->semantic_fog_batches ==
+          beforeConstant.semantic_fog_batches + 1U);
+    CHECK(after->legacy_combiner_fallbacks ==
+          beforeConstant.legacy_combiner_fallbacks);
+    CHECK(after->legacy_fog_fallbacks ==
+          beforeConstant.legacy_fog_fallbacks);
+    return true;
+}
+
+static bool testRuntimeKeyConvertUsesSemanticCombiner(PBGfxApi3DS *api) {
+    /* Cycle 0: (SHADE - CENTER) * SCALE + ENVIRONMENT.
+     * Cycle 1: (COMBINED - K4) * K5 + PRIMITIVE.
+     * This consumes all four key/convert inputs through the pinned Fast3D
+     * mapping and deliberately includes a negative signed-nine-bit K5. */
+    constexpr uint32_t combineWord0 =
+        UINT32_C(0xFC000000) | (UINT32_C(4) << 20U) |
+        (UINT32_C(6) << 15U) | (UINT32_C(7) << 12U) |
+        (UINT32_C(7) << 9U) | UINT32_C(15);
+    constexpr uint32_t combineWord1 =
+        (UINT32_C(6) << 28U) | (UINT32_C(7) << 24U) |
+        (UINT32_C(7) << 21U) | (UINT32_C(7) << 18U) |
+        (UINT32_C(5) << 15U) | (UINT32_C(7) << 12U) |
+        (UINT32_C(6) << 9U) | (UINT32_C(3) << 6U) |
+        (UINT32_C(7) << 3U) | UINT32_C(6);
+    constexpr uint32_t negativeK5 = UINT32_C(0x1E0); /* -32 in s9. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xEB000000), UINT32_C(0x00002080) } },
+        { .words = { UINT32_C(0xEA000000), UINT32_C(0x406080A0) } },
+        { .words = { UINT32_C(0xEC000000),
+                     (UINT32_C(92) << 9U) | negativeK5 } },
+        { .words = { UINT32_C(0xFA000000), UINT32_C(0x204060FF) } },
+        { .words = { UINT32_C(0xFB000000), UINT32_C(0x8090A0FF) } },
+        { .words = { UINT32_C(0xEF100000), 0U } },
+        { .words = { combineWord0, combineWord1 } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->unknown_commands == before.unknown_commands);
+    CHECK(after->semantic_combiner_batches ==
+          before.semantic_combiner_batches + 1U);
+    CHECK(after->semantic_two_cycle_batches ==
+          before.semantic_two_cycle_batches + 1U);
+    CHECK(after->semantic_key_convert_batches ==
+          before.semantic_key_convert_batches + 1U);
+    CHECK(after->legacy_combiner_fallbacks ==
+          before.legacy_combiner_fallbacks);
+    CHECK(after->legacy_key_convert_fallbacks ==
+          before.legacy_key_convert_fallbacks);
+    return true;
+}
+
+static bool testRuntimeLegacyUnsafeModulateSkipsTexture(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* Vertex-alpha fog forces the legacy path. This one-cycle formula is
+     * (TEXEL0 - ENVIRONMENT) * SHADE + ENVIRONMENT, which cannot be rebuilt
+     * by multiplying the CPU's white-substituted result by TEXEL0. */
+    constexpr uint32_t combineWord0 =
+        UINT32_C(0xFC000000) | (UINT32_C(1) << 20U) |
+        (UINT32_C(4) << 15U);
+    constexpr uint32_t combineWord1 =
+        (UINT32_C(5) << 28U) | (UINT32_C(5) << 15U);
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xEF000000), UINT32_C(0xC0000000) } },
+        { .words = { UINT32_C(0xFB000000), UINT32_C(0x804020FF) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { combineWord0, combineWord1 } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->semantic_combiner_batches ==
+          before.semantic_combiner_batches);
+    CHECK(after->legacy_combiner_fallbacks ==
+          before.legacy_combiner_fallbacks + 1U);
+    CHECK(after->legacy_fog_fallbacks ==
+          before.legacy_fog_fallbacks + 1U);
+    CHECK(after->legacy_unsafe_modulate_batches ==
+          before.legacy_unsafe_modulate_batches + 1U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live);
+    CHECK(afterBridge->texture_bytes == beforeBridge.texture_bytes);
+    return true;
+}
+
+static bool testRuntimeTwoCycleBindsBothTiles(PBGfxApi3DS *api) {
+    static uint8_t texture0[8U * 8U * 2U] = {};
+    static uint8_t texture1[8U * 8U * 2U] = {};
+    /* Cycle 0 replaces with TEXEL0. Cycle 1 multiplies COMBINED by
+     * TEXEL0, which Fast3D maps to physical texture unit 1 in that cycle.
+     * Render tiles 0 and 1 point at independent TMEM loads. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture0) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF3000000), 0U } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0001C01C) } },
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture1) } },
+        { .words = { UINT32_C(0xF5100020), UINT32_C(0x01000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x01000000) } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0101C01C) } },
+        { .words = { UINT32_C(0xEF100000), 0U } },
+        { .words = { UINT32_C(0xFCFFFE01), UINT32_C(0xFF04F3FF) } },
+        { .words = { UINT32_C(0xE4020020), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 2U);
+    CHECK(afterBridge->texture_bytes ==
+          beforeBridge.texture_bytes + 2U * 8U * 8U * 4U);
+    CHECK(afterBridge->rejected_commands == beforeBridge.rejected_commands);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->semantic_combiner_batches ==
+          beforeRuntime.semantic_combiner_batches + 1U);
+    CHECK(afterRuntime->semantic_two_cycle_batches ==
+          beforeRuntime.semantic_two_cycle_batches + 1U);
+    CHECK(afterRuntime->legacy_combiner_fallbacks ==
+          beforeRuntime.legacy_combiner_fallbacks);
+    return true;
+}
+
+static bool testRuntimeTwoCycleUsesBaseTileWithoutLod(PBGfxApi3DS *api) {
+    static uint8_t texture[8U * 8U * 2U] = {};
+    /* Pinned Fast3D reuses base tiles 2..7 for unit 1 when no LOD path is
+     * available. Both TEV texture units must therefore bind this one upload. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xFD100007),
+                     reinterpret_cast<uintptr_t>(texture) } },
+        { .words = { UINT32_C(0xF5100040), UINT32_C(0x02000000) } },
+        { .words = { UINT32_C(0xF3000000), UINT32_C(0x02000000) } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x0201C01C) } },
+        { .words = { UINT32_C(0xEF100000), 0U } },
+        { .words = { UINT32_C(0xFCFFFE01), UINT32_C(0xFF04F3FF) } },
+        { .words = { UINT32_C(0xE4020020), UINT32_C(0x02000000) } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x04000400) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(afterBridge->textures_live == beforeBridge.textures_live + 1U);
+    CHECK(afterBridge->texture_bytes ==
+          beforeBridge.texture_bytes + 8U * 8U * 4U);
+    CHECK(afterBridge->rejected_commands == beforeBridge.rejected_commands);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->semantic_combiner_batches ==
+          beforeRuntime.semantic_combiner_batches + 1U);
+    CHECK(afterRuntime->semantic_two_cycle_batches ==
+          beforeRuntime.semantic_two_cycle_batches + 1U);
+    CHECK(afterRuntime->legacy_combiner_fallbacks ==
+          beforeRuntime.legacy_combiner_fallbacks);
+    return true;
+}
+
+static bool testRuntimeTextureEvictionFrame(PBGfxApi3DS *api) {
+    constexpr size_t textureCount = PB_GFX_MAX_TEXTURES;
+    constexpr size_t commandsPerTexture = 8U;
+    static uint8_t textures[textureCount][8U * 8U * 2U] = {};
+    static PBRuntimeGfx displayList[2U +
+                                    textureCount * commandsPerTexture + 1U];
+    size_t command = 0U;
+    displayList[command++].words = { UINT32_C(0xEF200000), 0U };
+    displayList[command++].words = {
+        UINT32_C(0xFCFFFFFF), UINT32_C(0xFFFCF33C)
+    };
+    for (size_t texture = 0U; texture < textureCount; texture++) {
+        textures[texture][0] = static_cast<uint8_t>(texture);
+        displayList[command++].words = {
+            UINT32_C(0xFD100007),
+            reinterpret_cast<uintptr_t>(textures[texture])
+        };
+        displayList[command++].words = { UINT32_C(0xF5100000), 0U };
+        displayList[command++].words = { UINT32_C(0xF3000000), 0U };
+        displayList[command++].words = { UINT32_C(0xF5100000), 0U };
+        displayList[command++].words = {
+            UINT32_C(0xF2000000), UINT32_C(0x0001C01C)
+        };
+        displayList[command++].words = { UINT32_C(0xE4020020), 0U };
+        displayList[command++].words = { UINT32_C(0xE1000000), 0U };
+        displayList[command++].words = {
+            UINT32_C(0xF1000000), UINT32_C(0x04000400)
+        };
+    }
+    displayList[command++].words = { UINT32_C(0xDF000000), 0U };
+    CHECK(command == sizeof(displayList) / sizeof(displayList[0]));
+
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats beforeRuntime =
+        *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    const PBRuntimeGfxStats *afterRuntime =
+        pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(afterBridge->draw_calls ==
+          beforeBridge.draw_calls + textureCount);
+    CHECK(afterBridge->triangles ==
+          beforeBridge.triangles + textureCount * 2U);
+    CHECK(afterBridge->rejected_commands == beforeBridge.rejected_commands);
+    CHECK(afterRuntime->texture_fallbacks ==
+          beforeRuntime.texture_fallbacks);
+    CHECK(afterRuntime->texture_evictions >
+          beforeRuntime.texture_evictions);
+    return true;
 }
 
 static bool testExactInterface() {
@@ -111,11 +927,45 @@ static bool testExactInterface() {
     CHECK(!api.RenderTitleFlow(&flow));
     CHECK(!api.PrepareTitleFlow(nullptr));
 
+    CHECK(api.PrepareWorldBackground(firstFramePixels, 512, 256, 296, 200));
+    CHECK(stats->textures_live == 6);
+    CHECK(api.RenderWorldBackground(false));
+    CHECK(stats->frames_presented == 6);
+    CHECK(stats->draw_calls == 12);
+    CHECK(stats->triangles == 38);
+    CHECK(api.RenderWorldBackground(true));
+    CHECK(stats->frames_presented == 7);
+    CHECK(stats->draw_calls == 14);
+    CHECK(stats->triangles == 42);
+    CHECK(!api.PrepareWorldBackground(firstFramePixels, 256, 256, 296, 200));
+    flow.screen = PB_TITLE_FLOW_TITLE;
+    flow.selected_slot = 0;
+    CHECK(api.RenderTitleFlow(&flow));
+    CHECK(stats->frames_presented == 8);
+
+    PBWorldScene scene = makeWorldScene();
+    CHECK(api.PrepareWorldScene(&scene));
+    CHECK(stats->textures_live == 10U);
+    const uint64_t drawsBeforeWorld = stats->draw_calls;
+    const uint64_t trianglesBeforeWorld = stats->triangles;
+    CHECK(api.RenderWorldScene(&scene, false));
+    CHECK(stats->frames_presented == 9U);
+    CHECK(stats->draw_calls == drawsBeforeWorld + 4U);
+    CHECK(stats->triangles == trianglesBeforeWorld + 7U);
+    scene.message_timer = 1U;
+    scene.transition_state = PB_WORLD_TRANSITION_FADE_OUT;
+    scene.transition_frame = 15U;
+    CHECK(api.RenderWorldScene(&scene, true));
+    CHECK(stats->frames_presented == 10U);
+    CHECK(stats->draw_calls == drawsBeforeWorld + 9U);
+    CHECK(stats->triangles == trianglesBeforeWorld + 22U);
+    CHECK(!api.PrepareWorldScene(nullptr));
+
     api.SetActive(false);
     CHECK(!api.RenderDiagnostic());
     api.SetActive(true);
     CHECK(api.RenderDiagnostic());
-    CHECK(stats->frames_presented == 6);
+    CHECK(stats->frames_presented == 11);
 
     CHECK(api.CreateFramebuffer() == -1);
     CHECK(api.GetFramebufferTextureId(0) == nullptr);
@@ -142,12 +992,43 @@ static bool testCBoundary() {
     flow.screen = PB_TITLE_FLOW_FILE_SELECT;
     flow.selected_slot = 2;
     CHECK(pb_gfx_api_3ds_render_title_flow(api, &flow));
+    CHECK(pb_gfx_api_3ds_prepare_world_background(
+        api, firstFramePixels, 512, 256, 296, 200));
+    CHECK(pb_gfx_api_3ds_render_world_background(api, false));
+    CHECK(pb_gfx_api_3ds_render_world_background(api, true));
+    PBWorldScene scene = makeWorldScene();
+    CHECK(pb_gfx_api_3ds_prepare_world_scene(api, &scene));
+    CHECK(pb_gfx_api_3ds_render_world_scene(api, &scene, false));
     const PBGfxBridgeStats *stats = pb_gfx_api_3ds_stats(api);
     CHECK(stats != nullptr);
-    CHECK(stats->frames_presented == 4);
-    CHECK(stats->draw_calls == 9);
+    CHECK(stats->frames_presented == 7);
+    CHECK(stats->draw_calls == 16);
+    CHECK(testRuntimeDisplayList(api));
+    CHECK(testRuntimeMovememViewportUsesBottomLeftOrigin(api));
+    CHECK(testRuntimeInvertYMapsPositiveClipYToBottom(api));
+    CHECK(testRuntimeScissorConvertsN64Rect(api));
+    CHECK(testRuntimeMatrixPopUnderflow(api));
+    CHECK(testRuntimeNearPlaneTriangleDoesNotExplode(api));
+    CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
+    CHECK(testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(api));
+    CHECK(testRuntimeSpriteCvgXAlphaPunchthrough(api));
+    CHECK(testRuntimeLoadTileSubregion(api));
+    CHECK(testRuntimeSplitCi8Palette(api));
+    CHECK(testRuntimeCi8Pal16Palette(api));
+    CHECK(testRuntimeOneCycleUsesPaperBoatCombiner(api));
+    CHECK(testRuntimeDepthFogUsesSemanticCombiner(api));
+    CHECK(testRuntimeKeyConvertUsesSemanticCombiner(api));
+    CHECK(testRuntimeLegacyUnsafeModulateSkipsTexture(api));
+    CHECK(testRuntimeTwoCycleBindsBothTiles(api));
+    CHECK(testRuntimeTwoCycleUsesBaseTileWithoutLod(api));
+    CHECK(testRuntimeTextureEvictionFrame(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
+    CHECK(!pb_gfx_api_3ds_prepare_world_background(
+        nullptr, firstFramePixels, 512, 256, 296, 200));
+    CHECK(!pb_gfx_api_3ds_render_world_background(nullptr, false));
+    CHECK(!pb_gfx_api_3ds_prepare_world_scene(nullptr, &scene));
+    CHECK(!pb_gfx_api_3ds_render_world_scene(api, nullptr, false));
     pb_gfx_api_3ds_set_active(api, false);
     CHECK(!pb_gfx_api_3ds_render_diagnostic(api));
     pb_gfx_api_3ds_destroy(api);
@@ -162,11 +1043,67 @@ static bool testCBoundary() {
     return true;
 }
 
+static uint8_t testOtrSigCheck(const char *data) {
+    return data != nullptr && std::strncmp(data, "__OTR__", 7) == 0 ? 1U : 0U;
+}
+
+static void *testResourceGet(const char *name) {
+    static uint8_t resolved[16];
+    if (name != nullptr && std::strcmp(name, "__OTR__vtx") == 0) {
+        return resolved;
+    }
+    return nullptr;
+}
+
+static bool testGbiResolveMatchesPaperBoat() {
+    static const char otrPath[] = "__OTR__vtx";
+    PBGbiPacket nested[] = {
+        { .words = { UINT32_C(0x01001010),
+                     reinterpret_cast<uintptr_t>(otrPath) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    PBGbiPacket texrectPayload = {
+        .words = { UINT32_C(0x01001010),
+                   reinterpret_cast<uintptr_t>(otrPath) }
+    };
+    PBGbiPacket displayList[] = {
+        { .words = { UINT32_C(0xE4000000), 0U } },
+        texrectPayload,
+        { .words = { 0U, 0U } },
+        { .words = { UINT32_C(0xDE000000),
+                     reinterpret_cast<uintptr_t>(nested) } },
+        { .words = { UINT32_C(0x01001010), 1U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const uintptr_t payloadBefore = displayList[1].words.w1;
+    const uintptr_t oddBefore = displayList[4].words.w1;
+    pb_gbi_resolve_vtx_in_static_dl(displayList, testOtrSigCheck,
+                                    testResourceGet);
+    CHECK(displayList[1].words.w1 == payloadBefore);
+    CHECK(nested[0].words.w1 ==
+          reinterpret_cast<uintptr_t>(testResourceGet(otrPath)));
+    CHECK(displayList[4].words.w1 == oddBefore);
+    CHECK(pb_gbi_host_pointer_ok(reinterpret_cast<uintptr_t>(otrPath)));
+    CHECK(!pb_gbi_host_pointer_ok(0U));
+    CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0x80200000)));
+    CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0xA0000000)));
+    CHECK(!pb_gbi_host_pointer_ok(UINT32_C(0xFFFFFFF0)));
+    PBGbiPacket leftoverN64[] = {
+        { .words = { UINT32_C(0xDE000000), UINT32_C(0x80200000) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    pb_gbi_resolve_vtx_in_static_dl(leftoverN64, testOtrSigCheck,
+                                    testResourceGet);
+    CHECK(leftoverN64[0].words.w1 == UINT32_C(0x80200000));
+    return true;
+}
+
 int main() {
-    if (!testExactInterface() || !testCBoundary()) {
+    if (!testExactInterface() || !testCBoundary() ||
+        !testGbiResolveMatchesPaperBoat()) {
         return EXIT_FAILURE;
     }
-    std::printf("M12.1 exact GfxRenderingAPI contract: %u checks passed\n",
+    std::printf("M13 exact GfxRenderingAPI contract: %u checks passed\n",
                 checksRun);
     return EXIT_SUCCESS;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -50,6 +51,7 @@ bool pb_title_layout_compute(PBTitleLayout *layout, uint16_t target_width,
                              uint16_t target_height);
 bool pb_title_layout_rect_inside(const PBLayoutRect *inner,
                                  const PBLayoutRect *outer);
+bool pb_title_prompt_bake_tint(uint8_t *rgba, size_t rgba_size);
 
 #ifdef __cplusplus
 }
