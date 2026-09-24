@@ -86,7 +86,7 @@ static void draw_bottom_status(AppState *app) {
     }
 }
 
-static void shutdown(AppState *app) {
+static void app_shutdown(AppState *app) {
     pb_bootstrap_log(&app->bootstrap, "shutdown");
     if (app->apt_hooked) {
         aptUnhook(&app->apt_cookie);
@@ -137,7 +137,7 @@ int main(int argc, char **argv) {
         gspWaitForVBlank();
     }
 
-    shutdown(&app);
+    app_shutdown(&app);
     g_app = NULL;
     return 0;
 }
