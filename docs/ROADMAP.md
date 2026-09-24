@@ -114,7 +114,7 @@ Sub-gates:
 | M13-C textures | Decode, cache, UV, wrap, filter, lifetime |
 | M13-D CI/TLUT | Staged 512-byte TLUT, pal16/pal256 |
 | M13-E combiner | Semantic TEV + measured legacy fallback counters |
-| M13-F viewport/scissor/clip | Converted Y origin; **CPU N64 6-plane + W clip** |
+| M13-F viewport/scissor/clip | Canonical 320-in-400 + Fast3D invertY screen map; N64 frustum clip |
 | M13-G framebuffer/depth | Color/Z image tracking; no black depth-clear quad |
 | M13-H START menu | KSEG reject, HUD list spans, aux-cache size, skip badge tutorial |
 | M13-I performance | Lookups hashed; no aggressive opt until visual sign-off |

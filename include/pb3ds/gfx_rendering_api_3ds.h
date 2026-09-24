@@ -34,6 +34,17 @@ typedef struct {
     uint32_t huge_triangles;
     uint32_t culled_triangles;
     uint32_t invalid_triangles;
+    uint32_t matrix_stack_overflows;
+    uint32_t matrix_stack_underflows;
+    uint32_t nan_vertices;
+    uint32_t draws_last_frame;
+    int32_t screen_min_x;
+    int32_t screen_min_y;
+    int32_t screen_max_x;
+    int32_t screen_max_y;
+    uint32_t last_geometry_mode;
+    uint32_t last_othermode_l;
+    uint32_t last_matrix_hash;
     uint8_t last_unknown_opcode;
     /* Diagnostics for the "sprites/geometry cut off" class of report: the
      * most recently established CPU-side game viewport (used to convert

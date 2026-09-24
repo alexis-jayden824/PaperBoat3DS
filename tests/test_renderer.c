@@ -1,5 +1,6 @@
 #include "pb3ds/renderer.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -410,11 +411,114 @@ static bool test_ortho_depth_slack(void) {
     return true;
 }
 
+static bool test_canonical_coordinates(void) {
+    PBN64ScreenViewport viewport;
+    CHECK(pb_renderer_default_game_viewport(&viewport));
+    CHECK(nearly_equal(viewport.x, 40.0f));
+    CHECK(nearly_equal(viewport.y, 0.0f));
+    CHECK(nearly_equal(viewport.width, 320.0f));
+    CHECK(nearly_equal(viewport.height, 240.0f));
+    CHECK(PB_RENDER_GAME_X_INSET == 40U);
+    CHECK(PB_RENDER_INVERT_CLIP_Y == 1);
+
+    CHECK(pb_renderer_viewport_from_n64(640, 480, 640, 480, &viewport));
+    CHECK(nearly_equal(viewport.x, 40.0f));
+    CHECK(nearly_equal(viewport.width, 320.0f));
+    CHECK(nearly_equal(viewport.height, 240.0f));
+
+    CHECK(pb_renderer_viewport_from_n64(640, 200, 640, 200, &viewport));
+    CHECK(nearly_equal(viewport.x, 40.0f));
+    CHECK(nearly_equal(viewport.y, 140.0f));
+    CHECK(nearly_equal(viewport.width, 320.0f));
+    CHECK(nearly_equal(viewport.height, 100.0f));
+
+    float screen_x = 0.0f;
+    float screen_y = 0.0f;
+    CHECK(pb_renderer_default_game_viewport(&viewport));
+    pb_renderer_clip_to_screen_xy(0.0f, 1.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 200.0f));
+    CHECK(nearly_equal(screen_y, 0.0f));
+    pb_renderer_clip_to_screen_xy(0.0f, -1.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 200.0f));
+    CHECK(nearly_equal(screen_y, 240.0f));
+    pb_renderer_clip_to_screen_xy(-1.0f, 0.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 40.0f));
+    pb_renderer_clip_to_screen_xy(1.0f, 0.0f, 1.0f, &viewport, &screen_x,
+                                  &screen_y);
+    CHECK(nearly_equal(screen_x, 360.0f));
+
+    float left = 0.0f;
+    float bottom = 0.0f;
+    float right = 0.0f;
+    float top = 0.0f;
+    pb_renderer_n64_rect_to_logical(0.0f, 0.0f, 320.0f, 240.0f, &left, &bottom,
+                                    &right, &top);
+    CHECK(nearly_equal(left, 40.0f));
+    CHECK(nearly_equal(right, 360.0f));
+    CHECK(nearly_equal(bottom, 0.0f));
+    CHECK(nearly_equal(top, 240.0f));
+
+    PBViewport scissor;
+    CHECK(pb_renderer_scissor_from_n64(0, 0, 320, 240, &scissor));
+    CHECK(scissor.x == 40);
+    CHECK(scissor.y == 0);
+    CHECK(scissor.width == 320);
+    CHECK(scissor.height == 240);
+    CHECK(pb_renderer_scissor_from_n64(10, 20, 100, 80, &scissor));
+    CHECK(scissor.x == 50);
+    CHECK(scissor.y == 160);
+    CHECK(scissor.width == 90);
+    CHECK(scissor.height == 60);
+    CHECK(!pb_renderer_scissor_from_n64(10, 20, 10, 80, &scissor));
+
+    CHECK(pb_renderer_n64_wrap(0U) == PB_WRAP_REPEAT);
+    CHECK(pb_renderer_n64_wrap(1U) == PB_WRAP_MIRRORED_REPEAT);
+    CHECK(pb_renderer_n64_wrap(2U) == PB_WRAP_CLAMP_TO_EDGE);
+    CHECK(pb_renderer_n64_wrap(3U) == PB_WRAP_CLAMP_TO_EDGE);
+    return true;
+}
+
+static bool test_matrix_pipeline(void) {
+    float identity[4][4];
+    float translate[4][4];
+    float combined[4][4];
+    float object[4] = { 2.0f, 3.0f, 4.0f, 1.0f };
+    float clip[4];
+
+    pb_renderer_mtx_identity(identity);
+    CHECK(pb_renderer_mtx_finite(identity));
+    pb_renderer_mtx_transform(identity, object, clip);
+    CHECK(nearly_equal(clip[0], 2.0f));
+    CHECK(nearly_equal(clip[1], 3.0f));
+    CHECK(nearly_equal(clip[2], 4.0f));
+    CHECK(nearly_equal(clip[3], 1.0f));
+
+    pb_renderer_mtx_identity(translate);
+    translate[3][0] = 10.0f;
+    pb_renderer_mtx_multiply(translate, identity, combined);
+    pb_renderer_mtx_transform(combined, object, clip);
+    CHECK(nearly_equal(clip[0], 12.0f));
+    CHECK(nearly_equal(clip[1], 3.0f));
+    CHECK(nearly_equal(clip[2], 4.0f));
+    CHECK(nearly_equal(clip[3], 1.0f));
+
+    identity[0][0] = NAN;
+    CHECK(!pb_renderer_mtx_finite(identity));
+    CHECK(!pb_renderer_float_ok(1.0e20f));
+    CHECK(!pb_renderer_clip_coord_ok(0.0f, 0.0f, 0.0f, NAN));
+    CHECK(pb_renderer_clip_coord_ok(0.0f, 0.0f, 0.0f, 1.0f));
+    return true;
+}
+
 int main(void) {
     if (!test_texture_formats() || !test_texture_swizzle() ||
         !test_viewport_rotation() || !test_textured_quad_orientation() ||
         !test_fast3d_fog_lut() || !test_pipeline_and_cache() ||
-        !test_buffer_contract_and_status() || !test_ortho_depth_slack()) {
+        !test_buffer_contract_and_status() || !test_ortho_depth_slack() ||
+        !test_canonical_coordinates() || !test_matrix_pipeline()) {
         return EXIT_FAILURE;
     }
 

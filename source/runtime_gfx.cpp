@@ -135,7 +135,6 @@ constexpr size_t kRuntimeTextureLimit = PB_GFX_MAX_TEXTURES - 12U;
  * lists so a device reports a failed frame instead of appearing frozen. */
 constexpr size_t kCommandBudget = 250000U;
 constexpr unsigned int kCallDepthLimit = 48U;
-constexpr float kScreenInset = 40.0f;
 
 constexpr int16_t SignExtendNine(uint32_t value) {
     value &= 0x1FFU;
@@ -335,6 +334,19 @@ class RuntimeDisplayListRenderer {
         stats.commands_peak_frame = std::max(
             stats.commands_peak_frame,
             static_cast<uint32_t>(commandCount));
+        stats.last_geometry_mode = geometryMode;
+        stats.last_othermode_l = otherModeLow;
+        if (screenBoundsValid) {
+            stats.screen_min_x = static_cast<int32_t>(screenMinX);
+            stats.screen_min_y = static_cast<int32_t>(screenMinY);
+            stats.screen_max_x = static_cast<int32_t>(screenMaxX);
+            stats.screen_max_y = static_cast<int32_t>(screenMaxY);
+        } else {
+            stats.screen_min_x = 0;
+            stats.screen_min_y = 0;
+            stats.screen_max_x = 0;
+            stats.screen_max_y = 0;
+        }
         if (interpreted && flushed) {
             stats.frames_rendered++;
         }
@@ -525,14 +537,9 @@ class RuntimeDisplayListRenderer {
         textureScaleS = UINT16_MAX;
         textureScaleT = UINT16_MAX;
         firstTile = 0U;
-        viewportX = kScreenInset;
-        viewportY = 0.0f;
-        viewportWidth = 320.0f;
-        viewportHeight = 240.0f;
-        stats.game_viewport_x = static_cast<int32_t>(viewportX);
-        stats.game_viewport_y = static_cast<int32_t>(viewportY);
-        stats.game_viewport_w = static_cast<uint32_t>(viewportWidth);
-        stats.game_viewport_h = static_cast<uint32_t>(viewportHeight);
+        PBN64ScreenViewport viewport = {};
+        pb_renderer_default_game_viewport(&viewport);
+        ApplyGameViewport(viewport);
         primColor = {};
         envColor = {};
         primLodFraction = 0U;
@@ -556,6 +563,15 @@ class RuntimeDisplayListRenderer {
         stats.huge_triangles = 0U;
         stats.culled_triangles = 0U;
         stats.invalid_triangles = 0U;
+        stats.matrix_stack_overflows = 0U;
+        stats.matrix_stack_underflows = 0U;
+        stats.nan_vertices = 0U;
+        stats.draws_last_frame = 0U;
+        screenMinX = 0.0f;
+        screenMinY = 0.0f;
+        screenMaxX = 0.0f;
+        screenMaxY = 0.0f;
+        screenBoundsValid = false;
         batch.clear();
         batchTriangles = 0U;
         batchTextured = false;
@@ -612,6 +628,52 @@ class RuntimeDisplayListRenderer {
 
     void RebuildCombined() {
         combined = Multiply(modelView[modelViewTop], projection);
+        if (!MatrixFinite(combined) || !MatrixFinite(projection) ||
+            !MatrixFinite(modelView[modelViewTop])) {
+            stats.nan_vertices++;
+        }
+        stats.last_matrix_hash = pb_renderer_mtx_hash(combined.value);
+    }
+
+    bool MatrixFinite(const Matrix &matrix) const {
+        return pb_renderer_mtx_finite(matrix.value);
+    }
+
+    void ApplyGameViewport(const PBN64ScreenViewport &viewport) {
+        viewportX = viewport.x;
+        viewportY = viewport.y;
+        viewportWidth = viewport.width;
+        viewportHeight = viewport.height;
+        stats.game_viewport_x = static_cast<int32_t>(viewportX);
+        stats.game_viewport_y = static_cast<int32_t>(viewportY);
+        stats.game_viewport_w = static_cast<uint32_t>(viewportWidth);
+        stats.game_viewport_h = static_cast<uint32_t>(viewportHeight);
+    }
+
+    void ApplyN64Viewport(const N64Viewport *viewport) {
+        PBN64ScreenViewport converted = {};
+        if (viewport == nullptr ||
+            !pb_renderer_viewport_from_n64(viewport->scale[0],
+                                           viewport->scale[1],
+                                           viewport->translate[0],
+                                           viewport->translate[1],
+                                           &converted)) {
+            return;
+        }
+        ApplyGameViewport(converted);
+    }
+
+    void MapClipToScreen(LoadedVertex &output) const {
+        const PBN64ScreenViewport viewport = {
+            viewportX, viewportY, viewportWidth, viewportHeight,
+        };
+        pb_renderer_clip_to_screen_xy(output.clipX, output.clipY, output.clipW,
+                                      &viewport, &output.screenX,
+                                      &output.screenY);
+        const float ndcZ =
+            std::fabs(output.clipW) > 0.0001f ? output.clipZ / output.clipW
+                                              : 0.0f;
+        output.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
     }
 
     void ApplyMatrix(uint8_t parameters, const int32_t *address) {
@@ -620,15 +682,23 @@ class RuntimeDisplayListRenderer {
             return;
         }
         const Matrix decoded = DecodeMatrix(address);
+        if (!MatrixFinite(decoded)) {
+            stats.nan_vertices++;
+            return;
+        }
         const bool projectionMatrix = (parameters & 0x04U) != 0U;
         const bool load = (parameters & 0x02U) != 0U;
         const bool push = (parameters & 0x01U) != 0U;
         if (projectionMatrix) {
             projection = load ? decoded : Multiply(decoded, projection);
         } else {
-            if (push && modelViewTop + 1U < modelView.size()) {
-                modelView[modelViewTop + 1U] = modelView[modelViewTop];
-                modelViewTop++;
+            if (push) {
+                if (modelViewTop + 1U < modelView.size()) {
+                    modelView[modelViewTop + 1U] = modelView[modelViewTop];
+                    modelViewTop++;
+                } else {
+                    stats.matrix_stack_overflows++;
+                }
             }
             modelView[modelViewTop] =
                 load ? decoded : Multiply(decoded, modelView[modelViewTop]);
@@ -706,6 +776,11 @@ class RuntimeDisplayListRenderer {
             LoadedVertex &output = vertices[destination + index];
             output = {};
             output.objectZ = object[2];
+            if (!pb_renderer_clip_coord_ok(clip[0], clip[1], clip[2],
+                                           clip[3])) {
+                stats.nan_vertices++;
+                continue;
+            }
             output.clipX = clip[0];
             output.clipY = clip[1];
             output.clipZ = clip[2];
@@ -716,20 +791,9 @@ class RuntimeDisplayListRenderer {
              * cross the eye/near plane.  XY is the viewport affine form
              * (already multiplied by W).  Z stays as N64 clip Z so AppendVertex
              * can map it into PICA's [-w, 0] window without a CPU 1/W.
+             * Screen Y uses Fast3D invertY: N64 +clipY is framebuffer-down.
              */
-            if (!std::isfinite(clip[0]) || !std::isfinite(clip[1]) ||
-                !std::isfinite(clip[2]) || !std::isfinite(clip[3])) {
-                continue;
-            }
-            const float halfWidth = viewportWidth * 0.5f;
-            const float halfHeight = viewportHeight * 0.5f;
-            const float centerX = viewportX + halfWidth;
-            const float centerY = viewportY + halfHeight;
-            output.screenX = clip[0] * halfWidth + centerX * clip[3];
-            output.screenY = clip[1] * halfHeight + centerY * clip[3];
-            const float ndcZ =
-                std::fabs(clip[3]) > 0.0001f ? clip[2] / clip[3] : 0.0f;
-            output.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
+            MapClipToScreen(output);
             output.textureS = static_cast<float>(
                 (static_cast<int32_t>(input.texture[0]) * textureScaleS) >>
                 16);
@@ -1682,7 +1746,22 @@ class RuntimeDisplayListRenderer {
     bool Flush() {
         if (batchTriangles == 0U) return true;
         if (batch.empty()) return false;
+#if PB3DS_DEBUG_TRACE
+        if (stats.draws_last_frame < PB3DS_DEBUG_LOG_LIMIT) {
+#ifndef __3DS__
+            std::fprintf(stderr,
+                         "pb3ds draw %u tris=%zu vp=%.1f,%.1f,%.1f,%.1f "
+                         "sc=%d,%d,%u,%u mtx=%08x geom=%08x rm=%08x\n",
+                         stats.draws_last_frame,
+                         batchTriangles, viewportX, viewportY, viewportWidth,
+                         viewportHeight, stats.scissor_x, stats.scissor_y,
+                         stats.scissor_w, stats.scissor_h,
+                         stats.last_matrix_hash, geometryMode, otherModeLow);
+#endif
+        }
+#endif
         api->DrawTriangles(batch.data(), batch.size(), batchTriangles);
+        stats.draws_last_frame++;
         batch.clear();
         batchTriangles = 0U;
         return true;
@@ -1756,16 +1835,7 @@ class RuntimeDisplayListRenderer {
         out.color.alpha = static_cast<uint8_t>(
             static_cast<float>(a.color.alpha) * s +
             static_cast<float>(b.color.alpha) * t);
-        const float halfWidth = viewportWidth * 0.5f;
-        const float halfHeight = viewportHeight * 0.5f;
-        const float centerX = viewportX + halfWidth;
-        const float centerY = viewportY + halfHeight;
-        out.screenX = out.clipX * halfWidth + centerX * out.clipW;
-        out.screenY = out.clipY * halfHeight + centerY * out.clipW;
-        const float ndcZ = std::fabs(out.clipW) > 0.0001f
-                               ? out.clipZ / out.clipW
-                               : 0.0f;
-        out.depth = 1.0f - (ndcZ * 0.5f + 0.5f);
+        MapClipToScreen(out);
         out.valid = std::isfinite(out.screenX) && std::isfinite(out.screenY) &&
                     std::isfinite(out.clipW);
         return out;
@@ -1843,6 +1913,18 @@ class RuntimeDisplayListRenderer {
             (void)b;
             (void)c;
 #endif
+        }
+        if (!screenBoundsValid) {
+            screenMinX = minX;
+            screenMinY = minY;
+            screenMaxX = maxX;
+            screenMaxY = maxY;
+            screenBoundsValid = true;
+        } else {
+            screenMinX = std::min(screenMinX, minX);
+            screenMinY = std::min(screenMinY, minY);
+            screenMaxX = std::max(screenMaxX, maxX);
+            screenMaxY = std::max(screenMaxY, maxY);
         }
     }
 
@@ -1933,10 +2015,13 @@ class RuntimeDisplayListRenderer {
             if (source.framebufferSentinel) return true;
         }
         if (!Flush()) return false;
-        const float screenLeft = kScreenInset + left;
-        const float screenRight = kScreenInset + right;
-        const float screenBottom = PB_RENDER_TOP_HEIGHT - bottom;
-        const float screenTop = PB_RENDER_TOP_HEIGHT - top;
+        float screenLeft = 0.0f;
+        float screenBottom = 0.0f;
+        float screenRight = 0.0f;
+        float screenTop = 0.0f;
+        pb_renderer_n64_rect_to_logical(left, top, right, bottom, &screenLeft,
+                                        &screenBottom, &screenRight,
+                                        &screenTop);
         const float depth = primDepth;
         LoadedVertex rectangle[6] = {};
         if (flipTexture) {
@@ -2301,7 +2386,13 @@ class RuntimeDisplayListRenderer {
                 case G_POPMTX: {
                     Flush();
                     uint32_t count = word1 / 64U;
-                    while (count-- != 0U && modelViewTop != 0U) modelViewTop--;
+                    while (count-- != 0U) {
+                        if (modelViewTop == 0U) {
+                            stats.matrix_stack_underflows++;
+                            break;
+                        }
+                        modelViewTop--;
+                    }
                     RebuildCombined();
                     break;
                 }
@@ -2341,42 +2432,8 @@ class RuntimeDisplayListRenderer {
                         static_cast<uint8_t>(word0 >> 8U) * 8U;
                     const void *data = Resolve(command.words.w1);
                     if (type == G_MV_VIEWPORT && data != nullptr) {
-                        const N64Viewport *viewport =
-                            static_cast<const N64Viewport *>(data);
-                        viewportWidth =
-                            2.0f * viewport->scale[0] / 4.0f;
-                        viewportHeight =
-                            2.0f * viewport->scale[1] / 4.0f;
-                        viewportX = kScreenInset +
-                            viewport->translate[0] / 4.0f -
-                            viewportWidth * 0.5f;
-                        /*
-                         * viewport->translate[1] carries the Fast3D camera's
-                         * vtrans[1], i.e. 4 * (viewportStartY + viewportH/2)
-                         * in the RDP/framebuffer's top-left-origin
-                         * convention (Y=0 at the screen's top edge). Every
-                         * other vertical mapping in this interpreter --
-                         * EmitRectangle's screenTop/screenBottom and
-                         * G_SETSCISSOR's scissor_y -- explicitly flips via
-                         * "PB_RENDER_TOP_HEIGHT - y" to reach this engine's
-                         * bottom-left-origin screen space (Y=240 at the top,
-                         * matching the Mtx_OrthoTilt(0,400,0,240,...,true)
-                         * projection set up in pb_renderer_3ds_create).
-                         * Full-screen viewports hide the mismatch because
-                         * both conventions yield zero; asymmetric partial-
-                         * height viewports otherwise land in the wrong half
-                         * of the screen and clip geometry or sprites. */
-                        viewportY = static_cast<float>(PB_RENDER_TOP_HEIGHT) -
-                            viewport->translate[1] / 4.0f -
-                            viewportHeight * 0.5f;
-                        stats.game_viewport_x =
-                            static_cast<int32_t>(viewportX);
-                        stats.game_viewport_y =
-                            static_cast<int32_t>(viewportY);
-                        stats.game_viewport_w =
-                            static_cast<uint32_t>(viewportWidth);
-                        stats.game_viewport_h =
-                            static_cast<uint32_t>(viewportHeight);
+                        ApplyN64Viewport(
+                            static_cast<const N64Viewport *>(data));
                     } else if (type == G_MV_LIGHT && data != nullptr) {
                         const int light = static_cast<int>(offset) / 24 - 2;
                         if (light >= 0 &&
@@ -2397,36 +2454,8 @@ class RuntimeDisplayListRenderer {
                     const void *data = ResourceGetDataByCrc(hash);
                     if (data == nullptr) stats.missing_resources++;
                     if (type == G_MV_VIEWPORT && data != nullptr) {
-                        /*
-                         * Hash-backed display lists use the same N64 Vp
-                         * resource as direct G_MOVEMEM.  Ignoring it leaves
-                         * the previous viewport active, so subsequent passes
-                         * are projected into stale rectangles and appear as
-                         * duplicated/striped fragments.
-                         */
-                        const N64Viewport *viewport =
-                            static_cast<const N64Viewport *>(data);
-                        viewportWidth =
-                            2.0f * viewport->scale[0] / 4.0f;
-                        viewportHeight =
-                            2.0f * viewport->scale[1] / 4.0f;
-                        viewportX = kScreenInset +
-                            viewport->translate[0] / 4.0f -
-                            viewportWidth * 0.5f;
-                        /* Hash-backed viewport resources use the same
-                         * top-left-origin N64 encoding as direct G_MOVEMEM;
-                         * convert it to the renderer's bottom-left space. */
-                        viewportY = static_cast<float>(PB_RENDER_TOP_HEIGHT) -
-                            viewport->translate[1] / 4.0f -
-                            viewportHeight * 0.5f;
-                        stats.game_viewport_x =
-                            static_cast<int32_t>(viewportX);
-                        stats.game_viewport_y =
-                            static_cast<int32_t>(viewportY);
-                        stats.game_viewport_w =
-                            static_cast<uint32_t>(viewportWidth);
-                        stats.game_viewport_h =
-                            static_cast<uint32_t>(viewportHeight);
+                        ApplyN64Viewport(
+                            static_cast<const N64Viewport *>(data));
                     } else if (type == G_MV_LIGHT && data != nullptr) {
                         const int light = static_cast<int>(offset) / 24 - 2;
                         if (light >= 0 &&
@@ -2701,16 +2730,17 @@ class RuntimeDisplayListRenderer {
                     const int right =
                         static_cast<int>((word1 >> 12U) & 0xFFFU) / 4;
                     const int bottom = static_cast<int>(word1 & 0xFFFU) / 4;
-                    stats.scissor_x = static_cast<int>(kScreenInset) + left;
-                    stats.scissor_y =
-                        static_cast<int>(PB_RENDER_TOP_HEIGHT) - bottom;
-                    stats.scissor_w =
-                        static_cast<uint32_t>(std::max(0, right - left));
-                    stats.scissor_h =
-                        static_cast<uint32_t>(std::max(0, bottom - top));
-                    api->SetScissor(stats.scissor_x, stats.scissor_y,
-                                    static_cast<int>(stats.scissor_w),
-                                    static_cast<int>(stats.scissor_h));
+                    PBViewport scissor = {};
+                    if (pb_renderer_scissor_from_n64(left, top, right, bottom,
+                                                     &scissor)) {
+                        stats.scissor_x = scissor.x;
+                        stats.scissor_y = scissor.y;
+                        stats.scissor_w = scissor.width;
+                        stats.scissor_h = scissor.height;
+                        api->SetScissor(stats.scissor_x, stats.scissor_y,
+                                        static_cast<int>(stats.scissor_w),
+                                        static_cast<int>(stats.scissor_h));
+                    }
                     break;
                 }
                 case G_SETPRIMDEPTH:
@@ -3008,10 +3038,15 @@ class RuntimeDisplayListRenderer {
     uint16_t textureScaleS = UINT16_MAX;
     uint16_t textureScaleT = UINT16_MAX;
     uint8_t firstTile = 0U;
-    float viewportX = kScreenInset;
+    float viewportX = static_cast<float>(PB_RENDER_GAME_X_INSET);
     float viewportY = 0.0f;
-    float viewportWidth = 320.0f;
-    float viewportHeight = 240.0f;
+    float viewportWidth = static_cast<float>(PB_RENDER_GAME_WIDTH);
+    float viewportHeight = static_cast<float>(PB_RENDER_GAME_HEIGHT);
+    float screenMinX = 0.0f;
+    float screenMinY = 0.0f;
+    float screenMaxX = 0.0f;
+    float screenMaxY = 0.0f;
+    bool screenBoundsValid = false;
     Color primColor = {};
     Color envColor = {};
     uint8_t primLodFraction = 0U;

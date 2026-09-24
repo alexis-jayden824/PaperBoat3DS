@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -12,6 +13,23 @@ extern "C" {
 #define PB_RENDER_TOP_HEIGHT 240U
 #define PB_RENDER_TARGET_WIDTH 240U
 #define PB_RENDER_TARGET_HEIGHT 400U
+/*
+ * Paper Mario / Fast3D game canvas is 320x240. The 3DS top LCD is 400x240.
+ * Fast3D's AdjXForAspectRatio on a 400-wide window is (4/3)/(5/3) = 0.8, i.e.
+ * a 320-pixel image with 40-pixel pillars. Do not stretch 320 onto 400.
+ */
+#define PB_RENDER_GAME_WIDTH 320U
+#define PB_RENDER_GAME_HEIGHT 240U
+#define PB_RENDER_GAME_X_INSET                                           \
+    ((PB_RENDER_TOP_WIDTH - PB_RENDER_GAME_WIDTH) / 2U)
+/*
+ * Fast3D invertY: N64 clip +Y is toward the bottom of the 320x240 framebuffer
+ * (RDP Y grows down). Logical 3DS coordinates are bottom-left (Y grows up).
+ * Clip-to-screen must negate clip Y. TEXRECT/scissor still convert N64
+ * top-origin rectangles separately.
+ */
+#define PB_RENDER_INVERT_CLIP_Y 1
+#define PB_RENDER_COORD_LIMIT 1.0e10f
 #define PB_RENDER_TEXTURE_MIN_DIMENSION 8U
 #define PB_RENDER_TEXTURE_MAX_DIMENSION 1024U
 #define PB_RENDER_FOG_LUT_VALUES 256U
@@ -214,6 +232,161 @@ static inline bool pb_renderer_clip_keep_face(float cross, int8_t keep_sign) {
     return keep_sign > 0 ? cross > 0.0f : cross < 0.0f;
 }
 
+static inline bool pb_renderer_float_ok(float value) {
+    return isfinite(value) != 0 && fabsf(value) < PB_RENDER_COORD_LIMIT;
+}
+
+static inline bool pb_renderer_clip_coord_ok(float clip_x, float clip_y,
+                                             float clip_z, float clip_w) {
+    return pb_renderer_float_ok(clip_x) && pb_renderer_float_ok(clip_y) &&
+           pb_renderer_float_ok(clip_z) && pb_renderer_float_ok(clip_w);
+}
+
+typedef struct {
+    float x;
+    float y;
+    float width;
+    float height;
+} PBN64ScreenViewport;
+
+static inline float pb_renderer_n64_fixed4(int16_t value) {
+    return (float)value / 4.0f;
+}
+
+/*
+ * N64 Vp_t scale/translate are s15.2. vtrans is the viewport center in the
+ * 320x240 top-left framebuffer. Output is the same rectangle in logical
+ * 400x240 bottom-left coordinates, with the 40 px 4:3 inset applied to X.
+ */
+static inline bool pb_renderer_viewport_from_n64(int16_t scale_x,
+                                                 int16_t scale_y,
+                                                 int16_t trans_x,
+                                                 int16_t trans_y,
+                                                 PBN64ScreenViewport *out) {
+    float n64_x;
+    float n64_y_top;
+
+    if (out == NULL) {
+        return false;
+    }
+    out->width = 2.0f * pb_renderer_n64_fixed4(scale_x);
+    out->height = 2.0f * pb_renderer_n64_fixed4(scale_y);
+    n64_x = pb_renderer_n64_fixed4(trans_x) - out->width * 0.5f;
+    n64_y_top = pb_renderer_n64_fixed4(trans_y) - out->height * 0.5f;
+    out->x = (float)PB_RENDER_GAME_X_INSET + n64_x;
+    out->y = (float)PB_RENDER_TOP_HEIGHT - n64_y_top - out->height;
+    return out->width > 0.0f && out->height > 0.0f;
+}
+
+static inline bool pb_renderer_default_game_viewport(PBN64ScreenViewport *out) {
+    return pb_renderer_viewport_from_n64(640, 480, 640, 480, out);
+}
+
+static inline void pb_renderer_clip_to_screen_xy(float clip_x, float clip_y,
+                                                 float clip_w,
+                                                 const PBN64ScreenViewport *viewport,
+                                                 float *screen_x,
+                                                 float *screen_y) {
+    const float half_width = viewport->width * 0.5f;
+    const float half_height = viewport->height * 0.5f;
+    const float center_x = viewport->x + half_width;
+    const float center_y = viewport->y + half_height;
+
+    *screen_x = clip_x * half_width + center_x * clip_w;
+#if PB_RENDER_INVERT_CLIP_Y
+    *screen_y = -clip_y * half_height + center_y * clip_w;
+#else
+    *screen_y = clip_y * half_height + center_y * clip_w;
+#endif
+}
+
+static inline void pb_renderer_n64_rect_to_logical(float left, float top,
+                                                   float right, float bottom,
+                                                   float *screen_left,
+                                                   float *screen_bottom,
+                                                   float *screen_right,
+                                                   float *screen_top) {
+    *screen_left = (float)PB_RENDER_GAME_X_INSET + left;
+    *screen_right = (float)PB_RENDER_GAME_X_INSET + right;
+    *screen_bottom = (float)PB_RENDER_TOP_HEIGHT - bottom;
+    *screen_top = (float)PB_RENDER_TOP_HEIGHT - top;
+}
+
+static inline void pb_renderer_mtx_identity(float out[4][4]) {
+    unsigned int row;
+    unsigned int column;
+
+    for (row = 0U; row < 4U; row++) {
+        for (column = 0U; column < 4U; column++) {
+            out[row][column] = row == column ? 1.0f : 0.0f;
+        }
+    }
+}
+
+static inline void pb_renderer_mtx_multiply(const float left[4][4],
+                                            const float right[4][4],
+                                            float out[4][4]) {
+    unsigned int row;
+    unsigned int column;
+    unsigned int inner;
+
+    for (row = 0U; row < 4U; row++) {
+        for (column = 0U; column < 4U; column++) {
+            float sum = 0.0f;
+            for (inner = 0U; inner < 4U; inner++) {
+                sum += left[row][inner] * right[inner][column];
+            }
+            out[row][column] = sum;
+        }
+    }
+}
+
+static inline void pb_renderer_mtx_transform(const float matrix[4][4],
+                                             const float in[4], float out[4]) {
+    unsigned int column;
+    unsigned int row;
+
+    for (column = 0U; column < 4U; column++) {
+        out[column] = 0.0f;
+        for (row = 0U; row < 4U; row++) {
+            out[column] += in[row] * matrix[row][column];
+        }
+    }
+}
+
+static inline bool pb_renderer_mtx_finite(const float matrix[4][4]) {
+    unsigned int row;
+    unsigned int column;
+
+    for (row = 0U; row < 4U; row++) {
+        for (column = 0U; column < 4U; column++) {
+            if (!pb_renderer_float_ok(matrix[row][column])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static inline uint32_t pb_renderer_mtx_hash(const float matrix[4][4]) {
+    uint32_t hash = 2166136261U;
+    unsigned int row;
+    unsigned int column;
+
+    for (row = 0U; row < 4U; row++) {
+        for (column = 0U; column < 4U; column++) {
+            union {
+                float value;
+                uint32_t bits;
+            } conv;
+            conv.value = matrix[row][column];
+            hash ^= conv.bits;
+            hash *= 16777619U;
+        }
+    }
+    return hash;
+}
+
 typedef enum {
     PB_TEXTURE_RGBA8 = 0x0,
     PB_TEXTURE_RGB8 = 0x1,
@@ -305,6 +478,56 @@ typedef struct {
     uint16_t width;
     uint16_t height;
 } PBViewport;
+
+static inline bool pb_renderer_scissor_from_n64(int left, int top, int right,
+                                                int bottom, PBViewport *out) {
+    int x;
+    int y;
+    int width;
+    int height;
+
+    if (out == NULL || right <= left || bottom <= top) {
+        return false;
+    }
+    x = (int)PB_RENDER_GAME_X_INSET + left;
+    y = (int)PB_RENDER_TOP_HEIGHT - bottom;
+    width = right - left;
+    height = bottom - top;
+    if (x < 0) {
+        width += x;
+        x = 0;
+    }
+    if (y < 0) {
+        height += y;
+        y = 0;
+    }
+    if (x >= (int)PB_RENDER_TOP_WIDTH || y >= (int)PB_RENDER_TOP_HEIGHT) {
+        return false;
+    }
+    if (x + width > (int)PB_RENDER_TOP_WIDTH) {
+        width = (int)PB_RENDER_TOP_WIDTH - x;
+    }
+    if (y + height > (int)PB_RENDER_TOP_HEIGHT) {
+        height = (int)PB_RENDER_TOP_HEIGHT - y;
+    }
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    out->x = (uint16_t)x;
+    out->y = (uint16_t)y;
+    out->width = (uint16_t)width;
+    out->height = (uint16_t)height;
+    return true;
+}
+
+static inline PBTextureWrap pb_renderer_n64_wrap(uint32_t cms) {
+    const bool mirror = (cms & 1U) != 0;
+    const bool clamp = (cms & 2U) != 0;
+    if (clamp) {
+        return PB_WRAP_CLAMP_TO_EDGE;
+    }
+    return mirror ? PB_WRAP_MIRRORED_REPEAT : PB_WRAP_REPEAT;
+}
 
 /* Native PICA framebuffer coordinates are rotated to 240x400. */
 typedef struct {

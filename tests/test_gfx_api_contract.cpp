@@ -177,6 +177,96 @@ static bool testRuntimeMovememViewportUsesBottomLeftOrigin(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeInvertYMapsPositiveClipYToBottom(PBGfxApi3DS *api) {
+    struct TestVertex {
+        int16_t position[3];
+        uint16_t flag;
+        int16_t texture[2];
+        uint8_t color[4];
+    };
+    static_assert(sizeof(TestVertex) == 16U, "test vertex ABI changed");
+    /* Identity clip. N64 +Y is framebuffer-down; 3DS +screenY is up. */
+    TestVertex vertices[3] = {
+        { { 0, 0, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { 1, 1, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { -1, 1, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0x01003006),
+                     reinterpret_cast<uintptr_t>(vertices) } },
+        { .words = { UINT32_C(0x05000204), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->huge_triangles == 0U);
+    CHECK(after->nan_vertices == 0U);
+    CHECK(after->game_viewport_x == 40);
+    CHECK(after->game_viewport_y == 0);
+    CHECK(after->game_viewport_w == 320U);
+    CHECK(after->game_viewport_h == 240U);
+    CHECK(after->screen_min_x == 40);
+    CHECK(after->screen_max_x == 360);
+    CHECK(after->screen_min_y == 0);
+    CHECK(after->screen_max_y == 120);
+    return true;
+}
+
+static bool testRuntimeScissorConvertsN64Rect(PBGfxApi3DS *api) {
+    /* G_SETSCISSOR 10,20,100,80 in 320x240 top-left pixels. */
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xED028050), UINT32_C(0x00190140) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->scissor_x == 50);
+    CHECK(after->scissor_y == 160);
+    CHECK(after->scissor_w == 90U);
+    CHECK(after->scissor_h == 60U);
+    return true;
+}
+
+static bool testRuntimeMatrixPopUnderflow(PBGfxApi3DS *api) {
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0xD8000000), 64U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->matrix_stack_underflows >= 1U);
+    return true;
+}
+
+static bool testRuntimeNearPlaneTriangleDoesNotExplode(PBGfxApi3DS *api) {
+    struct TestVertex {
+        int16_t position[3];
+        uint16_t flag;
+        int16_t texture[2];
+        uint8_t color[4];
+    };
+    TestVertex vertices[3] = {
+        { { 0, 0, -2 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { 1, 0, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+        { { 0, 1, 0 }, 0U, { 0, 0 }, { 255U, 255U, 255U, 255U } },
+    };
+    const PBRuntimeGfx displayList[] = {
+        { .words = { UINT32_C(0x01003006),
+                     reinterpret_cast<uintptr_t>(vertices) } },
+        { .words = { UINT32_C(0x05000204), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->huge_triangles == 0U);
+    CHECK(after->clipped_triangles >= 1U);
+    return true;
+}
+
 static bool testRuntimeDepthTargetAndCopyRectangle(PBGfxApi3DS *api) {
     static uint8_t texture[8U * 8U * 2U] = {};
     const PBRuntimeGfx displayList[] = {
@@ -915,6 +1005,10 @@ static bool testCBoundary() {
     CHECK(stats->draw_calls == 16);
     CHECK(testRuntimeDisplayList(api));
     CHECK(testRuntimeMovememViewportUsesBottomLeftOrigin(api));
+    CHECK(testRuntimeInvertYMapsPositiveClipYToBottom(api));
+    CHECK(testRuntimeScissorConvertsN64Rect(api));
+    CHECK(testRuntimeMatrixPopUnderflow(api));
+    CHECK(testRuntimeNearPlaneTriangleDoesNotExplode(api));
     CHECK(testRuntimeDepthTargetAndCopyRectangle(api));
     CHECK(testRuntimeCopyRectangleOpaqueWithZeroAlphaAndCull(api));
     CHECK(testRuntimeSpriteCvgXAlphaPunchthrough(api));

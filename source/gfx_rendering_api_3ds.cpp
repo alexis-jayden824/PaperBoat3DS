@@ -159,12 +159,7 @@ float WorldFadeAlpha(const PBWorldScene &scene) {
 }
 
 PBTextureWrap TranslateWrap(uint32_t mode) {
-    const bool mirror = (mode & 1U) != 0;
-    const bool clamp = (mode & 2U) != 0;
-    if (clamp) {
-        return PB_WRAP_CLAMP_TO_EDGE;
-    }
-    return mirror ? PB_WRAP_MIRRORED_REPEAT : PB_WRAP_REPEAT;
+    return pb_renderer_n64_wrap(mode);
 }
 
 #ifdef __3DS__

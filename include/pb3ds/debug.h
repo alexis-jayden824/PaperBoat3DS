@@ -19,5 +19,8 @@
 #ifndef PB3DS_DEBUG_HUGE_TRI
 #define PB3DS_DEBUG_HUGE_TRI 0
 #endif
+#ifndef PB3DS_DEBUG_TRACE
+#define PB3DS_DEBUG_TRACE 0
+#endif
 
 #define PB3DS_DEBUG_LOG_LIMIT 8U
