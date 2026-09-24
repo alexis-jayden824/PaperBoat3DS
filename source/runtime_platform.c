@@ -20,6 +20,7 @@ void svcSleepThread(long long nanoseconds);
 #include "game_modes.h"
 #include "gbi_custom.h"
 #include "port/interpolation/FrameInterpolation.h"
+#include "saved_byte_names.h"
 #include "saved_flag_names.h"
 #include "sprite.h"
 
@@ -183,10 +184,12 @@ static void runtime_activate_toad_town(PBRuntime *runtime) {
     runtime->stats.area_id = gGameStatusPtr->areaID;
     runtime->stats.map_id = gGameStatusPtr->mapID;
     runtime->stats.entry_id = gGameStatusPtr->entryID;
-    set_game_mode(GAME_MODE_ENTER_DEMO_WORLD);
+    set_game_mode(GAME_MODE_ENTER_WORLD);
     /* First-pause tutorial intercepts START until a long A/stick sequence
-     * finishes. Folium START then looks frozen. Skip the badge tutorial. */
+     * finishes. Folium START then looks frozen. Skip the badge tutorial.
+     * STORY_INTRO also makes check_input_open_menus() ignore START. */
     evt_set_variable(NULL, GF_Tutorial_Badges, 0);
+    evt_set_variable(NULL, GB_StoryProgress, STORY_CH0_ARRIVED_AT_TOAD_TOWN);
     if (runtime->state == PB_RUNTIME_FAILED) return;
     runtime->startup_stage = "upstream runtime active";
     runtime->state = PB_RUNTIME_ACTIVE;

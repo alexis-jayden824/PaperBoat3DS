@@ -51,7 +51,12 @@ static inline float pb_renderer_screen_depth_to_pica_z(float depth,
  * behind the eye become screen-spanning slivers. Clip edges where W crosses
  * this epsilon before submission.
  */
-#define PB_RENDER_CLIP_W_EPS (0.03125f)
+/*
+ * Clip only vertices behind the eye. 1/32 was large enough to shave Mario's
+ * hat and NPC heads (small but legal W). |x|,|y|,|z| <= w still removes the
+ * screen-spanning slivers that negative-W vertices produced on PICA.
+ */
+#define PB_RENDER_CLIP_W_EPS (1.0f / 1024.0f)
 
 static inline bool pb_renderer_clip_w_inside(float clip_w) {
     return clip_w > PB_RENDER_CLIP_W_EPS;

@@ -603,4 +603,19 @@ The master M0-M24 numbering in `docs/ROADMAP.md` now matches the project
 milestone list. `include/pb3ds/platform.h` names the 3DS service boundary and
 records that ndsp audio is deferred until M14.
 
+## r24 sprite W clip, no CPU back-face cull, START story gate
+
+r23's `W > 1/32` plane treated close billboards as behind the eye, which
+sheared Mario/NPC heads. The W plane is now `1/1024`. Homogeneous `|x|,|y|,|z|
+<= w` still drops the screen-crossing slivers.
+
+CPU `G_CULL_FRONT`/`G_CULL_BACK` is disabled again: Fast3D keep-sign does not
+match PICA OrthoTilt winding, and applying it hid walls and sprites. `G_CULL_BOTH`
+still discards.
+
+START ignored `check_input_open_menus` while `GB_StoryProgress == STORY_INTRO`.
+Activation now sets `STORY_CH0_ARRIVED_AT_TOAD_TOWN` and uses
+`GAME_MODE_ENTER_WORLD` (file-select enter, with a real fade) instead of the
+demo enter path. The badge tutorial flag stays cleared.
+
 M13 still requires a hardware playtest of Toad Town, sprites, and START.

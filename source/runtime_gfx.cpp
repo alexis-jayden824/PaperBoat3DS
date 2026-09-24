@@ -1778,17 +1778,6 @@ class RuntimeDisplayListRenderer {
         return pb_renderer_n64_clip_plane(&clip, plane);
     }
 
-    int8_t GeometryCullKeepSign() const {
-        const uint32_t cull = geometryMode & G_CULL_BOTH;
-        if (cull == G_CULL_FRONT) {
-            return 1;
-        }
-        if (cull == G_CULL_BACK) {
-            return -1;
-        }
-        return 0;
-    }
-
     size_t ClipTriangleN64(const LoadedVertex in[3],
                            LoadedVertex out[PB_RENDER_CLIP_MAX_VERTS]) const {
         LoadedVertex current[PB_RENDER_CLIP_MAX_VERTS] = { in[0], in[1], in[2] };
@@ -1891,22 +1880,16 @@ class RuntimeDisplayListRenderer {
         const size_t count = ClipTriangleN64(in, clipped);
         if (count < 3U) return true;
         if (count > 3U) stats.clipped_triangles++;
-        const int8_t keepSign = GeometryCullKeepSign();
+        /*
+         * Do not CPU-cull G_CULL_FRONT/BACK. Fast3D keep-sign is defined in
+         * pre-Y-flip clip space; PICA OrthoTilt winding does not match it, so
+         * applying that sign hid Toad Town walls and Mario billboards. The
+         * GPU stays uncullled (BeginBatch). G_CULL_BOTH still drops above.
+         */
         const bool textured = DecodeCombiner().use.texture;
         for (size_t index = 1U; index + 1U < count; index++) {
-            const LoadedVertex &a = clipped[0];
-            const LoadedVertex &b = clipped[index];
-            const LoadedVertex &c = clipped[index + 1U];
-            if (keepSign != 0) {
-                const float cross = pb_renderer_clip_face_cross(
-                    a.clipX, a.clipY, a.clipW, b.clipX, b.clipY, b.clipW,
-                    c.clipX, c.clipY, c.clipW);
-                if (!pb_renderer_clip_keep_face(cross, keepSign)) {
-                    stats.culled_triangles++;
-                    continue;
-                }
-            }
-            if (!SubmitClippedTriangle(a, b, c, textured)) {
+            if (!SubmitClippedTriangle(clipped[0], clipped[index],
+                                       clipped[index + 1U], textured)) {
                 return false;
             }
         }
