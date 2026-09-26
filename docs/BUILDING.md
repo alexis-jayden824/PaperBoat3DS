@@ -2,8 +2,9 @@
 
 ## Current scope
 
-M0 provides the native Homebrew shell. M1 pins the toolchain and CI so a clean
-checkout can reproduce the same class of artifacts.
+M0 provides the native Homebrew shell. M1 pins the toolchain and CI. M2 pins
+PaperBoat 1.0.1 / libultraship / Torch and classifies what may later enter the
+ARM11 binary.
 
 The application still does not load PaperBoat, libultraship, or game assets.
 
@@ -52,11 +53,16 @@ binary. Expected outputs:
 
 ```sh
 sh tools/test_m1.sh
+sh tools/test_m2.sh
 sh tools/test_bootstrap.sh
 ```
 
 `test_m1.sh` checks that the GitHub workflow still matches
-`toolchain/TOOLCHAINS.lock` and that version/build-info metadata is coherent.
+`toolchain/TOOLCHAINS.lock`. `test_m2.sh` checks `upstream/PAPERBOAT.lock`
+against `docs/M2.md`.
+
+Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
+on GitHub.
 
 ## CI
 

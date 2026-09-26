@@ -5,8 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository starts at **M1**. M0 is the Homebrew shell; M1 pins how it is
-built. Nothing past M1 is implemented.
+This repository is at **M2**. M0 is the Homebrew shell; M1 pins how it is
+built; M2 pins which upstream trees may later be integrated. Nothing past M2
+is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -29,10 +30,12 @@ clean shutdown. Host contract is green; Folium/hardware boot is owner evidence.
 Pinned `devkitpro/devkitarm` digest, pinned makerom, `toolchain/TOOLCHAINS.lock`,
 build SHA/UTC metadata, documented local rebuild, CI artifacts.
 
-## M2 — Dependency Graph / Portability Audit — **not started**
+## M2 — Dependency Graph / Portability Audit — **implemented**
 
-Map PaperBoat, libultraship, Torch, and 3DS dependencies. Classify portable
-vs platform-specific code. Define PaperBoat → compatibility layer → 3DS.
+`upstream/PAPERBOAT.lock` pins PaperBoat 1.0.1, libultraship, and Torch.
+`docs/M2.md` classifies portable game core, the minimum compatibility surface,
+desktop-only systems, 3DS backends, and the host-only asset pipeline. No game
+source is compiled yet.
 
 ## M3 — 3DS Platform Abstraction — **not started**
 
