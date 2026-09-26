@@ -20,6 +20,9 @@ APP_AUTHOR      := PaperBoat3DS Refolded contributors
 PB3DS_BUILD_SHA ?= unknown
 PB3DS_BUILD_UTC ?= unknown
 HOST_CC         ?= cc
+PACKAGING_RSF   := packaging/PaperBoat3DS-Refolded.rsf
+MAKEROM         ?= makerom
+STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
@@ -57,10 +60,19 @@ export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
-.PHONY: all bootstrap-test clean
+.PHONY: all packages bootstrap-test clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+packages: all
+	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
+	@echo stripping $(TARGET).elf
+	@$(STRIP) -o $(TARGET)-stripped.elf $(TARGET).elf
+	@echo building $(TARGET).3ds
+	@$(MAKEROM) -f cci -o $(TARGET).3ds -rsf $(PACKAGING_RSF) -target t \
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
+	@test -s $(TARGET).3ds
 
 bootstrap-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_bootstrap.sh "$(BUILD)/m0-tests"
@@ -70,7 +82,8 @@ $(BUILD):
 
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).smdh $(TARGET).elf $(TARGET).map
+	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).3ds $(TARGET).cia \
+		$(TARGET)-stripped.elf $(TARGET).smdh $(TARGET).elf $(TARGET).map
 
 else
 

@@ -35,11 +35,30 @@ jobs:
           make -j2 \
             PB3DS_BUILD_SHA="$GITHUB_SHA" \
             PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Build pinned makerom
+        env:
+          MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
+        run: |
+          git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
+          git -C "$RUNNER_TEMP/Project_CTR" checkout "$MAKEROM_COMMIT"
+          make -C "$RUNNER_TEMP/Project_CTR/makerom" deps
+          make -C "$RUNNER_TEMP/Project_CTR/makerom" -j2
+          mkdir -p "$GITHUB_WORKSPACE/.tools"
+          install -m 0755 "$RUNNER_TEMP/Project_CTR/makerom/bin/makerom" "$GITHUB_WORKSPACE/.tools/makerom"
+      - name: Build CCI cartridge image
+        run: make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" packages
+      - name: Verify expected outputs
+        run: |
+          test -s PaperBoat3DS-Refolded.elf
+          test -s PaperBoat3DS-Refolded.3dsx
+          test -s PaperBoat3DS-Refolded.3ds
       - name: Upload Homebrew artifacts
         uses: actions/upload-artifact@v4
         with:
           name: PaperBoat3DS-Refolded-${{ github.sha }}
+          if-no-files-found: error
           path: |
             PaperBoat3DS-Refolded.3dsx
+            PaperBoat3DS-Refolded.3ds
             PaperBoat3DS-Refolded.elf
             PaperBoat3DS-Refolded.smdh

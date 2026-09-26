@@ -20,6 +20,22 @@ make
 
 The output is `PaperBoat3DS-Refolded.3dsx` for the Homebrew Launcher.
 
+Build the Folium/emulator CCI image with:
+
+```sh
+make packages
+```
+
+`packages` requires `makerom` on `PATH`. CI builds a pinned copy from
+[Project_CTR](https://github.com/3DSGuy/Project_CTR) (`e8f5f529`).
+
+Expected outputs:
+
+- `PaperBoat3DS-Refolded.elf`
+- `PaperBoat3DS-Refolded.3dsx`
+- `PaperBoat3DS-Refolded.3ds`
+- `PaperBoat3DS-Refolded.smdh`
+
 ## Host contract (no toolchain)
 
 ```sh
@@ -32,6 +48,7 @@ is running.
 
 ## CI
 
-`.github/workflows/3ds-build.yml` runs the host contract and cross-compiles
-the `.3dsx` in `devkitpro/devkitarm:latest`. That image pin is a convenience
+`.github/workflows/3ds-build.yml` runs the host contract, cross-compiles the
+`.3dsx`, packages a `.3ds` CCI with pinned `makerom`, and uploads both
+artifacts from `devkitpro/devkitarm:latest`. That image pin is a convenience
 for M0; M1 will document and freeze the toolchain contract.

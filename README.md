@@ -33,6 +33,9 @@ sh tools/test_bootstrap.sh
 
 # Native .3dsx (requires DEVKITARM)
 make
+
+# Folium/emulator .3ds (requires makerom)
+make packages
 ```
 
 ## Roadmap
