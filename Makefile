@@ -14,7 +14,7 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M0 native 3DS bootstrap
+APP_DESCRIPTION := M1 reproducible 3DS bootstrap
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
@@ -60,7 +60,7 @@ export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
-.PHONY: all packages bootstrap-test clean
+.PHONY: all packages bootstrap-test m1-lock-test clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -76,6 +76,9 @@ packages: all
 
 bootstrap-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_bootstrap.sh "$(BUILD)/m0-tests"
+
+m1-lock-test:
+	@sh tools/test_m1.sh "$(BUILD)/m1-tests"
 
 $(BUILD):
 	@mkdir -p $@

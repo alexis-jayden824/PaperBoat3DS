@@ -9,9 +9,9 @@ reference; this repository does not rebuild Paper Mario, does not fake
 gameplay geometry, and does not pretend the game is running until that
 milestone is actually reached.
 
-## Current status: M0
+## Current status: M1
 
-M0 is a legitimate Homebrew application shell:
+M0 is the Homebrew shell. M1 pins the toolchain and CI:
 
 - ARM11 / libctru lifecycle
 - top and bottom framebuffer init
@@ -19,16 +19,19 @@ M0 is a legitimate Homebrew application shell:
 - solid-color top screen (not Paper Mario)
 - START requests a clean shutdown
 - APT suspend/sleep/restore hooks
+- pinned Docker digest + makerom SHA
+- `.3dsx` and `.3ds` CI artifacts with `build-info.txt`
 
-**Acceptance:** the `.3dsx` boots on a 3DS-compatible runtime and exits
-cleanly without claiming PaperBoat is running.
+**M0 acceptance still needs a Folium/hardware boot.** M1 is the build contract
+around that shell.
 
 ## Build
 
 See [docs/BUILDING.md](docs/BUILDING.md).
 
 ```sh
-# Host contract (no 3DS toolchain)
+# Host contracts (no 3DS toolchain)
+sh tools/test_m1.sh
 sh tools/test_bootstrap.sh
 
 # Native .3dsx (requires DEVKITARM)

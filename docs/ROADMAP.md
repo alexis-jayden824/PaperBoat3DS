@@ -5,8 +5,8 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository starts at **M0**. Later milestones are listed so the rebuild
-does not drift from the original plan. Nothing past M0 is implemented.
+This repository starts at **M1**. M0 is the Homebrew shell; M1 pins how it is
+built. Nothing past M1 is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -18,19 +18,16 @@ M14+ stays gated behind M13 runtime/rendering acceptance.
 - PaperBoat is the behavioral reference once source integration begins (M5).
 - Do not mark a milestone complete without reproducible evidence.
 
-## M0 — Native 3DS Bootstrap — **in progress**
+## M0 — Native 3DS Bootstrap — **implemented (hardware boot still required)**
 
 Smallest legitimate native 3DS application: devkitARM/libctru skeleton,
-`.3dsx` target, ARM11 lifecycle, top/bottom framebuffers, logging, clean
-shutdown.
+`.3dsx` and `.3ds` targets, ARM11 lifecycle, top/bottom framebuffers, logging,
+clean shutdown. Host contract is green; Folium/hardware boot is owner evidence.
 
-**Acceptance:** boots on a 3DS-compatible runtime and exits cleanly without
-pretending PaperBoat is running.
+## M1 — Reproducible Build & CI — **implemented (CI evidence)**
 
-## M1 — Reproducible Build & CI — **not started**
-
-Pin toolchain assumptions, CI, deterministic version/build metadata, artifact
-generation, document local build requirements.
+Pinned `devkitpro/devkitarm` digest, pinned makerom, `toolchain/TOOLCHAINS.lock`,
+build SHA/UTC metadata, documented local rebuild, CI artifacts.
 
 ## M2 — Dependency Graph / Portability Audit — **not started**
 

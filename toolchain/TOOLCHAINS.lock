@@ -1,0 +1,11 @@
+# PaperBoat3DS Refolded toolchain pin.
+# Bump only with a documented M1 lock change. CI must use the digest, not :latest.
+docker_image=devkitpro/devkitarm
+docker_digest=sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b
+docker_tag_observed=latest@2026-06-10
+makerom_repository=https://github.com/3DSGuy/Project_CTR.git
+makerom_commit=e8f5f529c54ff9b22a2491a480ffa69206bf7b19
+host_packages=3ds-dev
+cpu_arch=armv6k
+cpu_tune=mpcore
+float_abi=hard

@@ -1,4 +1,4 @@
-name: Nintendo 3DS M0 bootstrap
+name: Nintendo 3DS M1 build
 
 on:
   push:
@@ -8,19 +8,26 @@ on:
 permissions:
   contents: read
 
+env:
+  PB3DS_DOCKER_IMAGE: devkitpro/devkitarm
+  PB3DS_DOCKER_DIGEST: sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b
+  PB3DS_MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
+
 jobs:
   host-contract:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+      - name: Test M1 toolchain lock
+        run: sh tools/test_m1.sh
       - name: Test M0 bootstrap contract
         run: sh tools/test_bootstrap.sh
 
   build:
     runs-on: ubuntu-latest
     container:
-      image: devkitpro/devkitarm:latest
+      image: devkitpro/devkitarm@sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -28,6 +35,9 @@ jobs:
         run: |
           "$DEVKITARM/bin/arm-none-eabi-gcc" --version
           make --version
+          cat toolchain/TOOLCHAINS.lock
+      - name: Test M1 toolchain lock
+        run: sh tools/test_m1.sh
       - name: Test M0 bootstrap contract
         run: make bootstrap-test
       - name: Build 3DSX
@@ -35,12 +45,20 @@ jobs:
           make -j2 \
             PB3DS_BUILD_SHA="$GITHUB_SHA" \
             PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: Write build metadata
+        run: |
+          PB3DS_VERSION="0.1.0-m1" \
+          PB3DS_BUILD_SHA="$GITHUB_SHA" \
+          PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          PB3DS_DOCKER_IMAGE="$PB3DS_DOCKER_IMAGE" \
+          PB3DS_DOCKER_DIGEST="$PB3DS_DOCKER_DIGEST" \
+          PB3DS_MAKEROM_COMMIT="$PB3DS_MAKEROM_COMMIT" \
+          sh tools/write_build_info.sh build/build-info.txt
+          cat build/build-info.txt
       - name: Build pinned makerom
-        env:
-          MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
         run: |
           git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
-          git -C "$RUNNER_TEMP/Project_CTR" checkout "$MAKEROM_COMMIT"
+          git -C "$RUNNER_TEMP/Project_CTR" checkout "$PB3DS_MAKEROM_COMMIT"
           make -C "$RUNNER_TEMP/Project_CTR/makerom" deps
           make -C "$RUNNER_TEMP/Project_CTR/makerom" -j2
           mkdir -p "$GITHUB_WORKSPACE/.tools"
@@ -52,6 +70,8 @@ jobs:
           test -s PaperBoat3DS-Refolded.elf
           test -s PaperBoat3DS-Refolded.3dsx
           test -s PaperBoat3DS-Refolded.3ds
+          test -s build/build-info.txt
+          grep -q "git_sha=$GITHUB_SHA" build/build-info.txt
       - name: Upload Homebrew artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -62,3 +82,5 @@ jobs:
             PaperBoat3DS-Refolded.3ds
             PaperBoat3DS-Refolded.elf
             PaperBoat3DS-Refolded.smdh
+            build/build-info.txt
+          retention-days: 14
