@@ -1,8 +1,8 @@
-; PaperBoat3DS M13: clip-space passthrough (projection already applied).
-.version 1
+; Clip-space passthrough. Projection is applied in the Fast3D interpreter.
+; Syntax matches picasso in the pinned 3ds-dev image (no .version directive).
 
-.constf ones_vec(0.0, 1.0, -1.0, 1.0)
-.alias ones ones_vec.wwww
+.constf kconst(0.0, 1.0, -1.0, 1.0)
+.alias ones kconst.yyyy
 
 .out outpos position
 .out outclr color
@@ -15,7 +15,6 @@
 .proc main
 	mov outpos, inpos
 	mov outclr, inclr
-	mov outtex.xy, intex.xy
-	mov outtex.zw, ones.xy
+	mov outtex, intex
 	end
 .end
