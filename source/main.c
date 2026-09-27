@@ -76,8 +76,19 @@ static void draw_bottom_status(const PBBootstrap *bootstrap,
                  pb_title_phase_name(title.phase), title.resources_bound ? 1 : 0,
                  pb_title_presented() ? 1 : 0);
         pb_console_print(line);
+        {
+            PBRuntimePlay play;
+            PBF3dDiag f3d;
+            pb_runtime_play_query(&play);
+            pb_f3d_query(&f3d);
+            snprintf(line, sizeof(line), "run link=%d play=%d tri=%lu uns=%lu\n",
+                     play.game_linked ? 1 : 0, play.playing ? 1 : 0,
+                     (unsigned long)f3d.triangles,
+                     (unsigned long)f3d.unsupported);
+            pb_console_print(line);
+        }
     }
-    pb_console_print("START exits. SELECT is reserved.\ncrumbs:\n");
+    pb_console_print("L+R+START exits. SELECT reserved.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
         const PBBreadcrumb *crumb = pb_breadcrumb_at(index);
@@ -104,6 +115,7 @@ int main(int argc, char **argv) {
     PB_ASSERT(pb_gfx_ready());
     pb_compat_init();
     pb_title_init();
+    pb_runtime_init();
     pb_bootstrap_log(&bootstrap, "compat layer (M6)");
     pb_bootstrap_log(&bootstrap, "asset extract host-only (M7)");
     pb_bootstrap_log(&bootstrap, "HID map ready; SELECT reserved (M8)");
@@ -111,7 +123,8 @@ int main(int argc, char **argv) {
     pb_bootstrap_log(&bootstrap, "30Hz APT loop (M10)");
     pb_bootstrap_log(&bootstrap, "citro3d gfx foundation (M11)");
     pb_bootstrap_log(&bootstrap, "title OTR bind (M12)");
-    pb_bootstrap_log(&bootstrap, "press START to exit");
+    pb_bootstrap_log(&bootstrap, "Fast3D/PICA runtime (M13)");
+    pb_bootstrap_log(&bootstrap, "START exits unless game is playing");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {
         unsigned char yay0_src[16];
@@ -129,22 +142,35 @@ int main(int argc, char **argv) {
         if ((input.down & PB_KEY_SELECT) != 0U) {
             pb_breadcrumb("SELECT reserved (M16)");
         }
-        if ((input.down & PB_KEY_START) != 0U) {
+        if (pb_runtime_quit_combo(input.held)) {
+            pb_breadcrumb("L+R+START exit");
+            pb_bootstrap_on_start(&bootstrap);
+            break;
+        }
+        if (!pb_runtime_playing() && (input.down & PB_KEY_START) != 0U) {
             pb_breadcrumb("START exit");
             pb_bootstrap_on_start(&bootstrap);
             break;
         }
         for (i = 0U; i < steps; i++) {
             pb_bootstrap_tick(&bootstrap);
-            pb_title_step();
         }
-        pb_gfx_clear_top(TOP_FILL_R, TOP_FILL_G, TOP_FILL_B);
-        Graphics_PushFrame(NULL);
+        if (!pb_runtime_playing()) {
+            pb_gfx_clear_top(TOP_FILL_R, TOP_FILL_G, TOP_FILL_B);
+        } else {
+            pb_gfx_clear_top(0U, 0U, 0U);
+        }
+        pb_gfx_begin_frame();
+        pb_runtime_frame(steps);
+        if (!pb_runtime_playing()) {
+            Graphics_PushFrame(NULL);
+        }
         draw_bottom_status(&bootstrap, &input);
         pb_gfx_present();
     }
 
     pb_bootstrap_log(&bootstrap, "shutdown");
+    pb_runtime_shutdown();
     pb_title_shutdown();
     pb_system_shutdown(&bootstrap);
     return 0;

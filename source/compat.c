@@ -1,4 +1,5 @@
 #include "pb3ds/compat.h"
+#include "pb3ds/f3d.h"
 #include "pb3ds/fs.h"
 #include "pb3ds/gfx.h"
 #include "pb3ds/input.h"
@@ -129,6 +130,9 @@ void GameEngine_LogError(const char *fmt, ...) {
 
 void Graphics_PushFrame(void *display_list) {
     pb_gfx_submit_dl(display_list, 0);
+    if (display_list != NULL) {
+        pb_f3d_execute(display_list, 0);
+    }
 }
 
 void GameEngine_StartAudioFrame(void) {

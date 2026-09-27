@@ -54,6 +54,9 @@ mkdir -p "$build_directory"
     "$project_root/source/compat.c" \
     "$project_root/source/gfx.c" \
     "$project_root/source/title.c" \
+    "$project_root/source/tex.c" \
+    "$project_root/source/tev.c" \
+    "$project_root/source/f3d.c" \
     "$project_root/tests/test_m12.c" \
     -lm \
     -o "$test_binary"

@@ -9,9 +9,10 @@ extern "C" {
 #endif
 
 /*
- * M5 links a small PaperBoat 1.0.1 slice (libc shims + Yay0). It does not
- * run boot_main / step_game_loop. Desktop Engine.cpp, SDL, libultraship,
- * and Torch stay out of the ARM11 binary.
+ * M5 links a small PaperBoat 1.0.1 slice (libc shims + Yay0). M13 steps
+ * `step_game_loop` / `gfx_draw_frame` only when `PB3DS_GAME_OBJECTS` is
+ * defined. `boot_main` is never linked (infinite nuGfx wait). Desktop
+ * Engine.cpp, SDL, libultraship, and Torch stay out of the ARM11 binary.
  */
 #ifndef PB3DS_PAPERBOAT_COMMIT
 #define PB3DS_PAPERBOAT_COMMIT "unfetched"

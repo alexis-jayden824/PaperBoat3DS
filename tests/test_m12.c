@@ -45,8 +45,8 @@ static bool test_bind_orientation_and_scene(void) {
     float top_y = 0.0f;
     unsigned i;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.12.0-m12") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M12") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.13.0-m13") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M13") != NULL);
     CHECK(PB_TITLE_LOGO_WIDTH == 200U);
     CHECK(PB_TITLE_LOGO_HEIGHT == 112U);
     CHECK(PB_TITLE_LOGO_BYTES == 89600U);

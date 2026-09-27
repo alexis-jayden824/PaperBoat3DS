@@ -1,7 +1,7 @@
 # PaperBoat3DS Refolded
 
 A clean native Nintendo 3DS port of PaperBoat / Paper Mario 64, started
-from milestone **M0** and currently at **M12**.
+from milestone **M0** and currently at **M13**.
 
 This is a from-scratch rebuild. It is **not** a continuation of the previous
 PaperBoat3DS renderer/runtime tree. PaperBoat remains the behavioral
@@ -9,12 +9,18 @@ reference; this repository does not rebuild Paper Mario, does not fake
 gameplay geometry, and does not pretend the game is running until that
 milestone is actually reached.
 
-## Current status: M12
+## Current status: M13
 
-M12 binds PaperBoat 1.0.1 title-screen OTR names and US sizes, keeps
-upright texture T, and steps waiting/init/appear/hold. It does not draw
-the logo (Fast3D is M13) and does not ship Nintendo pixels. CI uploads
-`.3dsx`, `.3ds`, and `.cia` only.
+M13 interprets F3DEX2 display lists, decodes N64 textures (CI without a
+palette never goes black), maps combiners to TEV, and can step PaperBoat
+`step_game_loop` / `gfx_draw_frame` when game objects are linked and both
+`.o2r` archives are on SD. CI still does not compile the full game tree.
+`boot_main` is not linked. START exits the shell unless that play path is
+active; L+R+START always quits.
+
+M12 binds PaperBoat 1.0.1 title-screen OTR names and US sizes. Missing
+archives leave the title scene in `waiting`. CI uploads `.3dsx`, `.3ds`,
+and `.cia` only.
 
 M10 is the APT-side 30 Hz loop: monotonic time that freezes across HOME
 sleep, no extra threads, no desktop window pump. `boot_main` is still not
@@ -45,6 +51,7 @@ sh tools/test_m9.sh
 sh tools/test_m10.sh
 sh tools/test_m11.sh
 sh tools/test_m12.sh
+sh tools/test_m13.sh
 
 # Fetch pinned PaperBoat (gitignored cache), then native .3dsx
 make fetch
@@ -59,9 +66,9 @@ make packages
 The binding milestone list is [docs/ROADMAP.md](docs/ROADMAP.md). See
 [docs/M5.md](docs/M5.md), [docs/M6.md](docs/M6.md), [docs/M7.md](docs/M7.md), and
 [docs/M8.md](docs/M8.md), [docs/M9.md](docs/M9.md),
-[docs/M10.md](docs/M10.md), [docs/M11.md](docs/M11.md), and
-[docs/M12.md](docs/M12.md). No later milestone
-will be marked complete without evidence.
+[docs/M10.md](docs/M10.md), [docs/M11.md](docs/M11.md),
+[docs/M12.md](docs/M12.md), and [docs/M13.md](docs/M13.md). No later
+milestone will be marked complete without evidence.
 
 ## Legal
 

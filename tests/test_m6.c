@@ -22,8 +22,8 @@ static bool test_deferred_contracts(void) {
     PBCompatState state;
     PBOSContPad pad;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.12.0-m12") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M12") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.13.0-m13") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M13") != NULL);
     pb_compat_init();
     pb_compat_query(&state);
     CHECK(state.logging == PB_COMPAT_READY);

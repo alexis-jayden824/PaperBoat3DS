@@ -11,7 +11,9 @@ never runs on ARM11). M8 is native HID with SELECT reserved for M16. M9 is
 SDMC resource lookup (STORE zip / register, 16-byte aligned). M10 is the
 30 Hz APT game loop (monotonic clock, suspend/resume). M11 is the citro3d
 graphics foundation (command submit, clip/invertY/pillars, tex, depth).
-M12 binds PaperBoat title-screen OTR names (no raster).
+M12 binds PaperBoat title-screen OTR names (no raster). M13 is the Fast3D
+interpreter, texture/TEV path, and runtime gate (`step_game_loop` when
+`PB3DS_GAME_OBJECTS` and both `.o2r` files are present).
 Packages include `.3dsx`, `.3ds`, and `.cia`.
 
 The application still does not run `boot_main`. Game `.o2r` files are
@@ -75,6 +77,7 @@ sh tools/test_m9.sh
 sh tools/test_m10.sh
 sh tools/test_m11.sh
 sh tools/test_m12.sh
+sh tools/test_m13.sh
 ```
 
 `test_m5.sh` fetches the PaperBoat pin, checks CMake exclusions, and
@@ -106,6 +109,9 @@ Fast3D, texture upload rules, and that citro3d stays in `gfx_pica.c`.
 
 `test_m12.sh` binds PaperBoat title OTR names/sizes, upright T, and scene
 phases without claiming the logo is drawn.
+
+`test_m13.sh` runs a TRI1 display list, CI decode (including missing TLUT),
+scissor clamp, combiner→TEV, and the runtime gate (game objects off).
 
 Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
 on GitHub.

@@ -1,0 +1,21 @@
+; PaperBoat3DS M13: clip-space passthrough (projection already applied).
+.version 1
+
+.constf ones_vec(0.0, 1.0, -1.0, 1.0)
+.alias ones ones_vec.wwww
+
+.out outpos position
+.out outclr color
+.out outtex texcoord0
+
+.alias inpos v0
+.alias inclr v1
+.alias intex v2
+
+.proc main
+	mov outpos, inpos
+	mov outclr, inclr
+	mov outtex.xy, intex.xy
+	mov outtex.zw, ones.xy
+	end
+.end

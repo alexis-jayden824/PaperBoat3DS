@@ -7,14 +7,19 @@
 #ifdef __3DS__
 bool pb_gfx_pica_init(void);
 void pb_gfx_pica_shutdown(void);
-bool pb_gfx_pica_frame(uint32_t clear_rgba);
+bool pb_gfx_pica_begin(uint32_t clear_rgba);
+void pb_gfx_pica_end(void);
 bool pb_gfx_pica_upload_rgba(uint16_t slot, uint16_t width, uint16_t height,
                              const void *pixels, size_t bytes);
 void pb_gfx_pica_cpu_clear(uint8_t red, uint8_t green, uint8_t blue);
 void pb_gfx_pica_swap(void);
+void pb_gfx_pica_set_depth(bool enabled);
+void pb_gfx_pica_set_scissor(int x0, int y0, int x1, int y1);
+void pb_gfx_pica_draw_tris(const PBGfxVertex *verts, unsigned count);
 #endif
 
 static bool g_ready;
+static bool g_frame_open;
 static PBGfxDiag g_diag;
 
 static bool is_power_of_two(uint16_t value) {
@@ -72,19 +77,43 @@ void pb_gfx_clear_top(uint8_t red, uint8_t green, uint8_t blue) {
 #endif
 }
 
-void pb_gfx_present(void) {
+void pb_gfx_begin_frame(void) {
 #ifdef __3DS__
     if (g_diag.pica_ready) {
         g_diag.cmd_begins++;
-        if (!pb_gfx_pica_frame(g_diag.last_clear_rgba)) {
+        g_frame_open = pb_gfx_pica_begin(g_diag.last_clear_rgba);
+        if (!g_frame_open) {
             pb_gfx_pica_cpu_clear((uint8_t)(g_diag.last_clear_rgba >> 24),
                                   (uint8_t)(g_diag.last_clear_rgba >> 16),
                                   (uint8_t)(g_diag.last_clear_rgba >> 8));
-            pb_gfx_pica_swap();
+        }
+        return;
+    }
+#endif
+    g_frame_open = true;
+}
+
+void pb_gfx_present(void) {
+#ifdef __3DS__
+    if (g_diag.pica_ready) {
+        if (g_frame_open) {
+            pb_gfx_pica_end();
+            g_frame_open = false;
+        } else {
+            g_diag.cmd_begins++;
+            if (!pb_gfx_pica_begin(g_diag.last_clear_rgba)) {
+                pb_gfx_pica_cpu_clear((uint8_t)(g_diag.last_clear_rgba >> 24),
+                                      (uint8_t)(g_diag.last_clear_rgba >> 16),
+                                      (uint8_t)(g_diag.last_clear_rgba >> 8));
+            } else {
+                pb_gfx_pica_end();
+            }
         }
     } else {
         pb_gfx_pica_swap();
     }
+#else
+    g_frame_open = false;
 #endif
     g_diag.frames++;
 }
@@ -156,6 +185,11 @@ unsigned pb_gfx_submit_vertices(const PBGfxVertex *verts, unsigned count) {
             g_diag.verts_clipped_out++;
         }
     }
+#ifdef __3DS__
+    if (g_frame_open && g_diag.pica_ready && kept == count && count >= 3U) {
+        pb_gfx_pica_draw_tris(verts, count);
+    }
+#endif
     return kept;
 }
 
@@ -204,6 +238,24 @@ bool pb_gfx_tex_upload(const PBGfxTexDesc *desc, const void *pixels,
 
 void pb_gfx_set_depth_enabled(bool enabled) {
     g_diag.depth_enabled = enabled;
+#ifdef __3DS__
+    if (g_diag.pica_ready) {
+        pb_gfx_pica_set_depth(enabled);
+    }
+#endif
+}
+
+void pb_gfx_set_scissor_source(int x0, int y0, int x1, int y1) {
+#ifdef __3DS__
+    if (g_diag.pica_ready) {
+        pb_gfx_pica_set_scissor(x0, y0, x1, y1);
+    }
+#else
+    (void)x0;
+    (void)y0;
+    (void)x1;
+    (void)y1;
+#endif
 }
 
 void pb_gfx_query(PBGfxDiag *diag) {

@@ -5,11 +5,10 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M12**. M0–M11 are shell through the citro3d
-foundation. M12 binds PaperBoat title OTR names. Nothing past M12 is
-implemented.
+This repository is at **M13**. M0–M12 are shell through title bind. M13 is
+the Fast3D / runtime gate (game objects remain opt-in; see `docs/M13.md`).
 
-M14+ stays gated behind M13 runtime/rendering acceptance.
+M14+ stays gated behind M13 runtime/rendering acceptance on hardware.
 
 ## Binding rules
 
@@ -100,12 +99,14 @@ states. Upright T. No Fast3D raster and no fake logo geometry.
 
 400×240 top framebuffer, 320×240 source with 40 px pillars, upright UVs.
 
-## M13 — Full PaperBoat Runtime + Renderer Integration — **not started**
+## M13 — Full PaperBoat Runtime + Renderer Integration — **implemented (host contract)**
 
-Authentic gameplay through a correct 3DS architecture. Sub-gates M13-A
-through M13-J as in the master plan. This is the major engineering gate.
+F3DEX2 interpreter, N64 tex/CI cache, combiner→TEV, citro3d frame
+begin/draw/end, tiled PICA upload, APT loop calling `step_game_loop` only
+when `PB3DS_GAME_OBJECTS` and both `.o2r` files are present. `boot_main`
+is not linked. Full game TU compile is owner-side, not CI-default.
 
-## M14 — Audio Backend — blocked on M13
+## M14 — Audio Backend — blocked on hardware M13 acceptance
 
 ## M15 — Save Data / Persistent Configuration — blocked on M13
 

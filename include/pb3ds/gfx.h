@@ -8,7 +8,15 @@
 extern "C" {
 #endif
 
-/* Top LCD is 400×240. PaperBoat source is 320×240 with 40 px pillars. */
+/*
+ * Canonical coordinates (applied once, not per-sprite):
+ * - PaperBoat/N64 source: 320×240, origin top-left.
+ * - Top LCD: 400×240; source is centered with 40 px pillars each side.
+ * - Clip Y is inverted once (pb_gfx_invert_y). Texture T is upright once
+ *   (pb_gfx_upright_t). Do not also flip geometry, UVs, or matrices.
+ * - PICA render target is 240×400; citro3d display transfer presents it
+ *   upright on the 400×240 LCD. CPU mapping uses 400×240 top pixels.
+ */
 #define PB_GFX_TOP_WIDTH 400U
 #define PB_GFX_TOP_HEIGHT 240U
 #define PB_GFX_BOTTOM_WIDTH 320U
@@ -75,6 +83,8 @@ void pb_gfx_submit_dl(const void *display_list, size_t bytes);
 bool pb_gfx_tex_upload(const PBGfxTexDesc *desc, const void *pixels,
                        size_t bytes);
 void pb_gfx_set_depth_enabled(bool enabled);
+void pb_gfx_set_scissor_source(int x0, int y0, int x1, int y1);
+void pb_gfx_begin_frame(void);
 void pb_gfx_query(PBGfxDiag *diag);
 
 #ifdef __cplusplus

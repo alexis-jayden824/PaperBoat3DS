@@ -14,7 +14,7 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M12 title
+APP_DESCRIPTION := M13 runtime
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
@@ -26,6 +26,9 @@ STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 PAPERBOAT_COMMIT := $(shell awk -F= '/^PAPERBOAT_COMMIT=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 PAPERBOAT_RELEASE := $(shell awk -F= '/^PAPERBOAT_RELEASE=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 
+# Owner-only: compile/link PaperBoat game TUs (not CI default).
+# make CFLAGS+=-DPB3DS_GAME_OBJECTS after listing sources with
+# tools/list_paperboat_sources.sh
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
@@ -44,12 +47,14 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT  := $(CURDIR)/$(TARGET)
 export TOPDIR  := $(CURDIR)
-export VPATH   := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
+export VPATH   := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
+                 $(CURDIR)/shaders
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
 CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+PICAFILES := $(notdir $(wildcard shaders/*.v.pica))
 
 ifeq ($(strip $(CPPFILES)),)
 export LD := $(CC)
@@ -58,7 +63,9 @@ export LD := $(CXX)
 endif
 
 export OFILES_SOURCES := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES         := $(OFILES_SOURCES)
+export OFILES_BIN     := $(PICAFILES:.v.pica=.shbin.o)
+export OFILES         := $(OFILES_BIN) $(OFILES_SOURCES)
+export HFILES         := $(PICAFILES:.v.pica=_shbin.h)
 export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                          $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                          -I$(CURDIR)/$(BUILD)
@@ -67,7 +74,8 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 
 .PHONY: all packages fetch fetch-torch bootstrap-test m1-lock-test m2-audit-test \
 	m3-platform-test m4-diag-test m5-slice-test m6-compat-test m7-assets-test \
-	m8-input-test m9-fs-test m10-loop-test m11-gfx-test m12-title-test clean
+	m8-input-test m9-fs-test m10-loop-test m11-gfx-test m12-title-test \
+	m13-runtime-test clean
 
 all: $(BUILD)/paperboat_config.h $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -124,6 +132,9 @@ m11-gfx-test:
 m12-title-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_m12.sh "$(BUILD)/m12-tests"
 
+m13-runtime-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_m13.sh "$(BUILD)/m13-tests"
+
 fetch-torch:
 	@sh tools/fetch_torch.sh
 
@@ -148,7 +159,18 @@ clean:
 else
 
 $(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS)
+
+$(OFILES_SOURCES): $(HFILES)
+
 $(OUTPUT).elf: $(OFILES)
+
+%.shbin: %.v.pica
+	@echo $(notdir $<)
+	@picasso -o $@ $<
+
+%.shbin.o %_shbin.h: %.shbin
+	@echo $(notdir $<)
+	@$(bin2o)
 
 -include $(DEPSDIR)/*.d
 
