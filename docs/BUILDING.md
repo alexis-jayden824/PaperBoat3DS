@@ -4,7 +4,7 @@
 
 M0 provides the native Homebrew shell. M1 pins the toolchain and CI. M2 pins
 PaperBoat 1.0.1 / libultraship / Torch. M3 wraps libctru behind
-`include/pb3ds/platform.h`.
+`include/pb3ds/platform.h`. M4 adds diagnostics on that boundary.
 
 The application still does not load PaperBoat, libultraship, or game assets.
 
@@ -56,12 +56,15 @@ sh tools/test_m1.sh
 sh tools/test_m2.sh
 sh tools/test_bootstrap.sh
 sh tools/test_platform.sh
+sh tools/test_m4.sh
 ```
 
 `test_m1.sh` checks that the GitHub workflow still matches
 `toolchain/TOOLCHAINS.lock`. `test_m2.sh` checks `upstream/PAPERBOAT.lock`
 against `docs/M2.md`. `test_platform.sh` compiles the M3 host stubs and
 asserts that PaperBoat-facing sources do not include `3ds.h`.
+`test_m4.sh` covers memory pressure, asserts, breadcrumbs, and New 3DS
+detection-without-enable.
 
 Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
 on GitHub.

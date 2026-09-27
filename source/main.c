@@ -9,9 +9,11 @@
 
 static void draw_bottom_status(const PBBootstrap *bootstrap) {
     char line[96];
+    PBRuntimeStatus runtime;
     size_t index;
     size_t start;
 
+    pb_runtime_query(&runtime, bootstrap->frames, bootstrap->gfx_ready);
     pb_console_clear();
     snprintf(line, sizeof(line), "%s\n", PB3DS_PROJECT_NAME);
     pb_console_print(line);
@@ -19,30 +21,34 @@ static void draw_bottom_status(const PBBootstrap *bootstrap) {
     pb_console_print(line);
     snprintf(line, sizeof(line), "sha %s\n", PB3DS_BUILD_SHA);
     pb_console_print(line);
-    snprintf(line, sizeof(line), "%s\n\n", pb_bootstrap_status_line(bootstrap));
+    snprintf(line, sizeof(line), "%s  hw %s  n3ds=%d\n",
+             pb_bootstrap_status_line(bootstrap),
+             pb_hw_model_name(runtime.hardware),
+             runtime.new_3ds_features_enabled ? 1 : 0);
     pb_console_print(line);
-    snprintf(line, sizeof(line), "Top %ux%u  Bottom %ux%u\n",
-             PB_GFX_TOP_WIDTH, PB_GFX_TOP_HEIGHT, PB_GFX_BOTTOM_WIDTH,
-             PB_GFX_BOTTOM_HEIGHT);
+    snprintf(line, sizeof(line), "mem %s app=%lu lin=%lu\n",
+             pb_memory_pressure_name(runtime.memory.pressure),
+             (unsigned long)runtime.memory.application_free,
+             (unsigned long)runtime.memory.linear_free);
     pb_console_print(line);
-    snprintf(line, sizeof(line), "frames %lu  audio=%d  fs=%d\n",
-             (unsigned long)bootstrap->frames, (int)pb_audio_status(),
-             (int)pb_fs_status());
+    snprintf(line, sizeof(line), "frames %lu  assert=%d\n",
+             (unsigned long)bootstrap->frames, runtime.assert_failed ? 1 : 0);
     pb_console_print(line);
-    pb_console_print("START exits. This is not PaperBoat.\n\nlog:\n");
-    start = bootstrap->log.count < PB_BOOTSTRAP_LOG_CAPACITY
-                ? 0U
-                : bootstrap->log.next;
-    for (index = 0; index < bootstrap->log.count; index++) {
-        const size_t slot = (start + index) % PB_BOOTSTRAP_LOG_CAPACITY;
-        snprintf(line, sizeof(line), "  %s\n", bootstrap->log.lines[slot]);
-        pb_console_print(line);
+    pb_console_print("START exits. This is not PaperBoat.\ncrumbs:\n");
+    start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
+    for (index = start; index < runtime.breadcrumb_count; index++) {
+        const PBBreadcrumb *crumb = pb_breadcrumb_at(index);
+        if (crumb != NULL) {
+            snprintf(line, sizeof(line), "  %s\n", crumb->text);
+            pb_console_print(line);
+        }
     }
 }
 
 int main(int argc, char **argv) {
     PBBootstrap bootstrap;
     PBInputSample input;
+    PBMemoryStatus memory;
 
     (void)argc;
     (void)argv;
@@ -51,13 +57,16 @@ int main(int argc, char **argv) {
         pb_log(PB_LOG_ERROR, "main", "system init failed");
         return 1;
     }
-    pb_bootstrap_log(&bootstrap, "platform ready (M3)");
+    pb_memory_query(&memory);
+    PB_ASSERT(pb_gfx_ready());
+    pb_bootstrap_log(&bootstrap, "diagnostics ready (M4)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
-    pb_log(PB_LOG_INFO, "main", pb_fs_sdmc_root());
+    pb_log(PB_LOG_INFO, "main", pb_memory_pressure_name(memory.pressure));
 
     while (pb_system_pump() && pb_bootstrap_is_running(&bootstrap)) {
         pb_input_poll(&input);
         if ((input.down & PB_KEY_START) != 0U) {
+            pb_breadcrumb("START exit");
             pb_bootstrap_on_start(&bootstrap);
             break;
         }

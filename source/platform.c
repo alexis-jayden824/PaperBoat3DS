@@ -13,6 +13,15 @@ static uint32_t host_down;
 static uint64_t host_time_ms;
 static bool host_running = true;
 static bool host_gfx_ready;
+static bool host_memory_measured;
+static uint32_t host_application_free;
+static uint32_t host_linear_free;
+static uint32_t host_application_size;
+static PBHardwareModel host_hw_model;
+#endif
+
+#ifdef __3DS__
+static PBHardwareModel g_hw_model = PB_HW_UNKNOWN;
 #endif
 
 #ifdef __3DS__
@@ -28,18 +37,23 @@ static void apt_hook(APT_HookType hook, void *param) {
     switch (hook) {
         case APTHOOK_ONSUSPEND:
             pb_bootstrap_apt_event(bootstrap, PB_APT_SUSPEND);
+            pb_breadcrumb("apt suspend");
             break;
         case APTHOOK_ONSLEEP:
             pb_bootstrap_apt_event(bootstrap, PB_APT_SLEEP);
+            pb_breadcrumb("apt sleep");
             break;
         case APTHOOK_ONRESTORE:
             pb_bootstrap_apt_event(bootstrap, PB_APT_RESTORE);
+            pb_breadcrumb("apt restore");
             break;
         case APTHOOK_ONWAKEUP:
             pb_bootstrap_apt_event(bootstrap, PB_APT_WAKEUP);
+            pb_breadcrumb("apt wakeup");
             break;
         case APTHOOK_ONEXIT:
             pb_bootstrap_apt_event(bootstrap, PB_APT_EXIT);
+            pb_breadcrumb("apt exit");
             break;
         default:
             break;
@@ -47,29 +61,43 @@ static void apt_hook(APT_HookType hook, void *param) {
 }
 #endif
 
-const char *pb_log_level_name(PBLogLevel level) {
-    switch (level) {
-        case PB_LOG_WARNING:
-            return "warning";
-        case PB_LOG_ERROR:
-            return "error";
-        case PB_LOG_INFO:
-        default:
-            return "info";
-    }
-}
-
-void pb_log(PBLogLevel level, const char *component, const char *message) {
-    const char *safe_component = component != NULL ? component : "platform";
-    const char *safe_message = message != NULL ? message : "";
+PBHardwareModel pb_hw_model(void) {
 #ifdef __3DS__
-    printf("[%s] %s: %s\n", pb_log_level_name(level), safe_component,
-           safe_message);
+    return g_hw_model;
 #else
-    fprintf(stderr, "[%s] %s: %s\n", pb_log_level_name(level), safe_component,
-            safe_message);
+    return host_hw_model;
 #endif
 }
+
+const char *pb_hw_model_name(PBHardwareModel model) {
+    switch (model) {
+        case PB_HW_OLD_3DS:
+            return "old3ds";
+        case PB_HW_NEW_3DS:
+            return "new3ds";
+        case PB_HW_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+bool pb_hw_new_3ds_features_enabled(void) {
+    return false;
+}
+
+#ifndef __3DS__
+void pb_hw_host_set(PBHardwareModel model) {
+    host_hw_model = model;
+}
+
+void pb_memory_host_set(uint32_t application_free, uint32_t linear_free,
+                        uint32_t application_size, bool measured) {
+    host_application_free = application_free;
+    host_linear_free = linear_free;
+    host_application_size = application_size;
+    host_memory_measured = measured;
+}
+#endif
 
 PBAudioStatus pb_audio_status(void) {
     return PB_AUDIO_DEFERRED_M14;
@@ -144,9 +172,11 @@ void pb_memory_query(PBMemoryStatus *status) {
         return;
     }
     memset(status, 0, sizeof(*status));
+    status->application_size = osGetMemRegionSize(MEMREGION_APPLICATION);
     status->application_free = osGetMemRegionFree(MEMREGION_APPLICATION);
     status->linear_free = linearSpaceFree();
     status->measured = true;
+    status->pressure = pb_memory_classify(status);
 }
 
 bool pb_system_init(PBBootstrap *bootstrap) {
@@ -155,6 +185,15 @@ bool pb_system_init(PBBootstrap *bootstrap) {
 
     if (bootstrap == NULL) {
         return false;
+    }
+    pb_diag_init();
+    {
+        bool is_new = false;
+        if (R_SUCCEEDED(APT_CheckNew3DS(&is_new))) {
+            g_hw_model = is_new ? PB_HW_NEW_3DS : PB_HW_OLD_3DS;
+        } else {
+            g_hw_model = PB_HW_UNKNOWN;
+        }
     }
     gfxInitDefault();
     gfxSetDoubleBuffering(GFX_TOP, true);
@@ -168,10 +207,13 @@ bool pb_system_init(PBBootstrap *bootstrap) {
     (void)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &top_width, &top_height);
     bootstrap->top_ready = top_width != 0 && top_height != 0;
     bootstrap->bottom_ready = true;
+    pb_breadcrumb("system init");
+    pb_log(PB_LOG_INFO, "hw", pb_hw_model_name(g_hw_model));
     return true;
 }
 
 void pb_system_shutdown(PBBootstrap *bootstrap) {
+    pb_breadcrumb("system shutdown");
     if (g_apt_hooked) {
         aptUnhook(&g_apt_cookie);
         g_apt_hooked = false;
@@ -243,21 +285,28 @@ void pb_memory_query(PBMemoryStatus *status) {
         return;
     }
     memset(status, 0, sizeof(*status));
-    status->measured = false;
+    status->application_size = host_application_size;
+    status->application_free = host_application_free;
+    status->linear_free = host_linear_free;
+    status->measured = host_memory_measured;
+    status->pressure = pb_memory_classify(status);
 }
 
 bool pb_system_init(PBBootstrap *bootstrap) {
     host_running = true;
     host_gfx_ready = true;
+    pb_diag_init();
     if (bootstrap != NULL) {
         bootstrap->gfx_ready = true;
         bootstrap->top_ready = true;
         bootstrap->bottom_ready = true;
     }
+    pb_breadcrumb("system init");
     return bootstrap != NULL;
 }
 
 void pb_system_shutdown(PBBootstrap *bootstrap) {
+    pb_breadcrumb("system shutdown");
     host_gfx_ready = false;
     host_running = false;
     if (bootstrap != NULL) {

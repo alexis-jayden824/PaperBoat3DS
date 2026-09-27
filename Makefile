@@ -14,7 +14,7 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M3 platform abstraction
+APP_DESCRIPTION := M4 diagnostics
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
@@ -60,7 +60,7 @@ export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
-.PHONY: all packages bootstrap-test m1-lock-test m2-audit-test m3-platform-test clean
+.PHONY: all packages bootstrap-test m1-lock-test m2-audit-test m3-platform-test m4-diag-test clean
 
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -85,6 +85,9 @@ m2-audit-test:
 
 m3-platform-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_platform.sh "$(BUILD)/m3-tests"
+
+m4-diag-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_m4.sh "$(BUILD)/m4-tests"
 
 $(BUILD):
 	@mkdir -p $@

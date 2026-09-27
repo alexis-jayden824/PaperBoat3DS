@@ -18,8 +18,8 @@ static unsigned int checks_run;
     } while (0)
 
 static bool test_deferred_and_layout(void) {
-    CHECK(strcmp(PB3DS_VERSION, "0.3.0-m3") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M3") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.4.0-m4") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M4") != NULL);
     CHECK(PB_GFX_TOP_WIDTH == 400U);
     CHECK(PB_GFX_TOP_HEIGHT == 240U);
     CHECK(PB_GFX_BOTTOM_WIDTH == 320U);

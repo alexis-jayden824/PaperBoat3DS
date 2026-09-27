@@ -1,4 +1,4 @@
-name: Nintendo 3DS M3 build
+name: Nintendo 3DS M4 build
 
 on:
   push:
@@ -27,6 +27,8 @@ jobs:
         run: sh tools/test_bootstrap.sh
       - name: Test M3 platform contract
         run: sh tools/test_platform.sh
+      - name: Test M4 diagnostics contract
+        run: sh tools/test_m4.sh
 
   build:
     runs-on: ubuntu-latest
@@ -48,6 +50,8 @@ jobs:
         run: make bootstrap-test
       - name: Test M3 platform contract
         run: make m3-platform-test
+      - name: Test M4 diagnostics contract
+        run: make m4-diag-test
       - name: Build 3DSX
         run: |
           make -j2 \
