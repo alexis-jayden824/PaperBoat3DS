@@ -38,6 +38,7 @@ mkdir -p "$host_root"
     "$project_root/source/diag.c" \
     "$project_root/source/input.c" \
     "$project_root/source/fs.c" \
+    "$project_root/source/loop.c" \
     "$project_root/source/compat.c" \
     "$project_root/tests/test_m9.c" \
     -o "$test_binary"

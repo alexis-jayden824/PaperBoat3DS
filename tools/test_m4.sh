@@ -20,8 +20,8 @@ if grep -n 'osSetSpeedupEnable\|APT_SetAppCpuTimeLimit' \
 fi
 if grep -n '#include[[:space:]]*<3ds.h>' "$project_root/source/diag.c" \
     "$project_root/source/main.c" "$project_root/source/assets.c" \
-    "$project_root/source/fs.c"; then
-    fail "diag.c, main.c, assets.c, and fs.c must not include 3ds.h"
+    "$project_root/source/fs.c" "$project_root/source/loop.c"; then
+    fail "diag.c, main.c, assets.c, fs.c, and loop.c must not include 3ds.h"
 fi
 
 mkdir -p "$build_directory"
@@ -32,6 +32,7 @@ mkdir -p "$build_directory"
     "$project_root/source/platform.c" \
     "$project_root/source/diag.c" \
     "$project_root/source/fs.c" \
+    "$project_root/source/loop.c" \
     "$project_root/tests/test_diag.c" \
     -o "$test_binary"
 

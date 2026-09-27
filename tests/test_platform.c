@@ -18,8 +18,8 @@ static unsigned int checks_run;
     } while (0)
 
 static bool test_deferred_and_layout(void) {
-    CHECK(strcmp(PB3DS_VERSION, "0.9.0-m9") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M9") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.10.0-m10") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M10") != NULL);
     CHECK(pb_input_select_reserved());
     CHECK(pb_assets_status() == PB_ASSETS_HOST_ONLY);
     CHECK(!pb_assets_extraction_on_device());
@@ -43,7 +43,6 @@ static bool test_host_lifecycle_and_input(void) {
     PBBootstrap bootstrap;
     PBInputSample sample;
     PBMemoryStatus memory;
-    uint64_t first_ms;
 
     pb_bootstrap_init(&bootstrap);
     CHECK(pb_system_init(&bootstrap));
@@ -56,8 +55,9 @@ static bool test_host_lifecycle_and_input(void) {
     pb_memory_query(&memory);
     CHECK(!memory.measured);
 
-    first_ms = pb_time_ms();
-    CHECK(pb_time_ms() == first_ms + 1U);
+    CHECK(pb_time_ms() == 0U);
+    pb_time_host_advance(16);
+    CHECK(pb_time_ms() == 16U);
 
     pb_input_host_set(PB_KEY_START, PB_KEY_START);
     pb_input_poll(&sample);

@@ -24,7 +24,7 @@ void pb_compat_init(void) {
     g_compat.logging = PB_COMPAT_READY;
     g_compat.config = PB_COMPAT_DEFERRED_M15;
     g_compat.controller = PB_COMPAT_READY;
-    g_compat.time = PB_COMPAT_DEFERRED_M10;
+    g_compat.time = PB_COMPAT_READY;
     g_compat.gfx = PB_COMPAT_DEFERRED_M11;
     g_compat.audio = PB_COMPAT_DEFERRED_M14;
     g_ready = true;
@@ -137,6 +137,7 @@ void GameEngine_EndAudioFrame(void) {
 }
 
 void GameEngine_HoldFrame(void) {
+    pb_loop_hold_frame();
 }
 
 int GameEngine_GetSaveFilePath(char *dst, unsigned dst_size) {

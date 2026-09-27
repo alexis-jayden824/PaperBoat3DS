@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * PaperBoat-facing 3DS platform boundary (M3–M9).
+ * PaperBoat-facing 3DS platform boundary (M3–M10).
  *
  * Game and compatibility code include this header instead of 3ds.h.
  * Audio is declared and deferred until M14. Extra OS threads are forbidden.

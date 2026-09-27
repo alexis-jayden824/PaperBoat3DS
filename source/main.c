@@ -14,11 +14,13 @@ static void draw_bottom_status(const PBBootstrap *bootstrap,
     PBRuntimeStatus runtime;
     PBCompatState compat;
     PBOSContPad pad;
+    PBLoopStatus loop;
     size_t index;
     size_t start;
 
     pb_runtime_query(&runtime, bootstrap->frames, bootstrap->gfx_ready);
     pb_compat_query(&compat);
+    pb_loop_query(&loop);
     pb_input_map_n64(input, &pad);
     pb_console_clear();
     snprintf(line, sizeof(line), "%s\n", PB3DS_PROJECT_NAME);
@@ -57,6 +59,10 @@ static void draw_bottom_status(const PBBootstrap *bootstrap,
                  mount.paperboat_present ? 1 : 0, mount.pm64_present ? 1 : 0);
         pb_console_print(line);
     }
+    snprintf(line, sizeof(line), "loop tick=%lu disp=%lu pause=%d\n",
+             (unsigned long)loop.game_ticks, (unsigned long)loop.display_frames,
+             loop.paused ? 1 : 0);
+    pb_console_print(line);
     pb_console_print("START exits. SELECT is reserved.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
@@ -87,6 +93,7 @@ int main(int argc, char **argv) {
     pb_bootstrap_log(&bootstrap, "asset extract host-only (M7)");
     pb_bootstrap_log(&bootstrap, "HID map ready; SELECT reserved (M8)");
     pb_bootstrap_log(&bootstrap, "SDMC resource I/O (M9)");
+    pb_bootstrap_log(&bootstrap, "30Hz APT loop (M10)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {
@@ -97,6 +104,10 @@ int main(int argc, char **argv) {
     }
 
     while (pb_system_pump() && pb_bootstrap_is_running(&bootstrap)) {
+        unsigned steps;
+        unsigned i;
+
+        steps = pb_loop_begin_frame();
         pb_input_poll(&input);
         if ((input.down & PB_KEY_SELECT) != 0U) {
             pb_breadcrumb("SELECT reserved (M16)");
@@ -106,7 +117,9 @@ int main(int argc, char **argv) {
             pb_bootstrap_on_start(&bootstrap);
             break;
         }
-        pb_bootstrap_tick(&bootstrap);
+        for (i = 0U; i < steps; i++) {
+            pb_bootstrap_tick(&bootstrap);
+        }
         pb_gfx_clear_top(TOP_FILL_R, TOP_FILL_G, TOP_FILL_B);
         draw_bottom_status(&bootstrap, &input);
         pb_gfx_present();

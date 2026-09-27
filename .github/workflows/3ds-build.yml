@@ -1,4 +1,4 @@
-name: Nintendo 3DS M9 build
+name: Nintendo 3DS M10 build
 
 on:
   push:
@@ -39,6 +39,8 @@ jobs:
         run: sh tools/test_m8.sh
       - name: Test M9 filesystem contract
         run: sh tools/test_m9.sh
+      - name: Test M10 loop contract
+        run: sh tools/test_m10.sh
 
   build:
     runs-on: ubuntu-latest
@@ -74,6 +76,8 @@ jobs:
         run: make m8-input-test
       - name: Test M9 filesystem contract
         run: make m9-fs-test
+      - name: Test M10 loop contract
+        run: make m10-loop-test
       - name: Build 3DSX
         run: |
           make -j2 \

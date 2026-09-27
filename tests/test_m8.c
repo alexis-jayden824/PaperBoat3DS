@@ -22,8 +22,8 @@ static bool test_select_reserved_and_map(void) {
     PBOSContPad pad;
     PBCompatState state;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.9.0-m9") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M9") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.10.0-m10") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M10") != NULL);
     CHECK(pb_input_select_reserved());
     CHECK(PB_KEY_SELECT == (1U << 2));
     CHECK(PB_CONT_A == 0x8000U);

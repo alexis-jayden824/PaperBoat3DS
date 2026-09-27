@@ -43,22 +43,27 @@ static void apt_hook(APT_HookType hook, void *param) {
     switch (hook) {
         case APTHOOK_ONSUSPEND:
             pb_bootstrap_apt_event(bootstrap, PB_APT_SUSPEND);
+            pb_loop_on_apt(PB_APT_SUSPEND);
             pb_breadcrumb("apt suspend");
             break;
         case APTHOOK_ONSLEEP:
             pb_bootstrap_apt_event(bootstrap, PB_APT_SLEEP);
+            pb_loop_on_apt(PB_APT_SLEEP);
             pb_breadcrumb("apt sleep");
             break;
         case APTHOOK_ONRESTORE:
             pb_bootstrap_apt_event(bootstrap, PB_APT_RESTORE);
+            pb_loop_on_apt(PB_APT_RESTORE);
             pb_breadcrumb("apt restore");
             break;
         case APTHOOK_ONWAKEUP:
             pb_bootstrap_apt_event(bootstrap, PB_APT_WAKEUP);
+            pb_loop_on_apt(PB_APT_WAKEUP);
             pb_breadcrumb("apt wakeup");
             break;
         case APTHOOK_ONEXIT:
             pb_bootstrap_apt_event(bootstrap, PB_APT_EXIT);
+            pb_loop_on_apt(PB_APT_EXIT);
             pb_breadcrumb("apt exit");
             break;
         default:
@@ -163,7 +168,7 @@ void pb_input_last(PBInputSample *sample) {
     }
 }
 
-uint64_t pb_time_ms(void) {
+uint64_t pb_time_raw_ms(void) {
     return osGetTime();
 }
 
@@ -212,6 +217,7 @@ bool pb_system_init(PBBootstrap *bootstrap) {
     bootstrap->top_ready = top_width != 0 && top_height != 0;
     bootstrap->bottom_ready = true;
     pb_fs_init();
+    pb_loop_init();
     pb_breadcrumb("system init");
     pb_log(PB_LOG_INFO, "hw", pb_hw_model_name(g_hw_model));
     return true;
@@ -219,6 +225,7 @@ bool pb_system_init(PBBootstrap *bootstrap) {
 
 void pb_system_shutdown(PBBootstrap *bootstrap) {
     pb_breadcrumb("system shutdown");
+    pb_loop_shutdown();
     pb_fs_shutdown();
     if (g_apt_hooked) {
         aptUnhook(&g_apt_cookie);
@@ -299,8 +306,16 @@ void pb_input_host_set_cstick(int16_t x, int16_t y) {
     host_cstick_y = y;
 }
 
-uint64_t pb_time_ms(void) {
-    return host_time_ms++;
+uint64_t pb_time_raw_ms(void) {
+    return host_time_ms;
+}
+
+void pb_time_host_set(uint64_t ms) {
+    host_time_ms = ms;
+}
+
+void pb_time_host_advance(uint64_t ms) {
+    host_time_ms += ms;
 }
 
 void pb_time_wait_vblank(void) {
@@ -329,11 +344,13 @@ bool pb_system_init(PBBootstrap *bootstrap) {
     }
     pb_breadcrumb("system init");
     pb_fs_init();
+    pb_loop_init();
     return bootstrap != NULL;
 }
 
 void pb_system_shutdown(PBBootstrap *bootstrap) {
     pb_breadcrumb("system shutdown");
+    pb_loop_shutdown();
     pb_fs_shutdown();
     host_gfx_ready = false;
     host_running = false;

@@ -5,8 +5,8 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M9**. M0–M8 are shell through HID. M9 is SDMC
-resource I/O. Nothing past M9 is implemented.
+This repository is at **M10**. M0–M9 are shell through SDMC I/O. M10 is
+the APT 30 Hz loop. Nothing past M10 is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -78,9 +78,11 @@ reserved for M16 and is not a game button. START still exits the shell.
 SDMC paths, STORE `.o2r` lookup, 16-byte aligned copies, lifetime until
 `pb_fs_shutdown`. Missing archives are expected until the owner copies them.
 
-## M10 — Timing, Game Loop & Runtime Services — **not started**
+## M10 — Timing, Game Loop & Runtime Services — **implemented**
 
-Monotonic timing, frame stepping, suspend/resume, no desktop window loop.
+30 Hz ticks from the APT loop. Monotonic `pb_time_ms` freezes across HOME
+suspend/sleep. No extra threads. No desktop window loop. `boot_main` is
+not linked.
 
 ## M11 — Graphics Backend Foundation — **not started**
 
