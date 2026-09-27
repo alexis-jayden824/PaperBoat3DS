@@ -1,4 +1,4 @@
-name: Nintendo 3DS M4 build
+name: Nintendo 3DS M5 build
 
 on:
   push:
@@ -29,6 +29,8 @@ jobs:
         run: sh tools/test_platform.sh
       - name: Test M4 diagnostics contract
         run: sh tools/test_m4.sh
+      - name: Test M5 PaperBoat slice
+        run: sh tools/test_m5.sh
 
   build:
     runs-on: ubuntu-latest
@@ -52,6 +54,10 @@ jobs:
         run: make m3-platform-test
       - name: Test M4 diagnostics contract
         run: make m4-diag-test
+      - name: Fetch pinned PaperBoat slice
+        run: make fetch
+      - name: Test M5 PaperBoat slice
+        run: make m5-slice-test
       - name: Build 3DSX
         run: |
           make -j2 \

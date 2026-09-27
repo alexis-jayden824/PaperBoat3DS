@@ -14,7 +14,7 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M4 diagnostics
+APP_DESCRIPTION := M5 PaperBoat slice
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
@@ -23,12 +23,17 @@ HOST_CC         ?= cc
 PACKAGING_RSF   := packaging/PaperBoat3DS-Refolded.rsf
 MAKEROM         ?= makerom
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
+PAPERBOAT_COMMIT := $(shell awk -F= '/^PAPERBOAT_COMMIT=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
+PAPERBOAT_RELEASE := $(shell awk -F= '/^PAPERBOAT_RELEASE=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 
 ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
             -DPB3DS_BUILD_SHA=\"$(PB3DS_BUILD_SHA)\" \
-            -DPB3DS_BUILD_UTC=\"$(PB3DS_BUILD_UTC)\"
+            -DPB3DS_BUILD_UTC=\"$(PB3DS_BUILD_UTC)\" \
+            -DPB3DS_PAPERBOAT_COMMIT=\"$(PAPERBOAT_COMMIT)\" \
+            -DPB3DS_PAPERBOAT_RELEASE=\"$(PAPERBOAT_RELEASE)\" \
+            -I$(TOPDIR)/include/pb3ds/n64shim
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
@@ -60,9 +65,9 @@ export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
-.PHONY: all packages bootstrap-test m1-lock-test m2-audit-test m3-platform-test m4-diag-test clean
+.PHONY: all packages fetch bootstrap-test m1-lock-test m2-audit-test m3-platform-test m4-diag-test m5-slice-test clean
 
-all: $(BUILD)
+all: $(BUILD)/paperboat_config.h $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 packages: all
@@ -88,6 +93,18 @@ m3-platform-test:
 
 m4-diag-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_m4.sh "$(BUILD)/m4-tests"
+
+m5-slice-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_m5.sh "$(BUILD)/m5-tests"
+
+fetch:
+	@sh tools/fetch_paperboat.sh
+	@mkdir -p $(BUILD)
+	@sh tools/write_paperboat_config.sh "$(BUILD)/paperboat_config.h"
+
+$(BUILD)/paperboat_config.h:
+	@mkdir -p $(BUILD)
+	@sh tools/write_paperboat_config.sh "$@"
 
 $(BUILD):
 	@mkdir -p $@

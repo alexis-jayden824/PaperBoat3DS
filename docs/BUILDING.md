@@ -4,9 +4,10 @@
 
 M0 provides the native Homebrew shell. M1 pins the toolchain and CI. M2 pins
 PaperBoat 1.0.1 / libultraship / Torch. M3 wraps libctru behind
-`include/pb3ds/platform.h`. M4 adds diagnostics on that boundary.
+`include/pb3ds/platform.h`. M4 adds diagnostics. M5 fetches PaperBoat 1.0.1
+and compiles a two-file slice (`libc_compat`, `decode_yay0`).
 
-The application still does not load PaperBoat, libultraship, or game assets.
+The application still does not run `boot_main` or load game assets.
 
 ## Pinned CI environment (authoritative)
 
@@ -57,7 +58,12 @@ sh tools/test_m2.sh
 sh tools/test_bootstrap.sh
 sh tools/test_platform.sh
 sh tools/test_m4.sh
+sh tools/test_m5.sh
 ```
+
+`test_m5.sh` fetches the PaperBoat pin, checks CMake exclusions, and
+compiles the slice on the host. `make fetch` is required before a 3DS
+link that includes the real `_Printf` / `decode_yay0` objects.
 
 `test_m1.sh` checks that the GitHub workflow still matches
 `toolchain/TOOLCHAINS.lock`. `test_m2.sh` checks `upstream/PAPERBOAT.lock`

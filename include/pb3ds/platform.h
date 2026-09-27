@@ -18,6 +18,7 @@
 #include "pb3ds/input.h"
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
+#include "pb3ds/paperboat.h"
 #include "pb3ds/system.h"
 #include "pb3ds/thread.h"
 #include "pb3ds/time.h"

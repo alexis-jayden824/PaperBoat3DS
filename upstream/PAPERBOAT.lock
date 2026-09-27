@@ -1,5 +1,5 @@
 # Immutable upstream inputs for PaperBoat3DS Refolded.
-# Change only with an explicit M2 re-audit. Do not fetch these trees until M5.
+# Do not vendor these trees. M5 fetches PaperBoat only into .cache/upstream.
 
 PAPERBOAT_REPOSITORY=https://github.com/HarbourMasters/PaperBoat.git
 PAPERBOAT_RELEASE=1.0.1

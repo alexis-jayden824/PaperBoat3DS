@@ -5,9 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M4**. M0 is the Homebrew shell; M1 pins how it is
-built; M2 pins which upstream trees may later be integrated; M3 is the C
-platform API; M4 is diagnostics. Nothing past M4 is implemented.
+This repository is at **M5**. M0–M4 are shell, toolchain, pins, platform
+API, and diagnostics. M5 compiles a small PaperBoat slice. Nothing past M5
+is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -49,10 +49,12 @@ M9, citro3d is M11.
 Heap/linear pressure against Old 3DS reserves, RAM log ring, `PB_ASSERT`,
 crash breadcrumbs, `pb_runtime_query`, New 3DS detection with extras off.
 
-## M5 — PaperBoat Source Integration — **not started**
+## M5 — PaperBoat Source Integration — **implemented**
 
-Pinned upstream source in the 3DS build graph. Isolate unsupported desktop
-modules. Preserve upstream game logic.
+Fetch PaperBoat 1.0.1 into `.cache/upstream`. Compile `libc_compat.c` and
+`decode_yay0.c` with PaperBoat CMake exclusions recorded in
+`upstream/PAPERBOAT.exclusions`. Desktop engine/SDL/Torch stay out.
+`boot_main` is not linked.
 
 ## M6 — libultraship / Engine Compatibility Layer — **not started**
 

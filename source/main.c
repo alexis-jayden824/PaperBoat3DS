@@ -2,6 +2,7 @@
 #include "pb3ds/version.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define TOP_FILL_R 26U
 #define TOP_FILL_G 51U
@@ -34,6 +35,9 @@ static void draw_bottom_status(const PBBootstrap *bootstrap) {
     snprintf(line, sizeof(line), "frames %lu  assert=%d\n",
              (unsigned long)bootstrap->frames, runtime.assert_failed ? 1 : 0);
     pb_console_print(line);
+    snprintf(line, sizeof(line), "pb %s slice=%d\n",
+             pb_paperboat_release(), pb_paperboat_slice_linked() ? 1 : 0);
+    pb_console_print(line);
     pb_console_print("START exits. This is not PaperBoat.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
@@ -59,9 +63,15 @@ int main(int argc, char **argv) {
     }
     pb_memory_query(&memory);
     PB_ASSERT(pb_gfx_ready());
-    pb_bootstrap_log(&bootstrap, "diagnostics ready (M4)");
+    pb_bootstrap_log(&bootstrap, "PaperBoat slice (M5)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
-    pb_log(PB_LOG_INFO, "main", pb_memory_pressure_name(memory.pressure));
+    pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
+    if (pb_paperboat_slice_linked()) {
+        unsigned char yay0_src[16];
+        unsigned char yay0_dst[8];
+        memset(yay0_src, 0, sizeof(yay0_src));
+        pb_paperboat_decode_yay0(yay0_src, yay0_dst);
+    }
 
     while (pb_system_pump() && pb_bootstrap_is_running(&bootstrap)) {
         pb_input_poll(&input);

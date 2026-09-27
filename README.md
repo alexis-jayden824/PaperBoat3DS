@@ -1,7 +1,7 @@
 # PaperBoat3DS Refolded
 
 A clean native Nintendo 3DS port of PaperBoat / Paper Mario 64, started
-from milestone **M0** and currently at **M4**.
+from milestone **M0** and currently at **M5**.
 
 This is a from-scratch rebuild. It is **not** a continuation of the previous
 PaperBoat3DS renderer/runtime tree. PaperBoat remains the behavioral
@@ -9,17 +9,14 @@ reference; this repository does not rebuild Paper Mario, does not fake
 gameplay geometry, and does not pretend the game is running until that
 milestone is actually reached.
 
-## Current status: M4
+## Current status: M5
 
-M0 is the Homebrew shell. M1 pins the toolchain. M2 pins PaperBoat 1.0.1.
-M3 is the C platform boundary. M4 adds memory pressure, a RAM log ring,
-assertions, crash breadcrumbs, runtime status, and New 3DS detection
-without enabling New 3DS extras.
+M0–M4 are the Homebrew shell, pinned toolchain, dependency audit, C platform
+API, and diagnostics. M5 fetches PaperBoat 1.0.1 into `.cache/upstream` and
+links `libc_compat.c` plus `decode_yay0.c`. `boot_main` is not compiled.
+libultraship is M6. Torch stays off the 3DS.
 
-PaperBoat-facing code must not include `3ds.h`. Audio stays deferred until
-M14. SDMC I/O is M9. Full HID mapping is M8. citro3d is M11.
-
-**M0 acceptance still needs a Folium/hardware boot.**
+**M0 acceptance still needs a Folium/hardware boot.** This is not Paper Mario.
 
 ## Build
 
@@ -32,8 +29,10 @@ sh tools/test_m2.sh
 sh tools/test_bootstrap.sh
 sh tools/test_platform.sh
 sh tools/test_m4.sh
+sh tools/test_m5.sh
 
-# Native .3dsx (requires DEVKITARM)
+# Fetch pinned PaperBoat (gitignored cache), then native .3dsx
+make fetch
 make
 
 # Folium/emulator .3ds (requires makerom)
@@ -43,9 +42,8 @@ make packages
 ## Roadmap
 
 The binding milestone list is [docs/ROADMAP.md](docs/ROADMAP.md). See
-[docs/M2.md](docs/M2.md), [docs/M3.md](docs/M3.md), and
-[docs/M4.md](docs/M4.md). No later milestone will be marked complete
-without evidence.
+[docs/M4.md](docs/M4.md), and [docs/M5.md](docs/M5.md). No later milestone
+will be marked complete without evidence.
 
 ## Legal
 

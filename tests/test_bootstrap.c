@@ -28,8 +28,8 @@ static bool test_init_does_not_claim_paperboat(void) {
     CHECK(state.frames == 0);
     CHECK(!state.gfx_ready);
     CHECK(strcmp(PB3DS_PROJECT_NAME, "PaperBoat3DS Refolded") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M4") != NULL);
-    CHECK(strcmp(PB3DS_VERSION, "0.4.0-m4") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M5") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.5.0-m5") == 0);
     CHECK(pb_bootstrap_is_running(&state));
     for (index = 0; index < state.log.count; index++) {
         if (strstr(state.log.lines[index], "PaperBoat is not running") !=
