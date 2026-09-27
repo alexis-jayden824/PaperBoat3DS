@@ -37,6 +37,11 @@ static uint8_t expand_4(uint8_t nibble) {
     return (uint8_t)((nibble << 4) | nibble);
 }
 
+static uint8_t expand_3(uint8_t value) {
+    value &= 7U;
+    return (uint8_t)((value << 5) | (value << 2) | (value >> 1));
+}
+
 static void rgba16_to_8888(uint16_t pixel, uint8_t *out) {
     uint8_t r = (uint8_t)((pixel >> 11) & 0x1FU);
     uint8_t g = (uint8_t)((pixel >> 6) & 0x1FU);
@@ -91,7 +96,7 @@ size_t pb_tex_src_bytes(uint8_t fmt, uint8_t siz, uint16_t width,
         return pixels;
     }
     if (siz == PB_F3D_SIZ_4B) {
-        return (pixels + 1U) / 2U;
+        return ((size_t)width + 1U) / 2U * height;
     }
     (void)fmt;
     return pixels;
@@ -139,12 +144,14 @@ bool pb_tex_decode_rgba8888(uint8_t fmt, uint8_t siz, uint16_t width,
             return true;
         }
         if (siz == PB_F3D_SIZ_4B) {
-            if (src_bytes < (pixels + 1U) / 2U) {
+            if (src_bytes < pb_tex_src_bytes(fmt, siz, width, height)) {
                 return false;
             }
             for (i = 0; i < pixels; i++) {
-                unsigned packed = in[i / 2U];
-                unsigned idx = (i & 1U) ? (packed & 0x0FU) : (packed >> 4);
+                size_t x = i % width;
+                size_t y = i / width;
+                unsigned packed = in[y * (((size_t)width + 1U) / 2U) + x / 2U];
+                unsigned idx = (x & 1U) ? (packed & 0x0FU) : (packed >> 4);
                 if (idx >= tlut_count) {
                     idx = 0U;
                 }
@@ -211,14 +218,16 @@ bool pb_tex_decode_rgba8888(uint8_t fmt, uint8_t siz, uint16_t width,
         return true;
     }
     if (fmt == PB_F3D_FMT_IA && siz == PB_F3D_SIZ_4B) {
-        if (src_bytes < (pixels + 1U) / 2U) {
+        if (src_bytes < pb_tex_src_bytes(fmt, siz, width, height)) {
             return false;
         }
         for (i = 0; i < pixels; i++) {
-            unsigned packed = in[i / 2U];
+            size_t x = i % width;
+            size_t y = i / width;
+            unsigned packed = in[y * (((size_t)width + 1U) / 2U) + x / 2U];
             uint8_t nibble =
-                (uint8_t)((i & 1U) ? (packed & 0x0FU) : (packed >> 4));
-            uint8_t intensity = expand_4((uint8_t)(nibble >> 1));
+                (uint8_t)((x & 1U) ? (packed & 0x0FU) : (packed >> 4));
+            uint8_t intensity = expand_3((uint8_t)(nibble >> 1));
             uint8_t alpha = (nibble & 1U) ? 0xFFU : 0U;
             dst[i * 4U + 0U] = intensity;
             dst[i * 4U + 1U] = intensity;
@@ -228,13 +237,15 @@ bool pb_tex_decode_rgba8888(uint8_t fmt, uint8_t siz, uint16_t width,
         return true;
     }
     if (fmt == PB_F3D_FMT_I && siz == PB_F3D_SIZ_4B) {
-        if (src_bytes < (pixels + 1U) / 2U) {
+        if (src_bytes < pb_tex_src_bytes(fmt, siz, width, height)) {
             return false;
         }
         for (i = 0; i < pixels; i++) {
-            unsigned packed = in[i / 2U];
+            size_t x = i % width;
+            size_t y = i / width;
+            unsigned packed = in[y * (((size_t)width + 1U) / 2U) + x / 2U];
             uint8_t intensity =
-                expand_4((uint8_t)((i & 1U) ? (packed & 0x0FU) : (packed >> 4)));
+                expand_4((uint8_t)((x & 1U) ? (packed & 0x0FU) : (packed >> 4)));
             dst[i * 4U + 0U] = intensity;
             dst[i * 4U + 1U] = intensity;
             dst[i * 4U + 2U] = intensity;
@@ -257,19 +268,22 @@ static int find_slot(const PBTexKey *key) {
     return -1;
 }
 
-static unsigned evict_slot(void) {
+static unsigned evict_slot(bool force) {
     unsigned i;
     unsigned victim = 0;
     uint32_t oldest = 0xFFFFFFFFU;
 
     for (i = 0; i < PB_TEX_CACHE_SLOTS; i++) {
-        if (!g_slots[i].used) {
+        if (!force && !g_slots[i].used) {
             return i;
         }
         if (g_slots[i].lru < oldest) {
             oldest = g_slots[i].lru;
             victim = i;
         }
+    }
+    if (!g_slots[victim].used) {
+        return victim;
     }
     g_diag.allocated -= (uint32_t)g_slots[victim].bytes;
     free(g_slots[victim].rgba);
@@ -303,10 +317,13 @@ const uint8_t *pb_tex_cache_get(const PBTexKey *key, const void *src,
     }
     g_diag.misses++;
     bytes = (size_t)keyed.width * (size_t)keyed.height * 4U;
-    if (g_diag.allocated + (uint32_t)bytes > PB_TEX_CACHE_BYTES_MAX) {
-        evict_slot();
+    if (bytes > PB_TEX_CACHE_BYTES_MAX) {
+        return NULL;
     }
-    slot = evict_slot();
+    while (g_diag.allocated + (uint32_t)bytes > PB_TEX_CACHE_BYTES_MAX) {
+        (void)evict_slot(true);
+    }
+    slot = evict_slot(false);
     rgba = (uint8_t *)malloc(bytes);
     if (rgba == NULL) {
         return NULL;

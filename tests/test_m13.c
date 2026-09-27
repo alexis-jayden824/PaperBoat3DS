@@ -87,6 +87,27 @@ static bool test_fast3d_and_tex(void) {
     CHECK(rgba[0] != 0U || rgba[1] != 0U || rgba[2] != 0U);
     pb_tex_query(&tex);
     CHECK(tex.black_prevented >= 1U);
+    {
+        const uint8_t odd_rows[] = {0x12U, 0x30U, 0x45U, 0x60U};
+        uint8_t decoded[24];
+        CHECK(pb_tex_src_bytes(PB_F3D_FMT_I, PB_F3D_SIZ_4B, 3U, 2U) == 4U);
+        CHECK(!pb_tex_decode_rgba8888(PB_F3D_FMT_I, PB_F3D_SIZ_4B,
+                                      3U, 2U, odd_rows, 3U, NULL, 0U,
+                                      decoded, sizeof(decoded)));
+        CHECK(pb_tex_decode_rgba8888(PB_F3D_FMT_I, PB_F3D_SIZ_4B,
+                                     3U, 2U, odd_rows, sizeof(odd_rows),
+                                     NULL, 0U, decoded, sizeof(decoded)));
+        CHECK(decoded[0] == 0x11U);
+        CHECK(decoded[12] == 0x44U);
+        CHECK(decoded[20] == 0x66U);
+        CHECK(pb_tex_decode_rgba8888(PB_F3D_FMT_IA, PB_F3D_SIZ_4B,
+                                     3U, 2U, odd_rows, sizeof(odd_rows),
+                                     NULL, 0U, decoded, sizeof(decoded)));
+        CHECK(decoded[0] == 0U);
+        CHECK(decoded[4] == 36U);
+        CHECK(decoded[16] == 73U);
+        CHECK(decoded[20] == 109U);
+    }
 
     pb_f3d_reset();
     memset(dl, 0, sizeof(dl));
