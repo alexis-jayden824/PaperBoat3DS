@@ -1,8 +1,8 @@
 #pragma once
 
 #define PB3DS_PROJECT_NAME "PaperBoat3DS Refolded"
-#define PB3DS_VERSION "0.6.0-m6"
-#define PB3DS_ROADMAP_STAGE "M6 compatibility"
+#define PB3DS_VERSION "0.7.0-m7"
+#define PB3DS_ROADMAP_STAGE "M7 assets"
 
 #ifndef PB3DS_BUILD_SHA
 #define PB3DS_BUILD_SHA "unknown"

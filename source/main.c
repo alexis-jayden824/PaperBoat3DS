@@ -41,6 +41,11 @@ static void draw_bottom_status(const PBBootstrap *bootstrap) {
              pb_paperboat_release(), pb_paperboat_slice_linked() ? 1 : 0,
              pb_compat_status_name(compat.gfx));
     pb_console_print(line);
+    snprintf(line, sizeof(line), "assets host-only extract3ds=%d\n",
+             pb_assets_extraction_on_device() ? 1 : 0);
+    pb_console_print(line);
+    snprintf(line, sizeof(line), "us %s\n", pb_assets_us_sha1());
+    pb_console_print(line);
     pb_console_print("START exits. This is not PaperBoat.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
@@ -68,6 +73,7 @@ int main(int argc, char **argv) {
     PB_ASSERT(pb_gfx_ready());
     pb_compat_init();
     pb_bootstrap_log(&bootstrap, "compat layer (M6)");
+    pb_bootstrap_log(&bootstrap, "asset extract host-only (M7)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {

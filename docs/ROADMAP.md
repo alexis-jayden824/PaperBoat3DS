@@ -5,9 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M6**. M0–M5 are shell through a PaperBoat slice. M6
-is the C compatibility layer plus CIA packaging. Nothing past M6 is
-implemented.
+This repository is at **M7**. M0–M6 are shell through a PaperBoat slice and
+C compatibility layer plus CIA packaging. M7 is the host-only legal asset
+pipeline. Nothing past M7 is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -62,9 +62,12 @@ C ABI in `include/pb3ds/compat.h`: logging is ready; resources, HID, timing
 hold, gfx submit, audio, and CVars are deferred with explicit status.
 Desktop libultraship is not linked. CI also emits `.cia`.
 
-## M7 — Legal Asset Pipeline — **not started**
+## M7 — Legal Asset Pipeline — **implemented**
 
-PC-side ROM/resource preparation. Never distribute copyrighted ROM data.
+Host Torch-LH wrapper and US SHA-1 gate (`upstream/ASSETS.lock`). `pm64.o2r`
+comes from `./torch otr` plus `assets/yaml/us`; `paperboat.o2r` comes from
+desktop `GeneratePortO2R`. Neither archive is committed or uploaded. The
+3DS never extracts.
 
 ## M8 — Input Backend — **not started**
 

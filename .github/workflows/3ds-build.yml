@@ -1,4 +1,4 @@
-name: Nintendo 3DS M6 build
+name: Nintendo 3DS M7 build
 
 on:
   push:
@@ -33,6 +33,8 @@ jobs:
         run: sh tools/test_m5.sh
       - name: Test M6 compatibility contract
         run: sh tools/test_m6.sh
+      - name: Test M7 legal asset pipeline
+        run: sh tools/test_m7.sh
 
   build:
     runs-on: ubuntu-latest
@@ -62,6 +64,8 @@ jobs:
         run: make m5-slice-test
       - name: Test M6 compatibility contract
         run: make m6-compat-test
+      - name: Test M7 legal asset pipeline
+        run: make m7-assets-test
       - name: Build 3DSX
         run: |
           make -j2 \

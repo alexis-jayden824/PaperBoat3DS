@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * PaperBoat-facing 3DS platform boundary (M3–M6).
+ * PaperBoat-facing 3DS platform boundary (M3–M7).
  *
  * Game and compatibility code include this header instead of 3ds.h.
  * Audio is declared and deferred until M14. Extra OS threads are forbidden.
@@ -9,6 +9,7 @@
  */
 
 #include "pb3ds/assert.h"
+#include "pb3ds/assets.h"
 #include "pb3ds/audio.h"
 #include "pb3ds/bootstrap.h"
 #include "pb3ds/compat.h"

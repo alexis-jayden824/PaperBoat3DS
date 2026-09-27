@@ -21,8 +21,8 @@ static bool test_memory_pressure_and_hw(void) {
     PBMemoryStatus status;
     PBRuntimeStatus runtime;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.6.0-m6") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M6") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.7.0-m7") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M7") != NULL);
     CHECK(PB_MEMORY_APPLICATION_RESERVE == PB_MIB(8));
     CHECK(PB_MEMORY_LINEAR_RESERVE == PB_MIB(4));
     CHECK(!pb_hw_new_3ds_features_enabled());

@@ -19,8 +19,8 @@ if grep -n 'osSetSpeedupEnable\|APT_SetAppCpuTimeLimit' \
     fail "M4 must not enable New 3DS speedup or extra APPCORE time"
 fi
 if grep -n '#include[[:space:]]*<3ds.h>' "$project_root/source/diag.c" \
-    "$project_root/source/main.c"; then
-    fail "diag.c and main.c must not include 3ds.h"
+    "$project_root/source/main.c" "$project_root/source/assets.c"; then
+    fail "diag.c, main.c, and assets.c must not include 3ds.h"
 fi
 
 mkdir -p "$build_directory"
