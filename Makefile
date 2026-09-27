@@ -21,10 +21,7 @@ PB3DS_BUILD_SHA ?= unknown
 PB3DS_BUILD_UTC ?= unknown
 HOST_CC         ?= cc
 PACKAGING_RSF   := packaging/PaperBoat3DS-Refolded.rsf
-BANNER_PNG      := packaging/banner.png
-BANNER_WAV      := packaging/banner.wav
 MAKEROM         ?= makerom
-BANNERTOOL      ?= bannertool
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 PAPERBOAT_COMMIT := $(shell awk -F= '/^PAPERBOAT_COMMIT=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 PAPERBOAT_RELEASE := $(shell awk -F= '/^PAPERBOAT_RELEASE=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
@@ -75,20 +72,15 @@ all: $(BUILD)/paperboat_config.h $(BUILD)
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
-	@command -v $(BANNERTOOL) >/dev/null || { echo "bannertool was not found in PATH"; exit 1; }
 	@echo stripping $(TARGET).elf
 	@$(STRIP) -o $(TARGET)-stripped.elf $(TARGET).elf
-	@echo building $(TARGET).bnr
-	@$(BANNERTOOL) makebanner -i $(BANNER_PNG) -a $(BANNER_WAV) -o $(TARGET).bnr
 	@echo building $(TARGET).3ds
 	@$(MAKEROM) -f cci -o $(TARGET).3ds -rsf $(PACKAGING_RSF) -target t \
-		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh \
-		-banner $(TARGET).bnr
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
 	@test -s $(TARGET).3ds
 	@echo building $(TARGET).cia
 	@$(MAKEROM) -f cia -o $(TARGET).cia -rsf $(PACKAGING_RSF) -target t \
-		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh \
-		-banner $(TARGET).bnr
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
 	@test -s $(TARGET).cia
 
 bootstrap-test:

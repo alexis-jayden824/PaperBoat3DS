@@ -77,29 +77,16 @@ jobs:
           PB3DS_MAKEROM_COMMIT="$PB3DS_MAKEROM_COMMIT" \
           sh tools/write_build_info.sh build/build-info.txt
           cat build/build-info.txt
-      - name: Build pinned makerom and bannertool
+      - name: Build pinned makerom
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/.tools"
           git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
           git -C "$RUNNER_TEMP/Project_CTR" checkout "$PB3DS_MAKEROM_COMMIT"
           make -C "$RUNNER_TEMP/Project_CTR/makerom" deps
           make -C "$RUNNER_TEMP/Project_CTR/makerom" -j2
+          mkdir -p "$GITHUB_WORKSPACE/.tools"
           install -m 0755 "$RUNNER_TEMP/Project_CTR/makerom/bin/makerom" "$GITHUB_WORKSPACE/.tools/makerom"
-          if command -v bannertool >/dev/null; then
-            install -m 0755 "$(command -v bannertool)" "$GITHUB_WORKSPACE/.tools/bannertool"
-          else
-            git clone --depth 1 --recurse-submodules https://github.com/Steveice10/bannertool.git "$RUNNER_TEMP/bannertool"
-            make -C "$RUNNER_TEMP/bannertool" -j2
-            find "$RUNNER_TEMP/bannertool" -type f -name bannertool -perm -111 | head -n 1 | \
-              xargs -I{} install -m 0755 {} "$GITHUB_WORKSPACE/.tools/bannertool"
-          fi
-          test -x "$GITHUB_WORKSPACE/.tools/makerom"
-          test -x "$GITHUB_WORKSPACE/.tools/bannertool"
       - name: Build CCI and CIA packages
-        run: |
-          make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" \
-               BANNERTOOL="$GITHUB_WORKSPACE/.tools/bannertool" \
-               packages
+        run: make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" packages
       - name: Verify expected outputs
         run: |
           test -s PaperBoat3DS-Refolded.elf

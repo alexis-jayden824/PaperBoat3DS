@@ -42,8 +42,8 @@ Output: `PaperBoat3DS-Refolded.3dsx`
 make packages
 ```
 
-`packages` requires `makerom` and `bannertool` on `PATH`. CI builds pinned
-makerom and uses image `bannertool` when present. Expected outputs:
+`packages` requires `makerom` on `PATH`. CI builds the pinned Project_CTR
+binary. Expected outputs:
 
 - `PaperBoat3DS-Refolded.elf`
 - `PaperBoat3DS-Refolded.3dsx`

@@ -36,7 +36,7 @@ sh tools/test_m6.sh
 make fetch
 make
 
-# Folium/emulator .3ds and FBI-installable .cia (requires makerom + bannertool)
+# Folium/emulator .3ds and FBI-installable .cia (requires makerom)
 make packages
 ```
 
