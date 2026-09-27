@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 env:
   PB3DS_DOCKER_IMAGE: devkitpro/devkitarm
@@ -123,12 +124,35 @@ jobs:
           test -s PaperBoat3DS-Refolded.cia
           test -s build/build-info.txt
           grep -q "git_sha=$GITHUB_SHA" build/build-info.txt
+      - name: Stage download zip
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          archive = Path("PaperBoat3DS-Refolded.zip")
+          entries = (
+              ("PaperBoat3DS-Refolded.3dsx", "PaperBoat3DS-Refolded.3dsx"),
+              ("PaperBoat3DS-Refolded.3ds", "PaperBoat3DS-Refolded.3ds"),
+              ("PaperBoat3DS-Refolded.cia", "PaperBoat3DS-Refolded.cia"),
+              ("PaperBoat3DS-Refolded.smdh", "PaperBoat3DS-Refolded.smdh"),
+              ("build/build-info.txt", "build-info.txt"),
+          )
+          with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+              for src, name in entries:
+                  zf.write(src, arcname=name)
+          if archive.stat().st_size < 1:
+              raise SystemExit("empty zip")
+          PY
+          test -s PaperBoat3DS-Refolded.zip
       - name: Upload Homebrew artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: PaperBoat3DS-Refolded-${{ github.sha }}
+          name: PaperBoat3DS-Refolded
           if-no-files-found: error
+          compression-level: 0
           path: |
+            PaperBoat3DS-Refolded.zip
             PaperBoat3DS-Refolded.3dsx
             PaperBoat3DS-Refolded.3ds
             PaperBoat3DS-Refolded.cia
@@ -136,3 +160,24 @@ jobs:
             PaperBoat3DS-Refolded.smdh
             build/build-info.txt
           retention-days: 14
+      - name: Publish packages on Releases
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-latest
+          name: CI packages (latest)
+          draft: false
+          prerelease: true
+          make_latest: false
+          files: |
+            PaperBoat3DS-Refolded.zip
+            PaperBoat3DS-Refolded.3dsx
+            PaperBoat3DS-Refolded.3ds
+            PaperBoat3DS-Refolded.cia
+          body: |
+            Rolling CI packages from `${{ github.sha }}` (`${{ github.ref_name }}`).
+            Use **Releases** if the Actions artifact download is missing on mobile.
+
+            - Homebrew Launcher: `PaperBoat3DS-Refolded.3dsx`
+            - Folium / CCI: `PaperBoat3DS-Refolded.3ds`
+            - FBI: `PaperBoat3DS-Refolded.cia`
