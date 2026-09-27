@@ -11,10 +11,12 @@
 static void draw_bottom_status(const PBBootstrap *bootstrap) {
     char line[96];
     PBRuntimeStatus runtime;
+    PBCompatState compat;
     size_t index;
     size_t start;
 
     pb_runtime_query(&runtime, bootstrap->frames, bootstrap->gfx_ready);
+    pb_compat_query(&compat);
     pb_console_clear();
     snprintf(line, sizeof(line), "%s\n", PB3DS_PROJECT_NAME);
     pb_console_print(line);
@@ -35,8 +37,9 @@ static void draw_bottom_status(const PBBootstrap *bootstrap) {
     snprintf(line, sizeof(line), "frames %lu  assert=%d\n",
              (unsigned long)bootstrap->frames, runtime.assert_failed ? 1 : 0);
     pb_console_print(line);
-    snprintf(line, sizeof(line), "pb %s slice=%d\n",
-             pb_paperboat_release(), pb_paperboat_slice_linked() ? 1 : 0);
+    snprintf(line, sizeof(line), "pb %s slice=%d gfx=%s\n",
+             pb_paperboat_release(), pb_paperboat_slice_linked() ? 1 : 0,
+             pb_compat_status_name(compat.gfx));
     pb_console_print(line);
     pb_console_print("START exits. This is not PaperBoat.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
@@ -63,7 +66,8 @@ int main(int argc, char **argv) {
     }
     pb_memory_query(&memory);
     PB_ASSERT(pb_gfx_ready());
-    pb_bootstrap_log(&bootstrap, "PaperBoat slice (M5)");
+    pb_compat_init();
+    pb_bootstrap_log(&bootstrap, "compat layer (M6)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {

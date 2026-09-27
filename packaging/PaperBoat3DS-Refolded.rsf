@@ -6,6 +6,7 @@ BasicInfo:
 TitleInfo:
   Category                : Application
   UniqueId                : 0xF0B43
+  Version                 : 0
 
 Option:
   UseOnSD                 : true

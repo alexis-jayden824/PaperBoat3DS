@@ -1,4 +1,4 @@
-name: Nintendo 3DS M5 build
+name: Nintendo 3DS M6 build
 
 on:
   push:
@@ -31,6 +31,8 @@ jobs:
         run: sh tools/test_m4.sh
       - name: Test M5 PaperBoat slice
         run: sh tools/test_m5.sh
+      - name: Test M6 compatibility contract
+        run: sh tools/test_m6.sh
 
   build:
     runs-on: ubuntu-latest
@@ -58,6 +60,8 @@ jobs:
         run: make fetch
       - name: Test M5 PaperBoat slice
         run: make m5-slice-test
+      - name: Test M6 compatibility contract
+        run: make m6-compat-test
       - name: Build 3DSX
         run: |
           make -j2 \
@@ -73,21 +77,35 @@ jobs:
           PB3DS_MAKEROM_COMMIT="$PB3DS_MAKEROM_COMMIT" \
           sh tools/write_build_info.sh build/build-info.txt
           cat build/build-info.txt
-      - name: Build pinned makerom
+      - name: Build pinned makerom and bannertool
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/.tools"
           git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
           git -C "$RUNNER_TEMP/Project_CTR" checkout "$PB3DS_MAKEROM_COMMIT"
           make -C "$RUNNER_TEMP/Project_CTR/makerom" deps
           make -C "$RUNNER_TEMP/Project_CTR/makerom" -j2
-          mkdir -p "$GITHUB_WORKSPACE/.tools"
           install -m 0755 "$RUNNER_TEMP/Project_CTR/makerom/bin/makerom" "$GITHUB_WORKSPACE/.tools/makerom"
-      - name: Build CCI cartridge image
-        run: make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" packages
+          if command -v bannertool >/dev/null; then
+            install -m 0755 "$(command -v bannertool)" "$GITHUB_WORKSPACE/.tools/bannertool"
+          else
+            git clone --depth 1 --recurse-submodules https://github.com/Steveice10/bannertool.git "$RUNNER_TEMP/bannertool"
+            make -C "$RUNNER_TEMP/bannertool" -j2
+            find "$RUNNER_TEMP/bannertool" -type f -name bannertool -perm -111 | head -n 1 | \
+              xargs -I{} install -m 0755 {} "$GITHUB_WORKSPACE/.tools/bannertool"
+          fi
+          test -x "$GITHUB_WORKSPACE/.tools/makerom"
+          test -x "$GITHUB_WORKSPACE/.tools/bannertool"
+      - name: Build CCI and CIA packages
+        run: |
+          make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" \
+               BANNERTOOL="$GITHUB_WORKSPACE/.tools/bannertool" \
+               packages
       - name: Verify expected outputs
         run: |
           test -s PaperBoat3DS-Refolded.elf
           test -s PaperBoat3DS-Refolded.3dsx
           test -s PaperBoat3DS-Refolded.3ds
+          test -s PaperBoat3DS-Refolded.cia
           test -s build/build-info.txt
           grep -q "git_sha=$GITHUB_SHA" build/build-info.txt
       - name: Upload Homebrew artifacts
@@ -98,6 +116,7 @@ jobs:
           path: |
             PaperBoat3DS-Refolded.3dsx
             PaperBoat3DS-Refolded.3ds
+            PaperBoat3DS-Refolded.cia
             PaperBoat3DS-Refolded.elf
             PaperBoat3DS-Refolded.smdh
             build/build-info.txt

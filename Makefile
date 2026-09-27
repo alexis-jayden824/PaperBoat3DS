@@ -14,14 +14,17 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M5 PaperBoat slice
+APP_DESCRIPTION := M6 compatibility
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
 PB3DS_BUILD_UTC ?= unknown
 HOST_CC         ?= cc
 PACKAGING_RSF   := packaging/PaperBoat3DS-Refolded.rsf
+BANNER_PNG      := packaging/banner.png
+BANNER_WAV      := packaging/banner.wav
 MAKEROM         ?= makerom
+BANNERTOOL      ?= bannertool
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 PAPERBOAT_COMMIT := $(shell awk -F= '/^PAPERBOAT_COMMIT=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 PAPERBOAT_RELEASE := $(shell awk -F= '/^PAPERBOAT_RELEASE=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
@@ -65,19 +68,28 @@ export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
-.PHONY: all packages fetch bootstrap-test m1-lock-test m2-audit-test m3-platform-test m4-diag-test m5-slice-test clean
+.PHONY: all packages fetch bootstrap-test m1-lock-test m2-audit-test m3-platform-test m4-diag-test m5-slice-test m6-compat-test clean
 
 all: $(BUILD)/paperboat_config.h $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 packages: all
 	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
+	@command -v $(BANNERTOOL) >/dev/null || { echo "bannertool was not found in PATH"; exit 1; }
 	@echo stripping $(TARGET).elf
 	@$(STRIP) -o $(TARGET)-stripped.elf $(TARGET).elf
+	@echo building $(TARGET).bnr
+	@$(BANNERTOOL) makebanner -i $(BANNER_PNG) -a $(BANNER_WAV) -o $(TARGET).bnr
 	@echo building $(TARGET).3ds
 	@$(MAKEROM) -f cci -o $(TARGET).3ds -rsf $(PACKAGING_RSF) -target t \
-		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh \
+		-banner $(TARGET).bnr
 	@test -s $(TARGET).3ds
+	@echo building $(TARGET).cia
+	@$(MAKEROM) -f cia -o $(TARGET).cia -rsf $(PACKAGING_RSF) -target t \
+		-exefslogo -elf $(TARGET)-stripped.elf -icon $(TARGET).smdh \
+		-banner $(TARGET).bnr
+	@test -s $(TARGET).cia
 
 bootstrap-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_bootstrap.sh "$(BUILD)/m0-tests"
@@ -97,6 +109,9 @@ m4-diag-test:
 m5-slice-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_m5.sh "$(BUILD)/m5-tests"
 
+m6-compat-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_m6.sh "$(BUILD)/m6-tests"
+
 fetch:
 	@sh tools/fetch_paperboat.sh
 	@mkdir -p $(BUILD)
@@ -112,7 +127,8 @@ $(BUILD):
 clean:
 	@echo clean ...
 	@rm -fr $(BUILD) $(TARGET).3dsx $(TARGET).3ds $(TARGET).cia \
-		$(TARGET)-stripped.elf $(TARGET).smdh $(TARGET).elf $(TARGET).map
+		$(TARGET)-stripped.elf $(TARGET).smdh $(TARGET).elf $(TARGET).map \
+		$(TARGET).bnr
 
 else
 

@@ -5,9 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M5**. M0–M4 are shell, toolchain, pins, platform
-API, and diagnostics. M5 compiles a small PaperBoat slice. Nothing past M5
-is implemented.
+This repository is at **M6**. M0–M5 are shell through a PaperBoat slice. M6
+is the C compatibility layer plus CIA packaging. Nothing past M6 is
+implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -56,10 +56,11 @@ Fetch PaperBoat 1.0.1 into `.cache/upstream`. Compile `libc_compat.c` and
 `upstream/PAPERBOAT.exclusions`. Desktop engine/SDL/Torch stay out.
 `boot_main` is not linked.
 
-## M6 — libultraship / Engine Compatibility Layer — **not started**
+## M6 — libultraship / Engine Compatibility Layer — **implemented**
 
-Minimum engine surface. Stubs only where temporarily necessary. Document
-unsupported calls.
+C ABI in `include/pb3ds/compat.h`: logging is ready; resources, HID, timing
+hold, gfx submit, audio, and CVars are deferred with explicit status.
+Desktop libultraship is not linked. CI also emits `.cia`.
 
 ## M7 — Legal Asset Pipeline — **not started**
 

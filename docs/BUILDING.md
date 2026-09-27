@@ -5,7 +5,8 @@
 M0 provides the native Homebrew shell. M1 pins the toolchain and CI. M2 pins
 PaperBoat 1.0.1 / libultraship / Torch. M3 wraps libctru behind
 `include/pb3ds/platform.h`. M4 adds diagnostics. M5 fetches PaperBoat 1.0.1
-and compiles a two-file slice (`libc_compat`, `decode_yay0`).
+and compiles a two-file slice (`libc_compat`, `decode_yay0`). M6 is the C
+engine compatibility layer. Packages include `.3dsx`, `.3ds`, and `.cia`.
 
 The application still does not run `boot_main` or load game assets.
 
@@ -35,18 +36,19 @@ make PB3DS_BUILD_SHA="$(git rev-parse HEAD)" \
 
 Output: `PaperBoat3DS-Refolded.3dsx`
 
-## Local `.3ds` (Folium / emulator)
+## Local `.3ds` / `.cia` (Folium / FBI)
 
 ```sh
 make packages
 ```
 
-`packages` requires `makerom` on `PATH`. CI builds the pinned Project_CTR
-binary. Expected outputs:
+`packages` requires `makerom` and `bannertool` on `PATH`. CI builds pinned
+makerom and uses image `bannertool` when present. Expected outputs:
 
 - `PaperBoat3DS-Refolded.elf`
 - `PaperBoat3DS-Refolded.3dsx`
 - `PaperBoat3DS-Refolded.3ds`
+- `PaperBoat3DS-Refolded.cia`
 - `PaperBoat3DS-Refolded.smdh`
 - `build/build-info.txt` (CI)
 
@@ -59,6 +61,7 @@ sh tools/test_bootstrap.sh
 sh tools/test_platform.sh
 sh tools/test_m4.sh
 sh tools/test_m5.sh
+sh tools/test_m6.sh
 ```
 
 `test_m5.sh` fetches the PaperBoat pin, checks CMake exclusions, and
@@ -78,5 +81,5 @@ on GitHub.
 ## CI
 
 `.github/workflows/3ds-build.yml` runs both host contracts, cross-compiles
-inside the pinned digest, packages the CCI, and uploads `.3dsx`, `.3ds`,
-`.elf`, `.smdh`, and `build-info.txt`.
+inside the pinned digest, packages CCI and CIA, and uploads `.3dsx`, `.3ds`,
+`.cia`, `.elf`, `.smdh`, and `build-info.txt`.
