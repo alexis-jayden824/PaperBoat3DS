@@ -7,9 +7,15 @@
 #include <3ds.h>
 #endif
 
+static PBInputSample g_input_last;
+
 #ifndef __3DS__
 static uint32_t host_held;
 static uint32_t host_down;
+static int16_t host_stick_x;
+static int16_t host_stick_y;
+static int16_t host_cstick_x;
+static int16_t host_cstick_y;
 static uint64_t host_time_ms;
 static bool host_running = true;
 static bool host_gfx_ready;
@@ -147,16 +153,22 @@ void pb_gfx_present(void) {
 void pb_input_poll(PBInputSample *sample) {
     circlePosition stick;
 
-    if (sample == NULL) {
-        return;
-    }
-    memset(sample, 0, sizeof(*sample));
+    memset(&g_input_last, 0, sizeof(g_input_last));
     hidScanInput();
-    sample->held = hidKeysHeld();
-    sample->down = hidKeysDown();
+    g_input_last.held = hidKeysHeld();
+    g_input_last.down = hidKeysDown();
     hidCircleRead(&stick);
-    sample->stick_x = stick.dx;
-    sample->stick_y = stick.dy;
+    g_input_last.stick_x = stick.dx;
+    g_input_last.stick_y = stick.dy;
+    if (sample != NULL) {
+        *sample = g_input_last;
+    }
+}
+
+void pb_input_last(PBInputSample *sample) {
+    if (sample != NULL) {
+        *sample = g_input_last;
+    }
 }
 
 uint64_t pb_time_ms(void) {
@@ -259,18 +271,38 @@ void pb_gfx_present(void) {
 }
 
 void pb_input_poll(PBInputSample *sample) {
-    if (sample == NULL) {
-        return;
-    }
-    memset(sample, 0, sizeof(*sample));
-    sample->held = host_held;
-    sample->down = host_down;
+    memset(&g_input_last, 0, sizeof(g_input_last));
+    g_input_last.held = host_held;
+    g_input_last.down = host_down;
+    g_input_last.stick_x = host_stick_x;
+    g_input_last.stick_y = host_stick_y;
+    g_input_last.cstick_x = host_cstick_x;
+    g_input_last.cstick_y = host_cstick_y;
     host_down = 0U;
+    if (sample != NULL) {
+        *sample = g_input_last;
+    }
+}
+
+void pb_input_last(PBInputSample *sample) {
+    if (sample != NULL) {
+        *sample = g_input_last;
+    }
 }
 
 void pb_input_host_set(uint32_t held, uint32_t down) {
     host_held = held;
     host_down = down;
+}
+
+void pb_input_host_set_stick(int16_t x, int16_t y) {
+    host_stick_x = x;
+    host_stick_y = y;
+}
+
+void pb_input_host_set_cstick(int16_t x, int16_t y) {
+    host_cstick_x = x;
+    host_cstick_y = y;
 }
 
 uint64_t pb_time_ms(void) {

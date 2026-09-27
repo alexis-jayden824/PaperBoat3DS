@@ -1,7 +1,7 @@
 # PaperBoat3DS Refolded
 
 A clean native Nintendo 3DS port of PaperBoat / Paper Mario 64, started
-from milestone **M0** and currently at **M7**.
+from milestone **M0** and currently at **M8**.
 
 This is a from-scratch rebuild. It is **not** a continuation of the previous
 PaperBoat3DS renderer/runtime tree. PaperBoat remains the behavioral
@@ -9,12 +9,11 @@ reference; this repository does not rebuild Paper Mario, does not fake
 gameplay geometry, and does not pretend the game is running until that
 milestone is actually reached.
 
-## Current status: M7
+## Current status: M8
 
-M5 links a two-file PaperBoat slice. M6 is the C compatibility surface.
-M7 is the **host-only** legal asset pipeline: SHA-1 gate for the US dump,
-pinned Torch-LH fetch, no ROM or `.o2r` in git or CI. Extraction never
-runs on the 3DS. CI still uploads `.3dsx`, `.3ds`, and `.cia` only.
+M8 is native HID: circle pad and buttons map to PaperBoat `OSContPad`.
+**SELECT is reserved** for the future menu (M16) and is not a game button.
+CI still uploads `.3dsx`, `.3ds`, and `.cia` only.
 
 **M0 acceptance still needs a Folium/hardware boot.** This is not Paper Mario.
 
@@ -32,6 +31,7 @@ sh tools/test_m4.sh
 sh tools/test_m5.sh
 sh tools/test_m6.sh
 sh tools/test_m7.sh
+sh tools/test_m8.sh
 
 # Fetch pinned PaperBoat (gitignored cache), then native .3dsx
 make fetch
@@ -44,8 +44,8 @@ make packages
 ## Roadmap
 
 The binding milestone list is [docs/ROADMAP.md](docs/ROADMAP.md). See
-[docs/M5.md](docs/M5.md), [docs/M6.md](docs/M6.md), and
-[docs/M7.md](docs/M7.md). No later milestone
+[docs/M5.md](docs/M5.md), [docs/M6.md](docs/M6.md), [docs/M7.md](docs/M7.md), and
+[docs/M8.md](docs/M8.md). No later milestone
 will be marked complete without evidence.
 
 ## Legal

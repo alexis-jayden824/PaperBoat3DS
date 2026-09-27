@@ -14,7 +14,7 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M7 assets
+APP_DESCRIPTION := M8 input
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
@@ -66,7 +66,8 @@ export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
 .PHONY: all packages fetch fetch-torch bootstrap-test m1-lock-test m2-audit-test \
-	m3-platform-test m4-diag-test m5-slice-test m6-compat-test m7-assets-test clean
+	m3-platform-test m4-diag-test m5-slice-test m6-compat-test m7-assets-test \
+	m8-input-test clean
 
 all: $(BUILD)/paperboat_config.h $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -107,6 +108,9 @@ m6-compat-test:
 
 m7-assets-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_m7.sh "$(BUILD)/m7-tests"
+
+m8-input-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_m8.sh "$(BUILD)/m8-tests"
 
 fetch-torch:
 	@sh tools/fetch_torch.sh

@@ -5,9 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M7**. M0–M6 are shell through a PaperBoat slice and
-C compatibility layer plus CIA packaging. M7 is the host-only legal asset
-pipeline. Nothing past M7 is implemented.
+This repository is at **M8**. M0–M7 are shell through a PaperBoat slice, C
+compatibility, CIA packaging, and the host-only asset pipeline. M8 is
+native HID. Nothing past M8 is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -69,9 +69,10 @@ comes from `./torch otr` plus `assets/yaml/us`; `paperboat.o2r` comes from
 desktop `GeneratePortO2R`. Neither archive is committed or uploaded. The
 3DS never extracts.
 
-## M8 — Input Backend — **not started**
+## M8 — Input Backend — **implemented**
 
-Native 3DS HID. Reserve SELECT for a future PaperBoat menu.
+Native 3DS HID to `OSContPad`. Circle pad scaled to N64 ±80. SELECT is
+reserved for M16 and is not a game button. START still exits the shell.
 
 ## M9 — Filesystem & Resource I/O — **not started**
 

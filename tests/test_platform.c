@@ -18,8 +18,9 @@ static unsigned int checks_run;
     } while (0)
 
 static bool test_deferred_and_layout(void) {
-    CHECK(strcmp(PB3DS_VERSION, "0.7.0-m7") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M7") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.8.0-m8") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M8") != NULL);
+    CHECK(pb_input_select_reserved());
     CHECK(pb_assets_status() == PB_ASSETS_HOST_ONLY);
     CHECK(!pb_assets_extraction_on_device());
     CHECK(PB_GFX_TOP_WIDTH == 400U);

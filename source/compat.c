@@ -1,5 +1,6 @@
 #include "pb3ds/compat.h"
 #include "pb3ds/fs.h"
+#include "pb3ds/input.h"
 #include "pb3ds/log.h"
 #include "pb3ds/time.h"
 
@@ -22,7 +23,7 @@ void pb_compat_init(void) {
     g_compat.resources = PB_COMPAT_DEFERRED_M9;
     g_compat.logging = PB_COMPAT_READY;
     g_compat.config = PB_COMPAT_DEFERRED_M15;
-    g_compat.controller = PB_COMPAT_DEFERRED_M8;
+    g_compat.controller = PB_COMPAT_READY;
     g_compat.time = PB_COMPAT_DEFERRED_M10;
     g_compat.gfx = PB_COMPAT_DEFERRED_M11;
     g_compat.audio = PB_COMPAT_DEFERRED_M14;
@@ -77,10 +78,13 @@ bool pb_compat_desktop_engine_allowed(void) {
 }
 
 void pb_compat_poll_controller(PBOSContPad *pad) {
+    PBInputSample sample;
+
     if (pad == NULL) {
         return;
     }
-    memset(pad, 0, sizeof(*pad));
+    pb_input_last(&sample);
+    pb_input_map_n64(&sample, pad);
 }
 
 uint64_t pb_compat_tick_ms(void) {

@@ -7,7 +7,8 @@ PaperBoat 1.0.1 / libultraship / Torch. M3 wraps libctru behind
 `include/pb3ds/platform.h`. M4 adds diagnostics. M5 fetches PaperBoat 1.0.1
 and compiles a two-file slice (`libc_compat`, `decode_yay0`). M6 is the C
 engine compatibility layer. M7 is the host-only legal asset wrapper (Torch
-never runs on ARM11). Packages include `.3dsx`, `.3ds`, and `.cia`.
+never runs on ARM11). M8 is native HID with SELECT reserved for M16.
+Packages include `.3dsx`, `.3ds`, and `.cia`.
 
 The application still does not run `boot_main` or load game assets.
 
@@ -64,6 +65,7 @@ sh tools/test_m4.sh
 sh tools/test_m5.sh
 sh tools/test_m6.sh
 sh tools/test_m7.sh
+sh tools/test_m8.sh
 ```
 
 `test_m5.sh` fetches the PaperBoat pin, checks CMake exclusions, and
@@ -81,6 +83,9 @@ detection-without-enable.
 pinned Torch-LH into `.cache/` (never linked). `make fetch` still fetches
 PaperBoat only; use `make fetch-torch` or `sh tools/prepare_assets.sh` on
 a PC that already has a legal US dump.
+
+`test_m8.sh` maps HID bits to `OSContPad` and asserts SELECT never reaches
+the game pad.
 
 Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
 on GitHub.

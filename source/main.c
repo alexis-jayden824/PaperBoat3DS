@@ -8,15 +8,18 @@
 #define TOP_FILL_G 51U
 #define TOP_FILL_B 68U
 
-static void draw_bottom_status(const PBBootstrap *bootstrap) {
+static void draw_bottom_status(const PBBootstrap *bootstrap,
+                              const PBInputSample *input) {
     char line[96];
     PBRuntimeStatus runtime;
     PBCompatState compat;
+    PBOSContPad pad;
     size_t index;
     size_t start;
 
     pb_runtime_query(&runtime, bootstrap->frames, bootstrap->gfx_ready);
     pb_compat_query(&compat);
+    pb_input_map_n64(input, &pad);
     pb_console_clear();
     snprintf(line, sizeof(line), "%s\n", PB3DS_PROJECT_NAME);
     pb_console_print(line);
@@ -44,9 +47,10 @@ static void draw_bottom_status(const PBBootstrap *bootstrap) {
     snprintf(line, sizeof(line), "assets host-only extract3ds=%d\n",
              pb_assets_extraction_on_device() ? 1 : 0);
     pb_console_print(line);
-    snprintf(line, sizeof(line), "us %s\n", pb_assets_us_sha1());
+    snprintf(line, sizeof(line), "hid n64=%04x select=%d reserved=1\n",
+             (unsigned)pad.button, pb_input_select_pressed(input) ? 1 : 0);
     pb_console_print(line);
-    pb_console_print("START exits. This is not PaperBoat.\ncrumbs:\n");
+    pb_console_print("START exits. SELECT is reserved.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
         const PBBreadcrumb *crumb = pb_breadcrumb_at(index);
@@ -74,6 +78,7 @@ int main(int argc, char **argv) {
     pb_compat_init();
     pb_bootstrap_log(&bootstrap, "compat layer (M6)");
     pb_bootstrap_log(&bootstrap, "asset extract host-only (M7)");
+    pb_bootstrap_log(&bootstrap, "HID map ready; SELECT reserved (M8)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {
@@ -85,6 +90,9 @@ int main(int argc, char **argv) {
 
     while (pb_system_pump() && pb_bootstrap_is_running(&bootstrap)) {
         pb_input_poll(&input);
+        if ((input.down & PB_KEY_SELECT) != 0U) {
+            pb_breadcrumb("SELECT reserved (M16)");
+        }
         if ((input.down & PB_KEY_START) != 0U) {
             pb_breadcrumb("START exit");
             pb_bootstrap_on_start(&bootstrap);
@@ -92,7 +100,7 @@ int main(int argc, char **argv) {
         }
         pb_bootstrap_tick(&bootstrap);
         pb_gfx_clear_top(TOP_FILL_R, TOP_FILL_G, TOP_FILL_B);
-        draw_bottom_status(&bootstrap);
+        draw_bottom_status(&bootstrap, &input);
         pb_gfx_present();
     }
 

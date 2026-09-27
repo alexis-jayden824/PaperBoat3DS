@@ -31,6 +31,7 @@ mkdir -p "$build_directory"
     "$project_root/source/bootstrap.c" \
     "$project_root/source/platform.c" \
     "$project_root/source/diag.c" \
+    "$project_root/source/input.c" \
     "$project_root/source/compat.c" \
     "$project_root/tests/test_m6.c" \
     -o "$test_binary"

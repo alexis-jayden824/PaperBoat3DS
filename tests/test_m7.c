@@ -18,8 +18,8 @@ static unsigned int checks_run;
     } while (0)
 
 static bool test_host_only_identity(void) {
-    CHECK(strcmp(PB3DS_VERSION, "0.7.0-m7") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M7") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.8.0-m8") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M8") != NULL);
     CHECK(pb_assets_status() == PB_ASSETS_HOST_ONLY);
     CHECK(!pb_assets_extraction_on_device());
     CHECK(strcmp(pb_assets_baserom_name(), "baserom.us.z64") == 0);
