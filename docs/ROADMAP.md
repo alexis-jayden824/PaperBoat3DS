@@ -5,9 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M2**. M0 is the Homebrew shell; M1 pins how it is
-built; M2 pins which upstream trees may later be integrated. Nothing past M2
-is implemented.
+This repository is at **M3**. M0 is the Homebrew shell; M1 pins how it is
+built; M2 pins which upstream trees may later be integrated; M3 is the C
+platform API. Nothing past M3 is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -37,10 +37,12 @@ build SHA/UTC metadata, documented local rebuild, CI artifacts.
 desktop-only systems, 3DS backends, and the host-only asset pipeline. No game
 source is compiled yet.
 
-## M3 — 3DS Platform Abstraction — **not started**
+## M3 — 3DS Platform Abstraction — **implemented**
 
-Graphics, input, audio, filesystem, timing, threads, memory, system/lifecycle
-interfaces. PaperBoat-facing code must not scatter 3DS calls.
+C APIs in `include/pb3ds/` for gfx, input, fs, time, memory, log, audio
+(deferred M14), threads (no extra workers), and APT lifecycle. Only
+`source/platform.c` includes `3ds.h`. Full HID mapping is M8, SDMC I/O is
+M9, citro3d is M11.
 
 ## M4 — Memory, Logging & Diagnostics Foundation — **not started**
 

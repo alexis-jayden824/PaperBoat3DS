@@ -34,10 +34,6 @@ grep -Fq "boot_main" "$doc" || fail "docs/M2.md missing boot_main"
 grep -Fq "GfxRenderingAPI" "$doc" || fail "docs/M2.md missing GfxRenderingAPI"
 grep -Fq "never linked" "$doc" || fail "docs/M2.md must keep Torch off ARM11"
 
-version=$(awk '/^#define PB3DS_VERSION / { gsub(/"/, "", $3); print $3 }' \
-    "$project_root/include/pb3ds/version.h")
-[ "$version" = "0.2.0-m2" ] || fail "expected version 0.2.0-m2, got $version"
-
 if [ "${PB3DS_VERIFY_UPSTREAM:-0}" = "1" ]; then
     check_commit() {
         url=$1

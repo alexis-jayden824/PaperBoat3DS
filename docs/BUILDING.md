@@ -3,8 +3,8 @@
 ## Current scope
 
 M0 provides the native Homebrew shell. M1 pins the toolchain and CI. M2 pins
-PaperBoat 1.0.1 / libultraship / Torch and classifies what may later enter the
-ARM11 binary.
+PaperBoat 1.0.1 / libultraship / Torch. M3 wraps libctru behind
+`include/pb3ds/platform.h`.
 
 The application still does not load PaperBoat, libultraship, or game assets.
 
@@ -55,11 +55,13 @@ binary. Expected outputs:
 sh tools/test_m1.sh
 sh tools/test_m2.sh
 sh tools/test_bootstrap.sh
+sh tools/test_platform.sh
 ```
 
 `test_m1.sh` checks that the GitHub workflow still matches
 `toolchain/TOOLCHAINS.lock`. `test_m2.sh` checks `upstream/PAPERBOAT.lock`
-against `docs/M2.md`.
+against `docs/M2.md`. `test_platform.sh` compiles the M3 host stubs and
+asserts that PaperBoat-facing sources do not include `3ds.h`.
 
 Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
 on GitHub.
