@@ -50,6 +50,13 @@ static void draw_bottom_status(const PBBootstrap *bootstrap,
     snprintf(line, sizeof(line), "hid n64=%04x select=%d reserved=1\n",
              (unsigned)pad.button, pb_input_select_pressed(input) ? 1 : 0);
     pb_console_print(line);
+    {
+        PBFsMountInfo mount;
+        pb_fs_query_mount(&mount);
+        snprintf(line, sizeof(line), "sd pb=%d pm=%d\n",
+                 mount.paperboat_present ? 1 : 0, mount.pm64_present ? 1 : 0);
+        pb_console_print(line);
+    }
     pb_console_print("START exits. SELECT is reserved.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
@@ -79,6 +86,7 @@ int main(int argc, char **argv) {
     pb_bootstrap_log(&bootstrap, "compat layer (M6)");
     pb_bootstrap_log(&bootstrap, "asset extract host-only (M7)");
     pb_bootstrap_log(&bootstrap, "HID map ready; SELECT reserved (M8)");
+    pb_bootstrap_log(&bootstrap, "SDMC resource I/O (M9)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {

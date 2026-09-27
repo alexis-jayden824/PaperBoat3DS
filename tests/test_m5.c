@@ -21,8 +21,8 @@ static unsigned int checks_run;
 static bool test_pin_and_printf(void) {
     char text[32];
 
-    CHECK(strcmp(PB3DS_VERSION, "0.8.0-m8") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M8") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.9.0-m9") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M9") != NULL);
     CHECK(strcmp(pb_paperboat_release(), "1.0.1") == 0);
     CHECK(strcmp(pb_paperboat_commit(),
                  "424c220f0863c29b9fe55cc674baceff88e9e14f") == 0);

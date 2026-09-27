@@ -36,6 +36,7 @@ static bool g_apt_hooked;
 static PBBootstrap *g_bootstrap;
 static PrintConsole g_bottom;
 static bool g_gfx_ready;
+static bool g_sdmc_ready;
 
 static void apt_hook(APT_HookType hook, void *param) {
     PBBootstrap *bootstrap = (PBBootstrap *)param;
@@ -111,14 +112,6 @@ PBAudioStatus pb_audio_status(void) {
 
 bool pb_thread_extra_workers_allowed(void) {
     return false;
-}
-
-PBFsStatus pb_fs_status(void) {
-    return PB_FS_DEFERRED_M9;
-}
-
-const char *pb_fs_sdmc_root(void) {
-    return PB_FS_SDMC_ROOT;
 }
 
 #ifdef __3DS__
@@ -219,6 +212,11 @@ bool pb_system_init(PBBootstrap *bootstrap) {
     (void)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &top_width, &top_height);
     bootstrap->top_ready = top_width != 0 && top_height != 0;
     bootstrap->bottom_ready = true;
+    g_sdmc_ready = R_SUCCEEDED(sdmcInit());
+    if (!g_sdmc_ready) {
+        pb_log(PB_LOG_ERROR, "fs", "sdmcInit failed");
+    }
+    pb_fs_init();
     pb_breadcrumb("system init");
     pb_log(PB_LOG_INFO, "hw", pb_hw_model_name(g_hw_model));
     return true;
@@ -226,6 +224,11 @@ bool pb_system_init(PBBootstrap *bootstrap) {
 
 void pb_system_shutdown(PBBootstrap *bootstrap) {
     pb_breadcrumb("system shutdown");
+    pb_fs_shutdown();
+    if (g_sdmc_ready) {
+        sdmcExit();
+        g_sdmc_ready = false;
+    }
     if (g_apt_hooked) {
         aptUnhook(&g_apt_cookie);
         g_apt_hooked = false;
@@ -334,11 +337,13 @@ bool pb_system_init(PBBootstrap *bootstrap) {
         bootstrap->bottom_ready = true;
     }
     pb_breadcrumb("system init");
+    pb_fs_init();
     return bootstrap != NULL;
 }
 
 void pb_system_shutdown(PBBootstrap *bootstrap) {
     pb_breadcrumb("system shutdown");
+    pb_fs_shutdown();
     host_gfx_ready = false;
     host_running = false;
     if (bootstrap != NULL) {

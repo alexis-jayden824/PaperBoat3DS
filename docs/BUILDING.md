@@ -7,10 +7,12 @@ PaperBoat 1.0.1 / libultraship / Torch. M3 wraps libctru behind
 `include/pb3ds/platform.h`. M4 adds diagnostics. M5 fetches PaperBoat 1.0.1
 and compiles a two-file slice (`libc_compat`, `decode_yay0`). M6 is the C
 engine compatibility layer. M7 is the host-only legal asset wrapper (Torch
-never runs on ARM11). M8 is native HID with SELECT reserved for M16.
+never runs on ARM11). M8 is native HID with SELECT reserved for M16. M9 is
+SDMC resource lookup (STORE zip / register, 16-byte aligned).
 Packages include `.3dsx`, `.3ds`, and `.cia`.
 
-The application still does not run `boot_main` or load game assets.
+The application still does not run `boot_main`. Game `.o2r` files are
+optional on SD and are never committed.
 
 ## Pinned CI environment (authoritative)
 
@@ -66,6 +68,7 @@ sh tools/test_m5.sh
 sh tools/test_m6.sh
 sh tools/test_m7.sh
 sh tools/test_m8.sh
+sh tools/test_m9.sh
 ```
 
 `test_m5.sh` fetches the PaperBoat pin, checks CMake exclusions, and
@@ -86,6 +89,9 @@ a PC that already has a legal US dump.
 
 `test_m8.sh` maps HID bits to `OSContPad` and asserts SELECT never reaches
 the game pad.
+
+`test_m9.sh` builds a synthetic STORE zip (not a game dump), checks path
+sanitizing, alignment, and lookup lifetime.
 
 Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
 on GitHub.

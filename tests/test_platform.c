@@ -18,8 +18,8 @@ static unsigned int checks_run;
     } while (0)
 
 static bool test_deferred_and_layout(void) {
-    CHECK(strcmp(PB3DS_VERSION, "0.8.0-m8") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M8") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.9.0-m9") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M9") != NULL);
     CHECK(pb_input_select_reserved());
     CHECK(pb_assets_status() == PB_ASSETS_HOST_ONLY);
     CHECK(!pb_assets_extraction_on_device());
@@ -31,7 +31,7 @@ static bool test_deferred_and_layout(void) {
     CHECK(PB_KEY_A == (1U << 0));
     CHECK(pb_audio_status() == PB_AUDIO_DEFERRED_M14);
     CHECK(!pb_thread_extra_workers_allowed());
-    CHECK(pb_fs_status() == PB_FS_DEFERRED_M9);
+    CHECK(pb_fs_status() == PB_FS_READY);
     CHECK(strcmp(pb_fs_sdmc_root(), "sdmc:/3ds/PaperBoat3DS/") == 0);
     CHECK(strcmp(PB_FS_PAPERBOAT_O2R, "sdmc:/3ds/PaperBoat3DS/paperboat.o2r") ==
           0);

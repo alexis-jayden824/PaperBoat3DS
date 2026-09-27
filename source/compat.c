@@ -20,7 +20,7 @@ static void format_log(PBLogLevel level, const char *fmt, va_list args) {
 
 void pb_compat_init(void) {
     memset(&g_compat, 0, sizeof(g_compat));
-    g_compat.resources = PB_COMPAT_DEFERRED_M9;
+    g_compat.resources = PB_COMPAT_READY;
     g_compat.logging = PB_COMPAT_READY;
     g_compat.config = PB_COMPAT_DEFERRED_M15;
     g_compat.controller = PB_COMPAT_READY;
@@ -92,11 +92,10 @@ uint64_t pb_compat_tick_ms(void) {
 }
 
 void *ResourceGetDataByName(const char *name) {
-    (void)name;
     if (!g_ready) {
         pb_compat_init();
     }
-    return NULL;
+    return pb_fs_lookup(name, NULL);
 }
 
 void *GameEngine_GetDataExact(const char *name) {
