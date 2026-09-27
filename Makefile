@@ -14,7 +14,7 @@ SOURCES         := source
 INCLUDES        := include
 
 APP_TITLE       := PaperBoat3DS Refolded
-APP_DESCRIPTION := M10 loop
+APP_DESCRIPTION := M11 gfx
 APP_AUTHOR      := PaperBoat3DS Refolded contributors
 
 PB3DS_BUILD_SHA ?= unknown
@@ -37,7 +37,7 @@ CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
-LIBS     := -lctru -lm
+LIBS     := -lcitro3d -lctru -lm
 LIBDIRS  := $(CTRULIB)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -67,7 +67,7 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 
 .PHONY: all packages fetch fetch-torch bootstrap-test m1-lock-test m2-audit-test \
 	m3-platform-test m4-diag-test m5-slice-test m6-compat-test m7-assets-test \
-	m8-input-test m9-fs-test m10-loop-test clean
+	m8-input-test m9-fs-test m10-loop-test m11-gfx-test clean
 
 all: $(BUILD)/paperboat_config.h $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -117,6 +117,9 @@ m9-fs-test:
 
 m10-loop-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_m10.sh "$(BUILD)/m10-tests"
+
+m11-gfx-test:
+	@HOST_CC="$(HOST_CC)" sh tools/test_m11.sh "$(BUILD)/m11-tests"
 
 fetch-torch:
 	@sh tools/fetch_torch.sh

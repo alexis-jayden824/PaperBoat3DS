@@ -33,7 +33,9 @@ mkdir -p "$build_directory"
     "$project_root/source/diag.c" \
     "$project_root/source/fs.c" \
     "$project_root/source/loop.c" \
+    "$project_root/source/gfx.c" \
     "$project_root/tests/test_diag.c" \
+    -lm \
     -o "$test_binary"
 
 "$test_binary"

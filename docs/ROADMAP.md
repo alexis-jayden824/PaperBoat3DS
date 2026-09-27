@@ -5,8 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M10**. M0–M9 are shell through SDMC I/O. M10 is
-the APT 30 Hz loop. Nothing past M10 is implemented.
+This repository is at **M11**. M0–M10 are shell through the APT 30 Hz loop.
+M11 is the citro3d/PICA command, vertex, texture, and depth foundation.
+Nothing past M11 is implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -39,9 +40,9 @@ source is compiled yet.
 ## M3 — 3DS Platform Abstraction — **implemented**
 
 C APIs in `include/pb3ds/` for gfx, input, fs, time, memory, log, audio
-(deferred M14), threads (no extra workers), and APT lifecycle. Only
-`source/platform.c` includes `3ds.h`. Full HID mapping is M8, SDMC I/O is
-M9, citro3d is M11.
+(deferred M14), threads (no extra workers), and APT lifecycle.
+`source/platform.c` and `source/gfx_pica.c` include `3ds.h`. Full HID
+mapping is M8, SDMC I/O is M9, citro3d foundation is M11.
 
 ## M4 — Memory, Logging & Diagnostics Foundation — **implemented**
 
@@ -57,8 +58,8 @@ Fetch PaperBoat 1.0.1 into `.cache/upstream`. Compile `libc_compat.c` and
 
 ## M6 — libultraship / Engine Compatibility Layer — **implemented**
 
-C ABI in `include/pb3ds/compat.h`: logging is ready; resources, HID, timing
-hold, gfx submit, audio, and CVars are deferred with explicit status.
+C ABI in `include/pb3ds/compat.h`: logging, resources, HID, timing, and
+gfx submit are ready; audio and CVars stay deferred with explicit status.
 Desktop libultraship is not linked. CI also emits `.cia`.
 
 ## M7 — Legal Asset Pipeline — **implemented**
@@ -84,10 +85,11 @@ SDMC paths, STORE `.o2r` lookup, 16-byte aligned copies, lifetime until
 suspend/sleep. No extra threads. No desktop window loop. `boot_main` is
 not linked.
 
-## M11 — Graphics Backend Foundation — **not started**
+## M11 — Graphics Backend Foundation — **implemented (host contract)**
 
-PICA200/citro3d target, command submission, vertex path, texture upload,
-depth, diagnostics.
+PICA200/citro3d target, command submission, vertex clip/invertY/pillars,
+texture upload, depth render-target, diagnostics. No Fast3D interpreter
+and no fake gameplay geometry.
 
 ## M12 — Authentic Title-Screen Integration — **not started**
 

@@ -22,15 +22,15 @@ static bool test_deferred_contracts(void) {
     PBCompatState state;
     PBOSContPad pad;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.10.0-m10") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M10") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.11.0-m11") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M11") != NULL);
     pb_compat_init();
     pb_compat_query(&state);
     CHECK(state.logging == PB_COMPAT_READY);
     CHECK(state.resources == PB_COMPAT_READY);
     CHECK(state.controller == PB_COMPAT_READY);
     CHECK(state.time == PB_COMPAT_READY);
-    CHECK(state.gfx == PB_COMPAT_DEFERRED_M11);
+    CHECK(state.gfx == PB_COMPAT_READY);
     CHECK(state.audio == PB_COMPAT_DEFERRED_M14);
     CHECK(state.config == PB_COMPAT_DEFERRED_M15);
     CHECK(!pb_compat_desktop_engine_allowed());

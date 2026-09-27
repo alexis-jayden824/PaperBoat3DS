@@ -18,7 +18,6 @@ static int16_t host_cstick_x;
 static int16_t host_cstick_y;
 static uint64_t host_time_ms;
 static bool host_running = true;
-static bool host_gfx_ready;
 static bool host_memory_measured;
 static uint32_t host_application_free;
 static uint32_t host_linear_free;
@@ -35,8 +34,6 @@ static aptHookCookie g_apt_cookie;
 static bool g_apt_hooked;
 static PBBootstrap *g_bootstrap;
 static PrintConsole g_bottom;
-static bool g_gfx_ready;
-
 static void apt_hook(APT_HookType hook, void *param) {
     PBBootstrap *bootstrap = (PBBootstrap *)param;
 
@@ -119,34 +116,6 @@ bool pb_thread_extra_workers_allowed(void) {
 }
 
 #ifdef __3DS__
-bool pb_gfx_ready(void) {
-    return g_gfx_ready;
-}
-
-void pb_gfx_clear_top(uint8_t red, uint8_t green, uint8_t blue) {
-    u16 width = 0;
-    u16 height = 0;
-    u8 *framebuffer = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
-    size_t pixels;
-    size_t index;
-
-    if (framebuffer == NULL || width == 0 || height == 0) {
-        return;
-    }
-    pixels = (size_t)width * (size_t)height;
-    for (index = 0; index < pixels; index++) {
-        framebuffer[index * 3U + 0U] = blue;
-        framebuffer[index * 3U + 1U] = green;
-        framebuffer[index * 3U + 2U] = red;
-    }
-}
-
-void pb_gfx_present(void) {
-    gfxFlushBuffers();
-    gfxSwapBuffers();
-    gspWaitForVBlank();
-}
-
 void pb_input_poll(PBInputSample *sample) {
     circlePosition stick;
 
@@ -211,8 +180,8 @@ bool pb_system_init(PBBootstrap *bootstrap) {
     g_bootstrap = bootstrap;
     aptHook(&g_apt_cookie, apt_hook, bootstrap);
     g_apt_hooked = true;
-    g_gfx_ready = true;
-    bootstrap->gfx_ready = true;
+    pb_gfx_init();
+    bootstrap->gfx_ready = pb_gfx_ready();
     (void)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &top_width, &top_height);
     bootstrap->top_ready = top_width != 0 && top_height != 0;
     bootstrap->bottom_ready = true;
@@ -227,12 +196,12 @@ void pb_system_shutdown(PBBootstrap *bootstrap) {
     pb_breadcrumb("system shutdown");
     pb_loop_shutdown();
     pb_fs_shutdown();
+    pb_gfx_shutdown();
     if (g_apt_hooked) {
         aptUnhook(&g_apt_cookie);
         g_apt_hooked = false;
     }
     gfxExit();
-    g_gfx_ready = false;
     if (bootstrap != NULL) {
         bootstrap->gfx_ready = false;
         bootstrap->top_ready = false;
@@ -257,19 +226,6 @@ void pb_console_print(const char *text) {
 }
 
 #else
-
-bool pb_gfx_ready(void) {
-    return host_gfx_ready;
-}
-
-void pb_gfx_clear_top(uint8_t red, uint8_t green, uint8_t blue) {
-    (void)red;
-    (void)green;
-    (void)blue;
-}
-
-void pb_gfx_present(void) {
-}
 
 void pb_input_poll(PBInputSample *sample) {
     memset(&g_input_last, 0, sizeof(g_input_last));
@@ -335,10 +291,10 @@ void pb_memory_query(PBMemoryStatus *status) {
 
 bool pb_system_init(PBBootstrap *bootstrap) {
     host_running = true;
-    host_gfx_ready = true;
     pb_diag_init();
+    pb_gfx_init();
     if (bootstrap != NULL) {
-        bootstrap->gfx_ready = true;
+        bootstrap->gfx_ready = pb_gfx_ready();
         bootstrap->top_ready = true;
         bootstrap->bottom_ready = true;
     }
@@ -352,7 +308,7 @@ void pb_system_shutdown(PBBootstrap *bootstrap) {
     pb_breadcrumb("system shutdown");
     pb_loop_shutdown();
     pb_fs_shutdown();
-    host_gfx_ready = false;
+    pb_gfx_shutdown();
     host_running = false;
     if (bootstrap != NULL) {
         bootstrap->gfx_ready = false;

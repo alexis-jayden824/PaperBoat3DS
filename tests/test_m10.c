@@ -23,8 +23,8 @@ static bool test_timing_and_pause(void) {
     PBCompatState compat;
     uint64_t frozen;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.10.0-m10") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M10") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.11.0-m11") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M11") != NULL);
     CHECK(PB_LOOP_TICK_HZ == 30U);
     CHECK(!pb_thread_extra_workers_allowed());
     CHECK(!pb_loop_desktop_window_allowed());

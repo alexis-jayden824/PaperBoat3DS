@@ -63,6 +63,14 @@ static void draw_bottom_status(const PBBootstrap *bootstrap,
              (unsigned long)loop.game_ticks, (unsigned long)loop.display_frames,
              loop.paused ? 1 : 0);
     pb_console_print(line);
+    {
+        PBGfxDiag gfx;
+        pb_gfx_query(&gfx);
+        snprintf(line, sizeof(line), "gpu dl=%lu v=%lu tex=%lu pica=%d\n",
+                 (unsigned long)gfx.dl_submits, (unsigned long)gfx.verts_in,
+                 (unsigned long)gfx.tex_uploads, gfx.pica_ready ? 1 : 0);
+        pb_console_print(line);
+    }
     pb_console_print("START exits. SELECT is reserved.\ncrumbs:\n");
     start = runtime.breadcrumb_count > 4U ? runtime.breadcrumb_count - 4U : 0U;
     for (index = start; index < runtime.breadcrumb_count; index++) {
@@ -94,6 +102,7 @@ int main(int argc, char **argv) {
     pb_bootstrap_log(&bootstrap, "HID map ready; SELECT reserved (M8)");
     pb_bootstrap_log(&bootstrap, "SDMC resource I/O (M9)");
     pb_bootstrap_log(&bootstrap, "30Hz APT loop (M10)");
+    pb_bootstrap_log(&bootstrap, "citro3d gfx foundation (M11)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {
@@ -121,6 +130,7 @@ int main(int argc, char **argv) {
             pb_bootstrap_tick(&bootstrap);
         }
         pb_gfx_clear_top(TOP_FILL_R, TOP_FILL_G, TOP_FILL_B);
+        Graphics_PushFrame(NULL);
         draw_bottom_status(&bootstrap, &input);
         pb_gfx_present();
     }

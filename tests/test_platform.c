@@ -18,15 +18,16 @@ static unsigned int checks_run;
     } while (0)
 
 static bool test_deferred_and_layout(void) {
-    CHECK(strcmp(PB3DS_VERSION, "0.10.0-m10") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M10") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.11.0-m11") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M11") != NULL);
     CHECK(pb_input_select_reserved());
     CHECK(pb_assets_status() == PB_ASSETS_HOST_ONLY);
     CHECK(!pb_assets_extraction_on_device());
     CHECK(PB_GFX_TOP_WIDTH == 400U);
     CHECK(PB_GFX_TOP_HEIGHT == 240U);
-    CHECK(PB_GFX_BOTTOM_WIDTH == 320U);
-    CHECK(PB_GFX_BOTTOM_HEIGHT == 240U);
+    CHECK(PB_GFX_SOURCE_WIDTH == 320U);
+    CHECK(PB_GFX_SOURCE_HEIGHT == 240U);
+    CHECK(PB_GFX_PILLAR_PX == 40U);
     CHECK(PB_KEY_START == (1U << 3));
     CHECK(PB_KEY_A == (1U << 0));
     CHECK(pb_audio_status() == PB_AUDIO_DEFERRED_M14);

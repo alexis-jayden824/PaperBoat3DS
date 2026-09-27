@@ -1,5 +1,6 @@
 #include "pb3ds/compat.h"
 #include "pb3ds/fs.h"
+#include "pb3ds/gfx.h"
 #include "pb3ds/input.h"
 #include "pb3ds/log.h"
 #include "pb3ds/time.h"
@@ -25,7 +26,7 @@ void pb_compat_init(void) {
     g_compat.config = PB_COMPAT_DEFERRED_M15;
     g_compat.controller = PB_COMPAT_READY;
     g_compat.time = PB_COMPAT_READY;
-    g_compat.gfx = PB_COMPAT_DEFERRED_M11;
+    g_compat.gfx = PB_COMPAT_READY;
     g_compat.audio = PB_COMPAT_DEFERRED_M14;
     g_ready = true;
 }
@@ -127,7 +128,7 @@ void GameEngine_LogError(const char *fmt, ...) {
 }
 
 void Graphics_PushFrame(void *display_list) {
-    (void)display_list;
+    pb_gfx_submit_dl(display_list, 0);
 }
 
 void GameEngine_StartAudioFrame(void) {

@@ -9,7 +9,8 @@ and compiles a two-file slice (`libc_compat`, `decode_yay0`). M6 is the C
 engine compatibility layer. M7 is the host-only legal asset wrapper (Torch
 never runs on ARM11). M8 is native HID with SELECT reserved for M16. M9 is
 SDMC resource lookup (STORE zip / register, 16-byte aligned). M10 is the
-30 Hz APT game loop (monotonic clock, suspend/resume).
+30 Hz APT game loop (monotonic clock, suspend/resume). M11 is the citro3d
+graphics foundation (command submit, clip/invertY/pillars, tex, depth).
 Packages include `.3dsx`, `.3ds`, and `.cia`.
 
 The application still does not run `boot_main`. Game `.o2r` files are
@@ -71,6 +72,7 @@ sh tools/test_m7.sh
 sh tools/test_m8.sh
 sh tools/test_m9.sh
 sh tools/test_m10.sh
+sh tools/test_m11.sh
 ```
 
 `test_m5.sh` fetches the PaperBoat pin, checks CMake exclusions, and
@@ -96,6 +98,9 @@ the game pad.
 sanitizing, alignment, and lookup lifetime.
 
 `test_m10.sh` checks 30 Hz stepping and HOME-pause clock freeze.
+
+`test_m11.sh` checks N64 clip, invertY, 40 px pillars, DL submit without
+Fast3D, texture upload rules, and that citro3d stays in `gfx_pica.c`.
 
 Set `PB3DS_VERIFY_UPSTREAM=1` to also HTTP-check that the three commits exist
 on GitHub.

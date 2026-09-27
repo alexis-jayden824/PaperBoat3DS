@@ -1,11 +1,11 @@
 #pragma once
 
 /*
- * PaperBoat-facing 3DS platform boundary (M3–M10).
+ * PaperBoat-facing 3DS platform boundary (M3–M11).
  *
  * Game and compatibility code include this header instead of 3ds.h.
  * Audio is declared and deferred until M14. Extra OS threads are forbidden.
- * SELECT is reserved for M16. citro3d is M11.
+ * SELECT is reserved for M16. citro3d lives in source/gfx_pica.c.
  */
 
 #include "pb3ds/assert.h"

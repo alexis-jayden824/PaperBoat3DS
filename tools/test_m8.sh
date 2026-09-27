@@ -39,7 +39,9 @@ mkdir -p "$build_directory"
     "$project_root/source/fs.c" \
     "$project_root/source/loop.c" \
     "$project_root/source/compat.c" \
+    "$project_root/source/gfx.c" \
     "$project_root/tests/test_m8.c" \
+    -lm \
     -o "$test_binary"
 
 "$test_binary"

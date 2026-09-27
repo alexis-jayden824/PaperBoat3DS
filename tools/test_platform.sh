@@ -16,14 +16,17 @@ if grep -R --include='*.h' -n '#include[[:space:]]*[<"]3ds\.h[>"]' \
     "$project_root/include/pb3ds"; then
     fail "include/pb3ds must not include 3ds.h"
 fi
-if grep -n '#include[[:space:]]*<3ds.h>' "$project_root/source/main.c" \
+if grep -n '#include[[:space:]]*[<"]3ds\.h[>"]' "$project_root/source/main.c" \
     "$project_root/source/bootstrap.c" "$project_root/source/diag.c" \
     "$project_root/source/assets.c" "$project_root/source/input.c" \
-    "$project_root/source/fs.c" "$project_root/source/loop.c"; then
+    "$project_root/source/fs.c" "$project_root/source/loop.c" \
+    "$project_root/source/gfx.c" "$project_root/source/compat.c"; then
     fail "PaperBoat-facing sources must not include 3ds.h"
 fi
 grep -q '#include[[:space:]]*<3ds.h>' "$project_root/source/platform.c" ||
-    fail "platform.c is the only permitted 3ds.h owner"
+    fail "platform.c must remain a 3ds.h owner"
+grep -q '#include[[:space:]]*<3ds.h>' "$project_root/source/gfx_pica.c" ||
+    fail "gfx_pica.c must be a 3ds.h GPU owner"
 
 mkdir -p "$build_directory"
 "$host_cc" \
@@ -36,7 +39,9 @@ mkdir -p "$build_directory"
     "$project_root/source/input.c" \
     "$project_root/source/fs.c" \
     "$project_root/source/loop.c" \
+    "$project_root/source/gfx.c" \
     "$project_root/tests/test_platform.c" \
+    -lm \
     -o "$test_binary"
 
 "$test_binary"
