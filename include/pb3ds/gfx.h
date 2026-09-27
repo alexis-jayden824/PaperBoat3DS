@@ -63,6 +63,7 @@ void pb_gfx_present(void);
 
 bool pb_gfx_invert_y_enabled(void);
 float pb_gfx_invert_y(float clip_y);
+float pb_gfx_upright_t(float t);
 bool pb_gfx_vertex_in_clip(const PBGfxVertex *vertex);
 void pb_gfx_map_source_to_top(float source_x, float source_y, float *top_x,
                               float *top_y);

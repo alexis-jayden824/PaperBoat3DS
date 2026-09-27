@@ -5,9 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M11**. M0–M10 are shell through the APT 30 Hz loop.
-M11 is the citro3d/PICA command, vertex, texture, and depth foundation.
-Nothing past M11 is implemented.
+This repository is at **M12**. M0–M11 are shell through the citro3d
+foundation. M12 binds PaperBoat title OTR names. Nothing past M12 is
+implemented.
 
 M14+ stays gated behind M13 runtime/rendering acceptance.
 
@@ -91,9 +91,10 @@ PICA200/citro3d target, command submission, vertex clip/invertY/pillars,
 texture upload, depth render-target, diagnostics. No Fast3D interpreter
 and no fake gameplay geometry.
 
-## M12 — Authentic Title-Screen Integration — **not started**
+## M12 — Authentic Title-Screen Integration — **implemented (host contract)**
 
-Real prepared resources. Title scene. Correct texture orientation.
+Real prepared resources (PaperBoat title OTR names/sizes). Title scene
+states. Upright T. No Fast3D raster and no fake logo geometry.
 
 ## M12.1 — Title Framing / 3DS Display Correction — **not started**
 

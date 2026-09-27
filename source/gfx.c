@@ -97,6 +97,10 @@ float pb_gfx_invert_y(float clip_y) {
     return -clip_y;
 }
 
+float pb_gfx_upright_t(float t) {
+    return 1.0f - t;
+}
+
 bool pb_gfx_vertex_in_clip(const PBGfxVertex *vertex) {
     if (vertex == NULL) {
         return false;

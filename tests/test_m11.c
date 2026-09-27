@@ -39,8 +39,8 @@ static bool test_clip_invert_pillars_and_submit(void) {
     unsigned kept;
     unsigned int dummy_dl[2] = {0xDF000000U, 0U};
 
-    CHECK(strcmp(PB3DS_VERSION, "0.11.0-m11") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M11") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.12.0-m12") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M12") != NULL);
     CHECK(PB_GFX_SOURCE_WIDTH == 320U);
     CHECK(PB_GFX_SOURCE_HEIGHT == 240U);
     CHECK(PB_GFX_PILLAR_PX == 40U);

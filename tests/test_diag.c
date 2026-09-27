@@ -21,8 +21,8 @@ static bool test_memory_pressure_and_hw(void) {
     PBMemoryStatus status;
     PBRuntimeStatus runtime;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.11.0-m11") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M11") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.12.0-m12") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M12") != NULL);
     CHECK(PB_MEMORY_APPLICATION_RESERVE == PB_MIB(8));
     CHECK(PB_MEMORY_LINEAR_RESERVE == PB_MIB(4));
     CHECK(!pb_hw_new_3ds_features_enabled());

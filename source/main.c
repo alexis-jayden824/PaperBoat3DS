@@ -65,10 +65,16 @@ static void draw_bottom_status(const PBBootstrap *bootstrap,
     pb_console_print(line);
     {
         PBGfxDiag gfx;
+        PBTitleState title;
         pb_gfx_query(&gfx);
+        pb_title_query(&title);
         snprintf(line, sizeof(line), "gpu dl=%lu v=%lu tex=%lu pica=%d\n",
                  (unsigned long)gfx.dl_submits, (unsigned long)gfx.verts_in,
                  (unsigned long)gfx.tex_uploads, gfx.pica_ready ? 1 : 0);
+        pb_console_print(line);
+        snprintf(line, sizeof(line), "title %s bound=%d shown=%d\n",
+                 pb_title_phase_name(title.phase), title.resources_bound ? 1 : 0,
+                 pb_title_presented() ? 1 : 0);
         pb_console_print(line);
     }
     pb_console_print("START exits. SELECT is reserved.\ncrumbs:\n");
@@ -97,12 +103,14 @@ int main(int argc, char **argv) {
     pb_memory_query(&memory);
     PB_ASSERT(pb_gfx_ready());
     pb_compat_init();
+    pb_title_init();
     pb_bootstrap_log(&bootstrap, "compat layer (M6)");
     pb_bootstrap_log(&bootstrap, "asset extract host-only (M7)");
     pb_bootstrap_log(&bootstrap, "HID map ready; SELECT reserved (M8)");
     pb_bootstrap_log(&bootstrap, "SDMC resource I/O (M9)");
     pb_bootstrap_log(&bootstrap, "30Hz APT loop (M10)");
     pb_bootstrap_log(&bootstrap, "citro3d gfx foundation (M11)");
+    pb_bootstrap_log(&bootstrap, "title OTR bind (M12)");
     pb_bootstrap_log(&bootstrap, "press START to exit");
     pb_log(PB_LOG_INFO, "main", pb_paperboat_commit());
     if (pb_paperboat_slice_linked()) {
@@ -128,6 +136,7 @@ int main(int argc, char **argv) {
         }
         for (i = 0U; i < steps; i++) {
             pb_bootstrap_tick(&bootstrap);
+            pb_title_step();
         }
         pb_gfx_clear_top(TOP_FILL_R, TOP_FILL_G, TOP_FILL_B);
         Graphics_PushFrame(NULL);
@@ -136,6 +145,7 @@ int main(int argc, char **argv) {
     }
 
     pb_bootstrap_log(&bootstrap, "shutdown");
+    pb_title_shutdown();
     pb_system_shutdown(&bootstrap);
     return 0;
 }

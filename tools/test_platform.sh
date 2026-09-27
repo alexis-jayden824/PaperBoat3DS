@@ -20,7 +20,8 @@ if grep -n '#include[[:space:]]*[<"]3ds\.h[>"]' "$project_root/source/main.c" \
     "$project_root/source/bootstrap.c" "$project_root/source/diag.c" \
     "$project_root/source/assets.c" "$project_root/source/input.c" \
     "$project_root/source/fs.c" "$project_root/source/loop.c" \
-    "$project_root/source/gfx.c" "$project_root/source/compat.c"; then
+    "$project_root/source/gfx.c" "$project_root/source/title.c" \
+    "$project_root/source/compat.c"; then
     fail "PaperBoat-facing sources must not include 3ds.h"
 fi
 grep -q '#include[[:space:]]*<3ds.h>' "$project_root/source/platform.c" ||

@@ -104,8 +104,8 @@ static bool test_paths_register_and_zip(const char *root) {
     PBFsMountInfo mount;
     PBCompatState state;
 
-    CHECK(strcmp(PB3DS_VERSION, "0.11.0-m11") == 0);
-    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M11") != NULL);
+    CHECK(strcmp(PB3DS_VERSION, "0.12.0-m12") == 0);
+    CHECK(strstr(PB3DS_ROADMAP_STAGE, "M12") != NULL);
     CHECK(pb_fs_status() == PB_FS_READY);
     CHECK(PB_FS_ALIGN == 16U);
     CHECK(pb_fs_join(joined, sizeof(joined), "../secret") == -1);
