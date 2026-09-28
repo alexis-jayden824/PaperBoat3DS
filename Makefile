@@ -38,9 +38,8 @@ M13_GAME_CFLAGS := $(ARCH) -mword-relocations -ffunction-sections -fdata-section
     -I"$(PAPERBOAT_ROOT)/src" -I"$(PAPERBOAT_ROOT)/src/port" \
     -I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 
-# Owner-only: compile/link PaperBoat game TUs (not CI default).
-# make CFLAGS+=-DPB3DS_GAME_OBJECTS after listing sources with
-# tools/list_paperboat_sources.sh
+# M13_LINK_GAME is an ABI/link probe. It is not a playable runtime: the
+# PaperBoat startup and required platform services are still incomplete.
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
             -DPB3DS_BUILD_SHA=\"$(PB3DS_BUILD_SHA)\" \

@@ -95,7 +95,7 @@ bool pb_runtime_playing(void) {
 }
 
 bool pb_runtime_game_linked(void) {
-#ifdef PB3DS_GAME_OBJECTS
+#if defined(PB3DS_GAME_OBJECTS) && defined(PB3DS_GAME_RUNTIME_READY)
     return true;
 #else
     return false;
