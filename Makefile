@@ -27,6 +27,7 @@ PAPERBOAT_COMMIT := $(shell awk -F= '/^PAPERBOAT_COMMIT=/ { print $$2 }' $(TOPDI
 PAPERBOAT_RELEASE := $(shell awk -F= '/^PAPERBOAT_RELEASE=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 PAPERBOAT_ROOT ?= $(TOPDIR)/.cache/upstream/PaperBoat
 M13_GAME_BUILD := $(TOPDIR)/build/m13-game
+ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 M13_GAME_CFLAGS := $(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
     -O2 -std=gnu11 -Wall -Wextra -Wno-implicit-function-declaration \
     -Wno-int-conversion -Wno-error=incompatible-pointer-types \
@@ -40,7 +41,6 @@ M13_GAME_CFLAGS := $(ARCH) -mword-relocations -ffunction-sections -fdata-section
 # Owner-only: compile/link PaperBoat game TUs (not CI default).
 # make CFLAGS+=-DPB3DS_GAME_OBJECTS after listing sources with
 # tools/list_paperboat_sources.sh
-ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
             -ffunction-sections $(ARCH) $(INCLUDE) -D__3DS__ \
             -DPB3DS_BUILD_SHA=\"$(PB3DS_BUILD_SHA)\" \

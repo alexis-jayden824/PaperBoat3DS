@@ -22,3 +22,13 @@ git -C "$dest" checkout --quiet --detach --force FETCH_HEAD
     echo "libultraship commit mismatch" >&2; exit 1;
 }
 [ -d "$dest/include" ] || { echo "libultraship headers missing" >&2; exit 1; }
+
+# Quoted includes inside LUS resolve next to the header, not via -I. Overlay
+# ARM-safe ABI declarations onto the fetched tree without changing the pin.
+overlay="$project_root/include/libultraship"
+if [ -f "$overlay/libultra.h" ]; then
+    cp "$overlay/libultra.h" "$dest/include/libultraship/libultra.h"
+    cp "$overlay/libultraship.h" "$dest/include/libultraship/libultraship.h"
+    cp "$overlay/libultra/eeprom.h" "$dest/include/libultraship/libultra/eeprom.h"
+    cp "$overlay/libultra/interrupt.h" "$dest/include/libultraship/libultra/interrupt.h"
+fi
