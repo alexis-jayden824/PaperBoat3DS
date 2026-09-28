@@ -105,6 +105,18 @@ static bool test_texture_swizzle(void) {
                                      sizeof(source) - 1U, 8, 8));
     CHECK(!pb_renderer_swizzle_rgba8(NULL, sizeof(destination), source,
                                      sizeof(source), 8, 8));
+
+    uint16_t target_x = 0U;
+    uint16_t target_y = 0U;
+    CHECK(pb_renderer_capture_target_xy(0U, 0U, &target_x, &target_y));
+    CHECK(target_x == 239U);
+    CHECK(target_y == 359U);
+    CHECK(pb_renderer_capture_target_xy(319U, 239U, &target_x, &target_y));
+    CHECK(target_x == 0U);
+    CHECK(target_y == 40U);
+    CHECK(!pb_renderer_capture_target_xy(320U, 0U, &target_x, &target_y));
+    CHECK(!pb_renderer_capture_target_xy(0U, 240U, &target_x, &target_y));
+    CHECK(!pb_renderer_capture_target_xy(0U, 0U, NULL, &target_y));
     return true;
 }
 

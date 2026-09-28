@@ -203,6 +203,31 @@ bool NativeSampler(PBRenderer3DS *renderer, uint32_t id,
 bool NativeDelete(PBRenderer3DS *renderer, uint32_t id) {
     return pb_renderer_3ds_delete_texture(renderer, id);
 }
+bool NativeCreateFramebuffer(PBRenderer3DS *renderer, int id,
+                             uint16_t width, uint16_t height) {
+    return pb_renderer_3ds_create_framebuffer(renderer, id, width, height);
+}
+bool NativeCopyFramebuffer(PBRenderer3DS *renderer, int destination,
+                           int source) {
+    return pb_renderer_3ds_copy_framebuffer(renderer, destination, source);
+}
+bool NativeStartFramebuffer(PBRenderer3DS *renderer, int id) {
+    return pb_renderer_3ds_start_framebuffer(renderer, id);
+}
+bool NativeBindFramebuffer(PBRenderer3DS *renderer, int tile, int id) {
+    return pb_renderer_3ds_bind_framebuffer_texture(renderer, tile, id);
+}
+bool NativeFramebufferSampler(PBRenderer3DS *renderer, int id,
+                              PBTextureFilter filter, PBTextureWrap wrapS,
+                              PBTextureWrap wrapT) {
+    return pb_renderer_3ds_set_framebuffer_sampler(renderer, id, filter,
+                                                    wrapS, wrapT);
+}
+bool NativeReadFramebuffer(PBRenderer3DS *renderer, int id, uint16_t width,
+                           uint16_t height, uint16_t *rgba16) {
+    return pb_renderer_3ds_read_framebuffer(renderer, id, width, height,
+                                            rgba16);
+}
 bool NativeCombiner(PBRenderer3DS *renderer, const PBGfxCombinerPlan &plan,
                     const float inputs[6][4]) {
     PBGfxTevProgram program = {};
@@ -256,6 +281,28 @@ bool NativeSampler(PBRenderer3DS *, uint32_t, PBTextureFilter,
     return true;
 }
 bool NativeDelete(PBRenderer3DS *, uint32_t) {
+    return true;
+}
+bool NativeCreateFramebuffer(PBRenderer3DS *, int, uint16_t, uint16_t) {
+    return true;
+}
+bool NativeCopyFramebuffer(PBRenderer3DS *, int, int) {
+    return true;
+}
+bool NativeStartFramebuffer(PBRenderer3DS *, int) {
+    return true;
+}
+bool NativeBindFramebuffer(PBRenderer3DS *, int, int) {
+    return true;
+}
+bool NativeFramebufferSampler(PBRenderer3DS *, int, PBTextureFilter,
+                              PBTextureWrap, PBTextureWrap) {
+    return true;
+}
+bool NativeReadFramebuffer(PBRenderer3DS *, int, uint16_t width,
+                           uint16_t height, uint16_t *rgba16) {
+    if (rgba16 == nullptr) return false;
+    std::fill_n(rgba16, static_cast<size_t>(width) * height, uint16_t{0});
     return true;
 }
 bool NativeCombiner(PBRenderer3DS *, const PBGfxCombinerPlan &plan,
@@ -512,6 +559,14 @@ bool BuildProjectedBillboard(
 namespace PB3DS {
 
 struct GfxRenderingAPI3DS::Impl {
+    struct RuntimeFramebuffer {
+        uint32_t width = 0U;
+        uint32_t height = 0U;
+        bool reserved = false;
+        bool allocated = false;
+        bool mainCapture = false;
+    };
+
     explicit Impl(PBRenderer3DS *nativeRenderer) : renderer(nativeRenderer) {
         pb_gfx_bridge_init(&bridge);
     }
@@ -562,7 +617,11 @@ struct GfxRenderingAPI3DS::Impl {
     std::array<float, kShadeVertexStride * 24U> worldOverlayVertices = {};
     std::unique_ptr<float[]> worldVertices;
     PBTitleLayout titleLayout = {};
+    std::array<RuntimeFramebuffer, PB_RENDER_MAX_FRAMEBUFFERS> framebuffers = {};
+    std::array<int, PB_GFX_TEXTURE_UNITS> selectedFramebuffers = { -1, -1 };
+    std::unordered_map<const void *, int> framebufferTextures;
     int currentTile = 0;
+    int currentFramebuffer = 0;
     bool zmodeDecal = false;
     bool strictDecal = false;
     bool initialized = false;
@@ -711,6 +770,7 @@ void GfxRenderingAPI3DS::SelectTexture(int tile, uint32_t textureId) {
         return;
     }
     mImpl->currentTile = tile;
+    mImpl->selectedFramebuffers[static_cast<size_t>(tile)] = -1;
     const PBGfxTextureRecord *texture =
         pb_gfx_bridge_find_texture(&mImpl->bridge, textureId);
     if (texture != nullptr && texture->uploaded &&
@@ -755,9 +815,15 @@ void GfxRenderingAPI3DS::SetSamplerParameters(int sampler, bool linearFilter,
         linearFilter && mImpl->filterMode == Fast::FILTER_LINEAR
             ? PB_FILTER_LINEAR
             : PB_FILTER_NEAREST;
-    if (textureId == 0 ||
-        !NativeSampler(mImpl->renderer, textureId, filter, TranslateWrap(cms),
-                       TranslateWrap(cmt))) {
+    const int framebuffer =
+        mImpl->selectedFramebuffers[static_cast<size_t>(sampler)];
+    const bool configured = framebuffer >= 0
+        ? NativeFramebufferSampler(mImpl->renderer, framebuffer, filter,
+                                   TranslateWrap(cms), TranslateWrap(cmt))
+        : textureId != 0U &&
+              NativeSampler(mImpl->renderer, textureId, filter,
+                            TranslateWrap(cms), TranslateWrap(cmt));
+    if (!configured) {
         mImpl->Reject();
     }
 }
@@ -892,6 +958,7 @@ void GfxRenderingAPI3DS::StartFrame() {
         return;
     }
     mImpl->nativeFrameOpen = true;
+    mImpl->currentFramebuffer = 0;
 }
 
 void GfxRenderingAPI3DS::PreserveColorOnNextFrame(bool preserve) {
@@ -916,9 +983,15 @@ void GfxRenderingAPI3DS::FinishRender() {
 }
 
 int GfxRenderingAPI3DS::CreateFramebuffer() {
-    if (mImpl != nullptr) {
-        mImpl->Reject();
+    if (mImpl == nullptr) return -1;
+    for (size_t index = 1U; index < mImpl->framebuffers.size(); index++) {
+        Impl::RuntimeFramebuffer &framebuffer = mImpl->framebuffers[index];
+        if (!framebuffer.reserved && !framebuffer.allocated) {
+            framebuffer.reserved = true;
+            return static_cast<int>(index);
+        }
     }
+    mImpl->Reject();
     return -1;
 }
 
@@ -933,17 +1006,35 @@ void GfxRenderingAPI3DS::UpdateFramebufferParameters(
     if (mImpl == nullptr) {
         return;
     }
-    if (fbId != 0 || width != PB_RENDER_TOP_WIDTH ||
-        height != PB_RENDER_TOP_HEIGHT || msaaLevel != 1U) {
+    if (fbId <= 0 || fbId >= static_cast<int>(mImpl->framebuffers.size()) ||
+        width == 0U || height == 0U || width > UINT16_MAX ||
+        height > UINT16_MAX || msaaLevel != 1U) {
         mImpl->Reject();
         return;
     }
-    OnResize();
+    Impl::RuntimeFramebuffer &framebuffer =
+        mImpl->framebuffers[static_cast<size_t>(fbId)];
+    if ((!framebuffer.reserved && !framebuffer.allocated) ||
+        (framebuffer.allocated &&
+         (framebuffer.width != width || framebuffer.height != height)) ||
+        !NativeCreateFramebuffer(mImpl->renderer, fbId,
+                                 static_cast<uint16_t>(width),
+                                 static_cast<uint16_t>(height))) {
+        framebuffer = {};
+        mImpl->Reject();
+        return;
+    }
+    framebuffer.width = width;
+    framebuffer.height = height;
+    framebuffer.reserved = false;
+    framebuffer.allocated = true;
+    framebuffer.mainCapture = width == PB_RENDER_GAME_WIDTH &&
+                              height == PB_RENDER_GAME_HEIGHT;
 }
 
 void GfxRenderingAPI3DS::StartDrawToFramebuffer(int fbId, float noiseScale) {
     (void)noiseScale;
-    if (mImpl != nullptr && fbId != 0) {
+    if (!StartRuntimeFramebuffer(fbId) && mImpl != nullptr) {
         mImpl->Reject();
     }
 }
@@ -952,17 +1043,22 @@ void GfxRenderingAPI3DS::CopyFramebuffer(int fbDstId, int fbSrcId, int srcX0,
                                          int srcY0, int srcX1, int srcY1,
                                          int dstX0, int dstY0, int dstX1,
                                          int dstY1) {
-    (void)fbDstId;
-    (void)fbSrcId;
-    (void)srcX0;
-    (void)srcY0;
-    (void)srcX1;
-    (void)srcY1;
-    (void)dstX0;
-    (void)dstY0;
-    (void)dstX1;
-    (void)dstY1;
-    if (mImpl != nullptr) {
+    if (mImpl == nullptr || fbDstId <= 0 ||
+        fbDstId >= static_cast<int>(mImpl->framebuffers.size())) {
+        if (mImpl != nullptr) mImpl->Reject();
+        return;
+    }
+    const Impl::RuntimeFramebuffer &destination =
+        mImpl->framebuffers[static_cast<size_t>(fbDstId)];
+    const bool fullMainCopy = destination.allocated &&
+                              destination.mainCapture && fbSrcId == 0 &&
+                              srcX0 == 0 && srcY0 == 0 &&
+                              srcX1 == static_cast<int>(PB_RENDER_GAME_WIDTH) &&
+                              srcY1 == static_cast<int>(PB_RENDER_GAME_HEIGHT) &&
+                              dstX0 == 0 && dstY0 == 0 &&
+                              dstX1 == static_cast<int>(PB_RENDER_GAME_WIDTH) &&
+                              dstY1 == static_cast<int>(PB_RENDER_GAME_HEIGHT);
+    if (!fullMainCopy || !CopyRuntimeFramebuffer(fbDstId, fbSrcId)) {
         mImpl->Reject();
     }
 }
@@ -976,11 +1072,8 @@ void GfxRenderingAPI3DS::ClearFramebuffer(bool color, bool depth) {
 void GfxRenderingAPI3DS::ReadFramebufferToCPU(int fbId, uint32_t width,
                                                uint32_t height,
                                                uint16_t *rgba16Buf) {
-    (void)fbId;
-    (void)width;
-    (void)height;
-    (void)rgba16Buf;
-    if (mImpl != nullptr) {
+    if (!ReadRuntimeFramebuffer(fbId, width, height, rgba16Buf) &&
+        mImpl != nullptr) {
         mImpl->Reject();
     }
 }
@@ -1005,19 +1098,133 @@ GfxRenderingAPI3DS::GetPixelDepth(
 }
 
 void *GfxRenderingAPI3DS::GetFramebufferTextureId(int fbId) {
-    (void)fbId;
-    if (mImpl != nullptr) {
-        mImpl->Reject();
+    if (mImpl == nullptr || fbId <= 0 ||
+        fbId >= static_cast<int>(mImpl->framebuffers.size()) ||
+        !mImpl->framebuffers[static_cast<size_t>(fbId)].allocated) {
+        if (mImpl != nullptr) mImpl->Reject();
+        return nullptr;
     }
-    return nullptr;
+    return &mImpl->framebuffers[static_cast<size_t>(fbId)];
 }
 
 void GfxRenderingAPI3DS::SelectTextureFb(int fbId, int tile) {
-    (void)fbId;
-    (void)tile;
-    if (mImpl != nullptr) {
-        mImpl->Reject();
+    if (mImpl == nullptr || tile < 0 ||
+        tile >= static_cast<int>(PB_GFX_TEXTURE_UNITS) || fbId <= 0 ||
+        fbId >= static_cast<int>(mImpl->framebuffers.size()) ||
+        !mImpl->framebuffers[static_cast<size_t>(fbId)].allocated ||
+        !NativeBindFramebuffer(mImpl->renderer, tile, fbId)) {
+        if (mImpl != nullptr) mImpl->Reject();
+        return;
     }
+    mImpl->currentTile = tile;
+    mImpl->selectedFramebuffers[static_cast<size_t>(tile)] = fbId;
+}
+
+int GfxRenderingAPI3DS::CreateRuntimeFramebuffer(uint32_t width,
+                                                  uint32_t height) {
+    const int id = CreateFramebuffer();
+    if (id < 0) return -1;
+    UpdateFramebufferParameters(id, width, height, 1U, true, true, true,
+                                true);
+    if (mImpl == nullptr ||
+        !mImpl->framebuffers[static_cast<size_t>(id)].allocated) {
+        return -1;
+    }
+    return id;
+}
+
+bool GfxRenderingAPI3DS::RegisterRuntimeFramebufferTexture(
+    const void *address, int fbId) {
+    if (mImpl == nullptr || address == nullptr || fbId <= 0 ||
+        fbId >= static_cast<int>(mImpl->framebuffers.size()) ||
+        !mImpl->framebuffers[static_cast<size_t>(fbId)].allocated) {
+        if (mImpl != nullptr) mImpl->Reject();
+        return false;
+    }
+    const auto existing = mImpl->framebufferTextures.find(address);
+    if (existing != mImpl->framebufferTextures.end() &&
+        existing->second != fbId) {
+        mImpl->Reject();
+        return false;
+    }
+    mImpl->framebufferTextures[address] = fbId;
+    return true;
+}
+
+int GfxRenderingAPI3DS::FindRuntimeFramebufferTexture(
+    const void *address) const {
+    if (mImpl == nullptr || address == nullptr) return -1;
+    const auto found = mImpl->framebufferTextures.find(address);
+    return found != mImpl->framebufferTextures.end() ? found->second : -1;
+}
+
+bool GfxRenderingAPI3DS::CopyRuntimeFramebuffer(int destinationId,
+                                                 int sourceId) {
+    if (mImpl == nullptr || !mImpl->nativeFrameOpen || destinationId <= 0 ||
+        destinationId >= static_cast<int>(mImpl->framebuffers.size()) ||
+        sourceId != 0) {
+        return false;
+    }
+    const Impl::RuntimeFramebuffer &destination =
+        mImpl->framebuffers[static_cast<size_t>(destinationId)];
+    return destination.allocated && destination.mainCapture &&
+           NativeCopyFramebuffer(mImpl->renderer, destinationId, sourceId);
+}
+
+bool GfxRenderingAPI3DS::StartRuntimeFramebuffer(int framebufferId) {
+    if (mImpl == nullptr || !mImpl->nativeFrameOpen || framebufferId < 0 ||
+        framebufferId >= static_cast<int>(mImpl->framebuffers.size())) {
+        return false;
+    }
+    uint32_t width = PB_RENDER_TOP_WIDTH;
+    uint32_t height = PB_RENDER_TOP_HEIGHT;
+    if (framebufferId != 0) {
+        const Impl::RuntimeFramebuffer &framebuffer =
+            mImpl->framebuffers[static_cast<size_t>(framebufferId)];
+        if (!framebuffer.allocated || framebuffer.mainCapture) return false;
+        width = framebuffer.width;
+        height = framebuffer.height;
+    }
+    if (!NativeStartFramebuffer(mImpl->renderer, framebufferId)) return false;
+    mImpl->currentFramebuffer = framebufferId;
+    SetViewport(0, 0, static_cast<int>(width), static_cast<int>(height));
+    SetScissor(0, 0, static_cast<int>(width), static_cast<int>(height));
+    return true;
+}
+
+bool GfxRenderingAPI3DS::GetRuntimeFramebufferDimensions(
+    int framebufferId, uint32_t *width, uint32_t *height) const {
+    if (mImpl == nullptr || width == nullptr || height == nullptr ||
+        framebufferId <= 0 ||
+        framebufferId >= static_cast<int>(mImpl->framebuffers.size())) {
+        return false;
+    }
+    const Impl::RuntimeFramebuffer &framebuffer =
+        mImpl->framebuffers[static_cast<size_t>(framebufferId)];
+    if (!framebuffer.allocated) return false;
+    *width = framebuffer.width;
+    *height = framebuffer.height;
+    return true;
+}
+
+bool GfxRenderingAPI3DS::ReadRuntimeFramebuffer(int framebufferId,
+                                                 uint32_t width,
+                                                 uint32_t height,
+                                                 uint16_t *rgba16) {
+    if (mImpl == nullptr || !mImpl->nativeFrameOpen || rgba16 == nullptr ||
+        framebufferId <= 0 ||
+        framebufferId >= static_cast<int>(mImpl->framebuffers.size()) ||
+        width == 0U || height == 0U || width > UINT16_MAX ||
+        height > UINT16_MAX) {
+        return false;
+    }
+    const Impl::RuntimeFramebuffer &framebuffer =
+        mImpl->framebuffers[static_cast<size_t>(framebufferId)];
+    return framebuffer.allocated && !framebuffer.mainCapture &&
+           width <= framebuffer.width && height <= framebuffer.height &&
+           NativeReadFramebuffer(mImpl->renderer, framebufferId,
+                                 static_cast<uint16_t>(width),
+                                 static_cast<uint16_t>(height), rgba16);
 }
 
 void GfxRenderingAPI3DS::DeleteTexture(uint32_t texId) {
@@ -1932,6 +2139,21 @@ extern "C" void pb_gfx_api_3ds_clear_depth(PBGfxApi3DS *api) {
     if (api != nullptr && api->implementation != nullptr) {
         api->implementation->ClearRuntimeDepth();
     }
+}
+
+extern "C" int pb_gfx_api_3ds_create_framebuffer(PBGfxApi3DS *api,
+                                                   uint32_t width,
+                                                   uint32_t height) {
+    return api != nullptr && api->implementation != nullptr
+               ? api->implementation->CreateRuntimeFramebuffer(width, height)
+               : -1;
+}
+
+extern "C" bool pb_gfx_api_3ds_register_framebuffer_texture(
+    PBGfxApi3DS *api, const void *address, int framebufferId) {
+    return api != nullptr && api->implementation != nullptr &&
+           api->implementation->RegisterRuntimeFramebufferTexture(
+               address, framebufferId);
 }
 
 extern "C" void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active) {

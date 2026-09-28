@@ -126,6 +126,20 @@ bool pb_renderer_swizzle_rgba8(uint8_t *destination, size_t destination_size,
     return true;
 }
 
+bool pb_renderer_capture_target_xy(uint16_t n64_x, uint16_t n64_y,
+                                   uint16_t *target_x,
+                                   uint16_t *target_y) {
+    if (target_x == NULL || target_y == NULL ||
+        n64_x >= PB_RENDER_GAME_WIDTH || n64_y >= PB_RENDER_GAME_HEIGHT) {
+        return false;
+    }
+    *target_x = (uint16_t)(PB_RENDER_TARGET_WIDTH - 1U - n64_y);
+    *target_y = (uint16_t)(PB_RENDER_TOP_WIDTH - PB_RENDER_GAME_X_INSET -
+                           1U - n64_x);
+    return *target_x < PB_RENDER_TARGET_WIDTH &&
+           *target_y < PB_RENDER_TARGET_HEIGHT;
+}
+
 bool pb_renderer_vertex_buffer_size(size_t stride, size_t vertex_count,
                                     size_t *bytes) {
     if (bytes == NULL) {

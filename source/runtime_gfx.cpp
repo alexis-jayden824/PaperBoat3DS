@@ -27,6 +27,8 @@ constexpr uint8_t G_TRI1 = 0x05;
 constexpr uint8_t G_TRI2 = 0x06;
 constexpr uint8_t G_QUAD = 0x07;
 constexpr uint8_t G_SETTIMG_OTR_HASH = 0x20;
+constexpr uint8_t G_SETFB = 0x21;
+constexpr uint8_t G_RESETFB = 0x22;
 constexpr uint8_t G_VTX_OTR_FILEPATH = 0x24;
 constexpr uint8_t G_SETTIMG_OTR_FILEPATH = 0x25;
 constexpr uint8_t G_TRI1_OTR = 0x26;
@@ -44,6 +46,8 @@ constexpr uint8_t G_FILLWIDERECT = 0x38;
 constexpr uint8_t G_COPYFB = 0x3B;
 constexpr uint8_t G_IMAGERECT = 0x3C;
 constexpr uint8_t G_DL_INDEX = 0x3D;
+constexpr uint8_t G_READFB = 0x3E;
+constexpr uint8_t G_REGBLENDEDTEX = 0x3F;
 constexpr uint8_t G_SETTIMG_PAL = 0x41;
 constexpr uint8_t G_MOVEMEM_HASH = 0x42;
 constexpr uint8_t G_PUSH_SHADER = 0x43;
@@ -327,6 +331,11 @@ class RuntimeDisplayListRenderer {
         stats.scissor_w = PB_RENDER_TOP_WIDTH;
         stats.scissor_h = PB_RENDER_TOP_HEIGHT;
         const bool interpreted = RunList(displayList, 0U);
+        bool targetRestored = true;
+        if (activeFramebuffer != 0) {
+            targetRestored = Flush() && SwitchFramebuffer(0);
+            if (!targetRestored) malformed = true;
+        }
         const bool flushed = Flush();
         api->EndFrame();
         stats.commands += commandCount;
@@ -347,7 +356,7 @@ class RuntimeDisplayListRenderer {
             stats.screen_max_x = 0;
             stats.screen_max_y = 0;
         }
-        if (interpreted && flushed) {
+        if (interpreted && flushed && targetRestored) {
             stats.frames_rendered++;
         }
         if (malformed) {
@@ -367,7 +376,7 @@ class RuntimeDisplayListRenderer {
         /* A single malformed opcode must not kill the game loop. Pause HUD
          * lists can contain leftover pointers; skipping those commands is
          * enough for START to keep stepping. */
-        return flushed;
+        return flushed && targetRestored && !fatalFrameError;
     }
 
     void InvalidateTexture(const void *address) {
@@ -448,7 +457,8 @@ class RuntimeDisplayListRenderer {
         uint32_t rowStrideTexels = 0U;
         uint32_t offsetTexels = 0U;
         size_t payloadSize = 0U;
-        bool framebufferSentinel = false;
+        int framebufferId = -1;
+        bool depthSentinel = false;
     };
 
     struct TextureCacheEntry {
@@ -465,6 +475,7 @@ class RuntimeDisplayListRenderer {
         uint16_t sourceHeight = 0U;
         uint16_t textureWidth = 0U;
         uint16_t textureHeight = 0U;
+        int framebufferId = -1;
         uint64_t lastUse = 0U;
     };
 
@@ -559,6 +570,7 @@ class RuntimeDisplayListRenderer {
         lastCommandIndex = 0U;
         lastDepth = 0U;
         malformed = false;
+        fatalFrameError = false;
         stats.clipped_triangles = 0U;
         stats.huge_triangles = 0U;
         stats.culled_triangles = 0U;
@@ -592,6 +604,9 @@ class RuntimeDisplayListRenderer {
         depthImageAddress = 0U;
         colorImageAddress = 0U;
         colorTargetIsDepth = false;
+        activeFramebuffer = 0;
+        activeFramebufferWidth = PB_RENDER_TOP_WIDTH;
+        activeFramebufferHeight = PB_RENDER_TOP_HEIGHT;
     }
 
     const void *Resolve(uintptr_t address) const {
@@ -1509,7 +1524,8 @@ class RuntimeDisplayListRenderer {
         api->SelectTexture(static_cast<int>(uploadUnit), id);
         api->UploadTexture(pixels.data(), 8U, 8U);
         textures.push_back({ this, nullptr, nullptr, id, 0U, 0U, 0U, 0U,
-                             0U, 8U, 8U, 8U, 8U, ++textureUseClock });
+                             0U, 8U, 8U, 8U, 8U, -1,
+                             ++textureUseClock });
         return &textures.back();
     }
 
@@ -1527,6 +1543,34 @@ class RuntimeDisplayListRenderer {
             loadedTextures[tmemIndex].data != nullptr
                 ? loadedTextures[tmemIndex]
                 : textureToLoad;
+        if (source.framebufferId >= 0) {
+            uint32_t framebufferWidth = 0U;
+            uint32_t framebufferHeight = 0U;
+            if (!api->GetRuntimeFramebufferDimensions(
+                    source.framebufferId, &framebufferWidth,
+                    &framebufferHeight) ||
+                framebufferWidth != PB_RENDER_GAME_WIDTH ||
+                framebufferHeight != PB_RENDER_GAME_HEIGHT) {
+                stats.framebuffer_failures++;
+                fatalFrameError = true;
+                return nullptr;
+            }
+            TextureCacheEntry &entry = framebufferTextureInfo[uploadUnit];
+            entry = {};
+            entry.source = source.data;
+            entry.type = PB_RESOURCE_TEXTURE_RGBA32;
+            entry.rowStrideTexels = source.rowStrideTexels != 0U
+                                        ? source.rowStrideTexels
+                                        : framebufferWidth;
+            entry.offsetTexels = source.offsetTexels;
+            entry.sourceWidth = static_cast<uint16_t>(framebufferWidth);
+            entry.sourceHeight = static_cast<uint16_t>(framebufferHeight);
+            entry.textureWidth = PB_RENDER_CAPTURE_TEXTURE_WIDTH;
+            entry.textureHeight = PB_RENDER_CAPTURE_TEXTURE_HEIGHT;
+            entry.framebufferId = source.framebufferId;
+            entry.lastUse = ++textureUseClock;
+            return &entry;
+        }
         uint32_t type = source.resourceType != 0U
                             ? source.resourceType
                             : TextureTypeFor(tile.format, tile.size);
@@ -1588,7 +1632,7 @@ class RuntimeDisplayListRenderer {
             TextureKey(source, tile, palette, sourceWidth, sourceHeight, type),
             paletteHash, type, source.rowStrideTexels, source.offsetTexels,
             sourceWidth, sourceHeight, textureWidth, textureHeight,
-            ++textureUseClock,
+            -1, ++textureUseClock,
         });
         return &textures.back();
     }
@@ -1725,7 +1769,13 @@ class RuntimeDisplayListRenderer {
                 batchTextureTiles[unit] = tile;
                 batchTextureInfo[unit] = *texture;
                 batchHasTexture[unit] = true;
-                api->SelectTexture(static_cast<int>(unit), texture->id);
+                if (texture->framebufferId >= 0) {
+                    api->SelectTextureFb(texture->framebufferId,
+                                         static_cast<int>(unit));
+                    stats.framebuffer_samples++;
+                } else {
+                    api->SelectTexture(static_cast<int>(unit), texture->id);
+                }
                 api->SetSamplerParameters(static_cast<int>(unit), linear,
                                           tile.clampS, tile.clampT);
             }
@@ -1793,9 +1843,29 @@ class RuntimeDisplayListRenderer {
                 ShiftTextureCoordinate(vertex.textureT / 32.0f,
                                        tile.shiftT) -
                 static_cast<float>(tile.upperT) / 4.0f;
-            batch.push_back(s / texture.textureWidth);
-            batch.push_back(pb_renderer_n64_texture_v(
-                t, texture.sourceHeight, texture.textureHeight));
+            if (texture.framebufferId >= 0) {
+                const uint32_t stride = texture.rowStrideTexels != 0U
+                                            ? texture.rowStrideTexels
+                                            : texture.sourceWidth;
+                const uint32_t offsetX = stride != 0U
+                    ? texture.offsetTexels % stride
+                    : 0U;
+                const uint32_t offsetY = stride != 0U
+                    ? texture.offsetTexels / stride
+                    : 0U;
+                const float framebufferS =
+                    s + static_cast<float>(offsetX);
+                const float framebufferT =
+                    t + static_cast<float>(offsetY);
+                batch.push_back(framebufferS / texture.textureWidth);
+                batch.push_back(pb_renderer_n64_texture_v(
+                    framebufferT, texture.sourceHeight,
+                    texture.textureHeight));
+            } else {
+                batch.push_back(s / texture.textureWidth);
+                batch.push_back(pb_renderer_n64_texture_v(
+                    t, texture.sourceHeight, texture.textureHeight));
+            }
         }
         if (batchShaderUsesShade) {
             Color color = batchSemantic ? vertex.color
@@ -2012,16 +2082,24 @@ class RuntimeDisplayListRenderer {
              * strips. It is not framebuffer data on 3DS. Keep the previous
              * color target instead of decoding that zero-filled sentinel into
              * repeated bands. */
-            if (source.framebufferSentinel) return true;
+            if (source.depthSentinel) return true;
         }
         if (!Flush()) return false;
         float screenLeft = 0.0f;
         float screenBottom = 0.0f;
         float screenRight = 0.0f;
         float screenTop = 0.0f;
-        pb_renderer_n64_rect_to_logical(left, top, right, bottom, &screenLeft,
-                                        &screenBottom, &screenRight,
-                                        &screenTop);
+        if (activeFramebuffer == 0) {
+            pb_renderer_n64_rect_to_logical(left, top, right, bottom,
+                                            &screenLeft, &screenBottom,
+                                            &screenRight, &screenTop);
+        } else {
+            screenLeft = left;
+            screenRight = right;
+            screenBottom = static_cast<float>(activeFramebufferHeight) -
+                           bottom;
+            screenTop = static_cast<float>(activeFramebufferHeight) - top;
+        }
         const float depth = primDepth;
         LoadedVertex rectangle[6] = {};
         if (flipTexture) {
@@ -2087,13 +2165,32 @@ class RuntimeDisplayListRenderer {
                 source.data = static_cast<const uint8_t *>(resolved);
             }
         }
+        if (path == nullptr && source.data != nullptr) {
+            source.framebufferId =
+                api->FindRuntimeFramebufferTexture(source.data);
+            if (source.framebufferId >= 0) {
+                uint32_t width = 0U;
+                uint32_t height = 0U;
+                if (api->GetRuntimeFramebufferDimensions(
+                        source.framebufferId, &width, &height) &&
+                    width <= UINT16_MAX && height <= UINT16_MAX) {
+                    source.resourceWidth = static_cast<uint16_t>(width);
+                    source.resourceHeight = static_cast<uint16_t>(height);
+                    source.resourceType = PB_RESOURCE_TEXTURE_RGBA32;
+                } else {
+                    source.framebufferId = -1;
+                    stats.framebuffer_failures++;
+                    fatalFrameError = true;
+                }
+            }
+        }
 #ifdef __3DS__
         if (nuGfxZBuffer != nullptr && source.data != nullptr) {
             const uintptr_t begin = reinterpret_cast<uintptr_t>(nuGfxZBuffer);
             const uintptr_t end = begin + 320U * 240U * sizeof(uint16_t);
             const uintptr_t candidate =
                 reinterpret_cast<uintptr_t>(source.data);
-            source.framebufferSentinel = candidate >= begin && candidate < end;
+            source.depthSentinel = candidate >= begin && candidate < end;
         }
 #endif
         textureToLoad = source;
@@ -2194,6 +2291,34 @@ class RuntimeDisplayListRenderer {
                                   ? UINT32_MAX
                                   : ((UINT32_C(1) << length) - 1U) << shift;
         *destination = (*destination & ~mask) | (word1 & mask);
+    }
+
+    bool SwitchFramebuffer(int framebufferId) {
+        uint32_t width = PB_RENDER_TOP_WIDTH;
+        uint32_t height = PB_RENDER_TOP_HEIGHT;
+        if (framebufferId != 0 &&
+            !api->GetRuntimeFramebufferDimensions(framebufferId, &width,
+                                                  &height)) {
+            stats.framebuffer_failures++;
+            fatalFrameError = true;
+            return false;
+        }
+        if (!api->StartRuntimeFramebuffer(framebufferId)) {
+            stats.framebuffer_failures++;
+            fatalFrameError = true;
+            return false;
+        }
+        activeFramebuffer = framebufferId;
+        activeFramebufferWidth = width;
+        activeFramebufferHeight = height;
+        stats.scissor_x = 0;
+        stats.scissor_y = 0;
+        stats.scissor_w = width;
+        stats.scissor_h = height;
+        if (framebufferId != 0) {
+            api->ClearFramebuffer(false, true);
+        }
+        return true;
     }
 
     bool RunList(const PBRuntimeGfx *displayList, unsigned int depth) {
@@ -2731,8 +2856,24 @@ class RuntimeDisplayListRenderer {
                         static_cast<int>((word1 >> 12U) & 0xFFFU) / 4;
                     const int bottom = static_cast<int>(word1 & 0xFFFU) / 4;
                     PBViewport scissor = {};
-                    if (pb_renderer_scissor_from_n64(left, top, right, bottom,
-                                                     &scissor)) {
+                    bool validScissor = false;
+                    if (activeFramebuffer == 0) {
+                        validScissor = pb_renderer_scissor_from_n64(
+                            left, top, right, bottom, &scissor);
+                    } else if (right > left && bottom > top && left >= 0 &&
+                               top >= 0 &&
+                               right <= static_cast<int>(
+                                            activeFramebufferWidth) &&
+                               bottom <= static_cast<int>(
+                                             activeFramebufferHeight)) {
+                        scissor.x = static_cast<uint16_t>(left);
+                        scissor.y = static_cast<uint16_t>(
+                            activeFramebufferHeight - bottom);
+                        scissor.width = static_cast<uint16_t>(right - left);
+                        scissor.height = static_cast<uint16_t>(bottom - top);
+                        validScissor = true;
+                    }
+                    if (validScissor) {
                         stats.scissor_x = scissor.x;
                         stats.scissor_y = scissor.y;
                         stats.scissor_w = scissor.width;
@@ -2977,7 +3118,97 @@ class RuntimeDisplayListRenderer {
                     colorTargetIsDepth = depthImageAddress != 0U &&
                                          colorImageAddress == depthImageAddress;
                     break;
-                case G_COPYFB:
+                case G_SETFB:
+                    if (!Flush() ||
+                        !SwitchFramebuffer(static_cast<int>(word1))) {
+                        return false;
+                    }
+                    break;
+                case G_RESETFB:
+                    if (!Flush() || !SwitchFramebuffer(0)) return false;
+                    break;
+                case G_COPYFB: {
+                    if (!Flush()) return false;
+                    const int destination =
+                        static_cast<int>((word0 >> 11U) & 0x7FFU);
+                    const int source = static_cast<int>(word0 & 0x7FFU);
+                    const bool once = ((word0 >> 22U) & 1U) != 0U;
+                    bool *copied = reinterpret_cast<bool *>(command.words.w1);
+                    if (once && copied != nullptr && *copied) break;
+                    if (!api->CopyRuntimeFramebuffer(destination, source)) {
+                        stats.framebuffer_failures++;
+                        fatalFrameError = true;
+                        return false;
+                    }
+                    if (copied != nullptr) *copied = true;
+                    stats.framebuffer_copies++;
+                    break;
+                }
+                case G_READFB: {
+                    if (!Flush()) return false;
+                    const int source = static_cast<int>(word0 & 0xFFU);
+                    const bool byteSwap = ((word0 >> 8U) & 1U) != 0U;
+                    const bool toI8 = ((word0 >> 9U) & 1U) != 0U;
+                    uint16_t *output = static_cast<uint16_t *>(
+                        const_cast<void *>(Resolve(command.words.w1)));
+                    const PBRuntimeGfx &dimensions = displayList[++index];
+                    commandCount++;
+                    const uint32_t upperLeftX =
+                        static_cast<uint32_t>(dimensions.words.w0) & 0xFFFFU;
+                    const uint32_t upperLeftY =
+                        (static_cast<uint32_t>(dimensions.words.w0) >> 16U) &
+                        0xFFFFU;
+                    const uint32_t width =
+                        static_cast<uint32_t>(dimensions.words.w1) & 0xFFFFU;
+                    const uint32_t height =
+                        (static_cast<uint32_t>(dimensions.words.w1) >> 16U) &
+                        0xFFFFU;
+                    if (output == nullptr || upperLeftX != 0U ||
+                        upperLeftY != 0U || width == 0U || height == 0U ||
+                        !api->ReadRuntimeFramebuffer(source, width, height,
+                                                     output)) {
+                        stats.framebuffer_failures++;
+                        fatalFrameError = true;
+                        return false;
+                    }
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+                    if (byteSwap) {
+                        const size_t count =
+                            static_cast<size_t>(width) * height;
+                        for (size_t pixel = 0U; pixel < count; pixel++) {
+                            output[pixel] = static_cast<uint16_t>(
+                                (output[pixel] << 8U) |
+                                (output[pixel] >> 8U));
+                        }
+                    }
+#else
+                    (void)byteSwap;
+#endif
+                    if (toI8) {
+                        uint8_t *intensity =
+                            reinterpret_cast<uint8_t *>(output);
+                        const size_t count =
+                            static_cast<size_t>(width) * height;
+                        for (size_t pixel = 0U; pixel < count; pixel++) {
+                            const uint8_t red = static_cast<uint8_t>(
+                                (output[pixel] >> 11U) & 0x1FU);
+                            intensity[pixel] = static_cast<uint8_t>(
+                                (red << 3U) | (red >> 2U));
+                        }
+                    }
+                    break;
+                }
+                case G_REGBLENDEDTEX:
+                    /* No M13 title/file-select/Toad Town display list
+                     * registers blended replacement textures. Consume the
+                     * second packet so its pointer words are never decoded as
+                     * commands; encountering an actual registration remains
+                     * visible through the unsupported-command statistic. */
+                    index++;
+                    commandCount++;
+                    stats.unknown_commands++;
+                    stats.last_unknown_opcode = G_REGBLENDEDTEX;
+                    break;
                 case G_PUSH_SHADER:
                 case G_POP_SHADER:
                 case G_SETTARGETINTERPINDEX:
@@ -2987,14 +3218,10 @@ class RuntimeDisplayListRenderer {
                 case G_RDPTILESYNC:
                 case G_RDPFULLSYNC:
                 case 0x00:
-                case 0x21:
-                case 0x22:
                 case 0x23:
                 case 0x28:
                 case 0x39:
                 case 0x3A:
-                case 0x3E:
-                case 0x3F:
                 case 0x40:
                     break;
                 default:
@@ -3067,10 +3294,14 @@ class RuntimeDisplayListRenderer {
     unsigned int lastDepth = 0U;
     std::array<uint32_t, 256U> unknownCommands = {};
     bool malformed = false;
+    bool fatalFrameError = false;
     bool depthClearPending = false;
     uintptr_t depthImageAddress = 0U;
     uintptr_t colorImageAddress = 0U;
     bool colorTargetIsDepth = false;
+    int activeFramebuffer = 0;
+    uint32_t activeFramebufferWidth = PB_RENDER_TOP_WIDTH;
+    uint32_t activeFramebufferHeight = PB_RENDER_TOP_HEIGHT;
     bool pauseFrame = false;
     std::vector<float> batch;
     size_t batchTriangles = 0U;
@@ -3088,6 +3319,8 @@ class RuntimeDisplayListRenderer {
     DecodedCombiner batchCombiner = {};
     std::array<Tile, PB_GFX_TEXTURE_UNITS> batchTextureTiles = {};
     std::array<TextureCacheEntry, PB_GFX_TEXTURE_UNITS> batchTextureInfo = {};
+    std::array<TextureCacheEntry, PB_GFX_TEXTURE_UNITS>
+        framebufferTextureInfo = {};
     Color fillRectangleColor = {};
     std::vector<TextureCacheEntry> textures;
     uint64_t textureUseClock = 0U;

@@ -36,6 +36,20 @@ typedef struct {
     bool sampler_set;
 } PBRendererTexture;
 
+typedef struct {
+    C3D_Tex texture;
+    C3D_RenderTarget *target;
+    C3D_Mtx projection;
+    uint16_t width;
+    uint16_t height;
+    PBTextureFilter filter;
+    PBTextureWrap wrap_s;
+    PBTextureWrap wrap_t;
+    bool allocated;
+    bool sampler_set;
+    bool main_capture;
+} PBRendererFramebuffer;
+
 typedef struct PBRendererRetiredTexture {
     C3D_Tex texture;
     struct PBRendererRetiredTexture *next;
@@ -43,10 +57,13 @@ typedef struct PBRendererRetiredTexture {
 
 struct PBRenderer3DS {
     C3D_RenderTarget *target;
+    C3D_RenderTarget *active_target;
     DVLB_s *shader_dvlb;
     shaderProgram_s program;
     C3D_Mtx projection;
     PBRendererTexture textures[PB_GFX_MAX_TEXTURES];
+    PBRendererFramebuffer framebuffers[PB_RENDER_MAX_FRAMEBUFFERS];
+    uint8_t *capture_staging;
     PBRendererRetiredTexture *retired_textures;
     uint32_t retired_texture_count;
     PBRenderStateCache state_cache;
@@ -69,6 +86,7 @@ struct PBRenderer3DS {
     bool fog_enabled;
     bool fog_state_valid;
     bool preserve_color_next_frame;
+    int active_framebuffer;
     bool c3d_ready;
     bool program_ready;
     bool frame_open;
@@ -97,6 +115,58 @@ static PBRendererTexture *find_texture(PBRenderer3DS *renderer,
         }
     }
     return NULL;
+}
+
+static PBRendererFramebuffer *find_framebuffer(PBRenderer3DS *renderer,
+                                                int framebuffer_id) {
+    if (renderer == NULL || framebuffer_id <= 0 ||
+        framebuffer_id >= (int)PB_RENDER_MAX_FRAMEBUFFERS) {
+        return NULL;
+    }
+    PBRendererFramebuffer *entry = &renderer->framebuffers[framebuffer_id];
+    return entry->allocated ? entry : NULL;
+}
+
+static uint16_t framebuffer_texture_dimension(uint16_t dimension) {
+    uint32_t result = PB_RENDER_TEXTURE_MIN_DIMENSION;
+    while (result < dimension && result < PB_RENDER_TEXTURE_MAX_DIMENSION) {
+        result <<= 1U;
+    }
+    return result >= dimension && result <= UINT16_MAX
+               ? (uint16_t)result
+               : 0U;
+}
+
+static void set_identity_depth_row(C3D_Mtx *projection) {
+    projection->r[2].x = 0.0f;
+    projection->r[2].y = 0.0f;
+    projection->r[2].z = PB_RENDER_ORTHO_Z_IDENTITY_ZZ;
+    projection->r[2].w = PB_RENDER_ORTHO_Z_IDENTITY_ZW;
+}
+
+static bool current_target_viewport(PBRenderer3DS *renderer,
+                                    const PBViewport *logical,
+                                    PBTargetViewport *target) {
+    if (renderer == NULL || logical == NULL || target == NULL ||
+        logical->width == 0U || logical->height == 0U) {
+        return false;
+    }
+    if (renderer->active_framebuffer == 0) {
+        return pb_renderer_viewport_to_target(logical, target);
+    }
+    PBRendererFramebuffer *framebuffer =
+        find_framebuffer(renderer, renderer->active_framebuffer);
+    if (framebuffer == NULL || logical->x >= framebuffer->width ||
+        logical->y >= framebuffer->height ||
+        (uint32_t)logical->x + logical->width > framebuffer->width ||
+        (uint32_t)logical->y + logical->height > framebuffer->height) {
+        return false;
+    }
+    target->x = logical->x;
+    target->y = logical->y;
+    target->width = logical->width;
+    target->height = logical->height;
+    return true;
 }
 
 static PBRendererTexture *find_free_texture(PBRenderer3DS *renderer) {
@@ -339,6 +409,7 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
     }
     C3D_RenderTargetSetOutput(renderer->target, GFX_TOP, GFX_LEFT,
                               PB_DISPLAY_TRANSFER_FLAGS);
+    renderer->active_target = renderer->target;
 
     result = PB_RENDERER_INIT_SHADER;
     renderer->shader_dvlb =
@@ -370,10 +441,7 @@ PBRendererInitResult pb_renderer_3ds_create(PBRenderer3DS **renderer_out) {
                   PB_RENDER_ORTHO_FAR, true);
     /* Keep the 90-degree XY tilt; do not remap Z a second time. Vertices
      * already carry PICA clip Z in [-w, 0]. */
-    renderer->projection.r[2].x = 0.0f;
-    renderer->projection.r[2].y = 0.0f;
-    renderer->projection.r[2].z = PB_RENDER_ORTHO_Z_IDENTITY_ZZ;
-    renderer->projection.r[2].w = PB_RENDER_ORTHO_Z_IDENTITY_ZW;
+    set_identity_depth_row(&renderer->projection);
 
     result = PB_RENDERER_INIT_VERTEX_BUFFER;
     renderer->stream_capacity_vertices = PB_GFX_MAX_STREAM_TRIANGLES * 3U;
@@ -445,6 +513,9 @@ bool pb_renderer_3ds_begin_frame(PBRenderer3DS *renderer) {
         return false;
     }
     renderer->frame_open = true;
+    renderer->active_framebuffer = 0;
+    renderer->active_target = renderer->target;
+    renderer->state_cache.viewport_bound = false;
     renderer->stream_used_vertices = 0;
     const C3D_ClearBits clear_bits = renderer->preserve_color_next_frame
                                          ? C3D_CLEAR_DEPTH
@@ -505,35 +576,39 @@ void pb_renderer_3ds_finish(PBRenderer3DS *renderer) {
 }
 
 bool pb_renderer_3ds_clear(PBRenderer3DS *renderer, bool color, bool depth) {
-    if (renderer == NULL || renderer->target == NULL ||
+    if (renderer == NULL || renderer->active_target == NULL ||
         (!color && !depth)) {
         return false;
     }
     C3D_ClearBits bits = color && depth
                               ? C3D_CLEAR_ALL
                               : (color ? C3D_CLEAR_COLOR : C3D_CLEAR_DEPTH);
-    C3D_RenderTargetClear(renderer->target, bits, PB_RENDER_CLEAR_COLOR,
+    C3D_RenderTargetClear(renderer->active_target, bits, PB_RENDER_CLEAR_COLOR,
                           PB_RENDER_CLEAR_DEPTH);
     return true;
 }
 
 bool pb_renderer_3ds_set_viewport(PBRenderer3DS *renderer,
                                   const PBViewport *viewport) {
-    if (renderer == NULL) {
+    PBTargetViewport target;
+    if (renderer == NULL ||
+        !current_target_viewport(renderer, viewport, &target)) {
+        if (renderer != NULL) {
+            renderer->state_cache.rejected++;
+            sync_stats(renderer);
+        }
         return false;
     }
-    const PBBindResult bind =
-        pb_renderer_bind_viewport(&renderer->state_cache, viewport);
-    if (bind == PB_BIND_REJECTED) return false;
-    if (bind == PB_BIND_UNCHANGED) {
+    if (renderer->state_cache.viewport_bound &&
+        memcmp(&renderer->state_cache.viewport, viewport,
+               sizeof(*viewport)) == 0) {
+        renderer->state_cache.deduplicated++;
         sync_stats(renderer);
         return true;
     }
-    PBTargetViewport target;
-    if (!pb_renderer_viewport_to_target(viewport, &target)) {
-        renderer->state_cache.rejected++;
-        return false;
-    }
+    renderer->state_cache.viewport = *viewport;
+    renderer->state_cache.viewport_bound = true;
+    renderer->state_cache.changes++;
     C3D_SetViewport(target.x, target.y, target.width, target.height);
     sync_stats(renderer);
     return true;
@@ -543,7 +618,7 @@ bool pb_renderer_3ds_set_scissor(PBRenderer3DS *renderer,
                                  const PBViewport *scissor) {
     PBTargetViewport target;
     if (renderer == NULL ||
-        !pb_renderer_viewport_to_target(scissor, &target)) {
+        !current_target_viewport(renderer, scissor, &target)) {
         if (renderer != NULL) {
             renderer->state_cache.rejected++;
             sync_stats(renderer);
@@ -688,6 +763,220 @@ bool pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
     }
     renderer->stats.texture_bytes -= texture_size;
     memset(entry, 0, sizeof(*entry));
+    return true;
+}
+
+bool pb_renderer_3ds_create_framebuffer(PBRenderer3DS *renderer,
+                                        int framebuffer_id, uint16_t width,
+                                        uint16_t height) {
+    if (renderer == NULL || framebuffer_id <= 0 ||
+        framebuffer_id >= (int)PB_RENDER_MAX_FRAMEBUFFERS || width == 0U ||
+        height == 0U ||
+        ((width != PB_RENDER_GAME_WIDTH ||
+          height != PB_RENDER_GAME_HEIGHT) &&
+         (width > PB_RENDER_TEXTURE_MAX_DIMENSION ||
+          height > PB_RENDER_TEXTURE_MAX_DIMENSION))) {
+        return false;
+    }
+    PBRendererFramebuffer *entry = &renderer->framebuffers[framebuffer_id];
+    if (entry->allocated) {
+        return entry->width == width && entry->height == height;
+    }
+
+    const bool main_capture = width == PB_RENDER_GAME_WIDTH &&
+                              height == PB_RENDER_GAME_HEIGHT;
+    const uint16_t texture_width = main_capture
+        ? PB_RENDER_CAPTURE_TEXTURE_WIDTH
+        : framebuffer_texture_dimension(width);
+    const uint16_t texture_height = main_capture
+        ? PB_RENDER_CAPTURE_TEXTURE_HEIGHT
+        : framebuffer_texture_dimension(height);
+    if (texture_width == 0U || texture_height == 0U ||
+        (!main_capture && (texture_width != width ||
+                           texture_height != height))) {
+        return false;
+    }
+    const bool texture_ready = main_capture
+        ? C3D_TexInit(&entry->texture, texture_width, texture_height,
+                      GPU_RGBA8)
+        : C3D_TexInitVRAM(&entry->texture, texture_width, texture_height,
+                          GPU_RGBA8);
+    if (!texture_ready) return false;
+    if (main_capture) {
+        if (renderer->capture_staging == NULL) {
+            renderer->capture_staging = linearAlloc(
+                (size_t)PB_RENDER_TARGET_WIDTH * PB_RENDER_TARGET_HEIGHT *
+                4U);
+        }
+        if (renderer->capture_staging == NULL) {
+            C3D_TexDelete(&entry->texture);
+            memset(entry, 0, sizeof(*entry));
+            return false;
+        }
+        memset(entry->texture.data, 0, entry->texture.size);
+        C3D_TexFlush(&entry->texture);
+    }
+    C3D_TexSetFilter(&entry->texture, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetWrap(&entry->texture, GPU_CLAMP_TO_EDGE,
+                   GPU_CLAMP_TO_EDGE);
+
+    if (!main_capture) {
+        entry->target = C3D_RenderTargetCreateFromTex(
+            &entry->texture, GPU_TEXFACE_2D, 0, GPU_RB_DEPTH16);
+        if (entry->target == NULL) {
+            C3D_TexDelete(&entry->texture);
+            memset(entry, 0, sizeof(*entry));
+            return false;
+        }
+        Mtx_Ortho(&entry->projection, 0.0f, (float)width, 0.0f,
+                  (float)height, PB_RENDER_ORTHO_NEAR,
+                  PB_RENDER_ORTHO_FAR, true);
+        set_identity_depth_row(&entry->projection);
+    }
+    entry->width = width;
+    entry->height = height;
+    entry->filter = PB_FILTER_NEAREST;
+    entry->wrap_s = PB_WRAP_CLAMP;
+    entry->wrap_t = PB_WRAP_CLAMP;
+    entry->sampler_set = true;
+    entry->main_capture = main_capture;
+    entry->allocated = true;
+    renderer->stats.texture_bytes += entry->texture.size;
+    return true;
+}
+
+bool pb_renderer_3ds_copy_framebuffer(PBRenderer3DS *renderer,
+                                      int destination_id, int source_id) {
+    PBRendererFramebuffer *destination =
+        find_framebuffer(renderer, destination_id);
+    if (renderer == NULL || destination == NULL || !renderer->frame_open ||
+        source_id != 0 || !destination->main_capture ||
+        renderer->target == NULL || renderer->capture_staging == NULL) {
+        return false;
+    }
+    const u32 flags =
+        GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
+        GX_TRANSFER_RAW_COPY(0) |
+        GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+        GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
+    C3D_SyncDisplayTransfer(
+        (u32 *)renderer->target->frameBuf.colorBuf,
+        GX_BUFFER_DIM(PB_RENDER_TARGET_WIDTH, PB_RENDER_TARGET_HEIGHT),
+        (u32 *)renderer->capture_staging,
+        GX_BUFFER_DIM(PB_RENDER_TARGET_WIDTH, PB_RENDER_TARGET_HEIGHT),
+        flags);
+    gspWaitForEvent(GSPGPU_EVENT_PPF, false);
+    GSPGPU_InvalidateDataCache(
+        renderer->capture_staging,
+        (size_t)PB_RENDER_TARGET_WIDTH * PB_RENDER_TARGET_HEIGHT * 4U);
+
+    /* The LCD render target is physically 240x400 and rotated. Build a
+     * conventional top-origin 320x240 texture so Fast3D framebuffer tiles
+     * use exactly the same UV rules as every other N64 texture. */
+    for (uint16_t y = 0U; y < PB_RENDER_GAME_HEIGHT; y++) {
+        for (uint16_t x = 0U; x < PB_RENDER_GAME_WIDTH; x++) {
+            uint16_t target_x;
+            uint16_t target_y;
+            if (!pb_renderer_capture_target_xy(x, y, &target_x,
+                                               &target_y)) {
+                return false;
+            }
+            const size_t source_pixel =
+                (size_t)target_y * PB_RENDER_TARGET_WIDTH + target_x;
+            const size_t destination_pixel =
+                pb_renderer_swizzled_texel_index(
+                    x, y, destination->texture.width,
+                    destination->texture.height);
+            memcpy((uint8_t *)destination->texture.data +
+                       destination_pixel * 4U,
+                   renderer->capture_staging + source_pixel * 4U, 4U);
+        }
+    }
+    C3D_TexFlush(&destination->texture);
+    return true;
+}
+
+bool pb_renderer_3ds_start_framebuffer(PBRenderer3DS *renderer,
+                                       int framebuffer_id) {
+    if (renderer == NULL || !renderer->frame_open) return false;
+    C3D_RenderTarget *target = renderer->target;
+    const C3D_Mtx *projection = &renderer->projection;
+    if (framebuffer_id != 0) {
+        PBRendererFramebuffer *entry =
+            find_framebuffer(renderer, framebuffer_id);
+        if (entry == NULL || entry->target == NULL) return false;
+        target = entry->target;
+        projection = &entry->projection;
+    }
+    if (!C3D_FrameDrawOn(target)) return false;
+    renderer->active_target = target;
+    renderer->active_framebuffer = framebuffer_id;
+    renderer->state_cache.viewport_bound = false;
+    C3D_BindProgram(&renderer->program);
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, renderer->projection_uniform,
+                     projection);
+    return true;
+}
+
+bool pb_renderer_3ds_bind_framebuffer_texture(PBRenderer3DS *renderer,
+                                               int tile,
+                                               int framebuffer_id) {
+    PBRendererFramebuffer *entry = find_framebuffer(renderer, framebuffer_id);
+    if (entry == NULL || tile < 0 || tile >= (int)PB_GFX_TEXTURE_UNITS) {
+        return false;
+    }
+    C3D_TexBind(tile, &entry->texture);
+    renderer->bound_textures[tile] = 0U;
+    return true;
+}
+
+bool pb_renderer_3ds_set_framebuffer_sampler(
+    PBRenderer3DS *renderer, int framebuffer_id, PBTextureFilter filter,
+    PBTextureWrap wrap_s, PBTextureWrap wrap_t) {
+    PBRendererFramebuffer *entry = find_framebuffer(renderer, framebuffer_id);
+    if (entry == NULL || (unsigned int)filter >= PB_FILTER_COUNT ||
+        (unsigned int)wrap_s >= PB_WRAP_COUNT ||
+        (unsigned int)wrap_t >= PB_WRAP_COUNT) {
+        return false;
+    }
+    if (entry->sampler_set && entry->filter == filter &&
+        entry->wrap_s == wrap_s && entry->wrap_t == wrap_t) {
+        return true;
+    }
+    C3D_TexSetFilter(&entry->texture, (GPU_TEXTURE_FILTER_PARAM)filter,
+                     (GPU_TEXTURE_FILTER_PARAM)filter);
+    C3D_TexSetWrap(&entry->texture, (GPU_TEXTURE_WRAP_PARAM)wrap_s,
+                   (GPU_TEXTURE_WRAP_PARAM)wrap_t);
+    entry->filter = filter;
+    entry->wrap_s = wrap_s;
+    entry->wrap_t = wrap_t;
+    entry->sampler_set = true;
+    return true;
+}
+
+bool pb_renderer_3ds_read_framebuffer(PBRenderer3DS *renderer,
+                                      int framebuffer_id, uint16_t width,
+                                      uint16_t height, uint16_t *rgba16) {
+    PBRendererFramebuffer *entry = find_framebuffer(renderer, framebuffer_id);
+    if (entry == NULL || rgba16 == NULL || width == 0U || height == 0U ||
+        width > entry->width || height > entry->height ||
+        entry->main_capture || !renderer->frame_open) {
+        return false;
+    }
+    const u32 flags =
+        GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) |
+        GX_TRANSFER_RAW_COPY(0) |
+        GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+        GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB5A1) |
+        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
+    C3D_SyncDisplayTransfer(
+        (u32 *)entry->texture.data,
+        GX_BUFFER_DIM(entry->texture.width, entry->texture.height),
+        (u32 *)rgba16, GX_BUFFER_DIM(width, height), flags);
+    gspWaitForEvent(GSPGPU_EVENT_PPF, false);
+    GSPGPU_InvalidateDataCache(rgba16,
+                               (size_t)width * height * sizeof(*rgba16));
     return true;
 }
 
@@ -870,6 +1159,14 @@ void pb_renderer_3ds_destroy(PBRenderer3DS *renderer) {
         C3D_FrameSync();
         release_retired_textures(renderer);
     }
+    for (size_t index = 1U; index < PB_RENDER_MAX_FRAMEBUFFERS; index++) {
+        PBRendererFramebuffer *framebuffer = &renderer->framebuffers[index];
+        if (!framebuffer->allocated) continue;
+        if (framebuffer->target != NULL) {
+            C3D_RenderTargetDelete(framebuffer->target);
+        }
+        C3D_TexDelete(&framebuffer->texture);
+    }
     for (size_t index = 0; index < PB_GFX_MAX_TEXTURES; index++) {
         if (renderer->textures[index].allocated) {
             C3D_TexDelete(&renderer->textures[index].texture);
@@ -877,6 +1174,9 @@ void pb_renderer_3ds_destroy(PBRenderer3DS *renderer) {
     }
     if (renderer->stream_buffer != NULL) {
         linearFree(renderer->stream_buffer);
+    }
+    if (renderer->capture_staging != NULL) {
+        linearFree(renderer->capture_staging);
     }
     if (renderer->program_ready) {
         shaderProgramFree(&renderer->program);

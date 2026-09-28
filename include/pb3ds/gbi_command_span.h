@@ -18,6 +18,8 @@ static inline size_t pb_gbi_command_span(unsigned int opcode) {
         case 0x37U: /* G_TEXRECT_WIDE */
         case 0x3CU: /* G_IMAGERECT */
             return 3U;
+        case 0x3EU: /* G_READFB */
+        case 0x3FU: /* G_REGBLENDEDTEX */
         case 0x20U: /* G_SETTIMG_OTR_HASH */
         case 0x31U: /* G_DL_OTR_HASH */
         case 0x32U: /* G_VTX_OTR_HASH */

@@ -12,6 +12,7 @@
 #ifdef __3DS__
 /* libctru's s32/u32 conflict with libultra types in this translation unit. */
 void svcSleepThread(long long nanoseconds);
+unsigned long long svcGetSystemTick(void);
 #endif
 
 #include "common.h"
@@ -437,9 +438,11 @@ void Graphics_PushFrame(Gfx *displayList) {
     if (!pb_gfx_api_3ds_render_display_list(active_runtime->graphics,
                                             (const PBRuntimeGfx *)displayList)) {
         active_runtime->stats.platform_warnings++;
+        runtime_fail(active_runtime,
+                     "required display-list operation failed");
         if (active_runtime->log != NULL) {
-            pb_log_write(active_runtime->log, PB_LOG_WARNING, "gfx",
-                         "display-list submission incomplete");
+            pb_log_write(active_runtime->log, PB_LOG_ERROR, "gfx",
+                         "required display-list operation failed");
         }
         return;
     }
@@ -564,7 +567,23 @@ uint32_t OTRGetGameRenderHeight(void) { return 240U; }
 
 void EventSystemCallEvent(int32_t id, void *event, const char *file, int line,
                           const char *key) {
-    (void)id; (void)event; (void)file; (void)line; (void)key;
+    (void)event;
+    /* The pinned M13 runtime has no registered libultraship hook listeners;
+     * every exported ID below intentionally remains -1. Treat that as the
+     * fast path, but fail loudly if future code registers a listener instead
+     * of silently claiming its cancellable event ran. */
+    if (id < 0) return;
+    if (active_runtime != NULL) {
+        active_runtime->stats.platform_warnings++;
+        runtime_fail(active_runtime,
+                     "registered event listener has no dispatcher");
+        if (active_runtime->log != NULL) {
+            pb_log_write(active_runtime->log, PB_LOG_ERROR, "event",
+                         "unhandled listener id=%ld key=%s source=%s:%d",
+                         (long)id, key != NULL ? key : "unknown",
+                         file != NULL ? file : "unknown", line);
+        }
+    }
 }
 
 int32_t GameFrameUpdateID = -1;
@@ -613,7 +632,21 @@ int32_t osRecvMesg(OSMesgQueue *queue, OSMesg *message, int32_t flag) {
 void osSetEventMesg(OSEvent event, OSMesgQueue *queue, OSMesg message) {
     (void)event; (void)queue; (void)message;
 }
-uint32_t osGetCount(void) { return (uint32_t)(runtime_time++); }
+uint32_t osGetCount(void) {
+    /* N64 COUNT advances at OS_CPU_COUNTER = 46.875 MHz. svcGetSystemTick is
+     * fixed at the Old3DS ARM11 base clock even when New3DS speedup is active,
+     * so convert with integer quotient/remainder and preserve 32-bit wrap. */
+#ifdef __3DS__
+    const uint64_t arm11_hz = UINT64_C(268111856);
+    const uint64_t n64_hz = UINT64_C(46875000);
+    const uint64_t ticks = svcGetSystemTick();
+    const uint64_t count = (ticks / arm11_hz) * n64_hz +
+                           ((ticks % arm11_hz) * n64_hz) / arm11_hz;
+    return (uint32_t)count;
+#else
+    return (uint32_t)(pb_platform_time_ms() * UINT64_C(46875));
+#endif
+}
 void osSetTime(OSTime time) { runtime_time = time; }
 
 void gSPVertexOTR(Gfx *packet, uintptr_t vertices, int count, int first) {
@@ -651,12 +684,48 @@ int gfx_create_framebuffer(unsigned int width, unsigned int height,
                            unsigned int nativeWidth,
                            unsigned int nativeHeight, unsigned char resize,
                            unsigned char fixedAspect) {
-    (void)width; (void)height; (void)nativeWidth; (void)nativeHeight;
-    (void)resize; (void)fixedAspect;
-    return -1;
+    if (active_runtime == NULL || active_runtime->graphics == NULL ||
+        width == 0U || height == 0U || width != nativeWidth ||
+        height != nativeHeight || fixedAspect != 0U ||
+        (resize != 0U &&
+         (width != PB_RENDER_GAME_WIDTH ||
+          height != PB_RENDER_GAME_HEIGHT))) {
+        if (active_runtime != NULL) {
+            active_runtime->stats.platform_warnings++;
+            runtime_fail(active_runtime,
+                         "unsupported framebuffer configuration");
+        }
+        return -1;
+    }
+    const int framebuffer = pb_gfx_api_3ds_create_framebuffer(
+        active_runtime->graphics, width, height);
+    if (framebuffer < 0) {
+        active_runtime->stats.platform_warnings++;
+        runtime_fail(active_runtime, "framebuffer allocation failed");
+        if (active_runtime->log != NULL) {
+            pb_log_write(active_runtime->log, PB_LOG_ERROR, "framebuffer",
+                         "create failed width=%u height=%u resize=%u",
+                         width, height, resize);
+        }
+    }
+    return framebuffer;
 }
 void gfx_register_fb_texture(const void *address, int framebuffer) {
-    (void)address; (void)framebuffer;
+    if (active_runtime == NULL || active_runtime->graphics == NULL ||
+        !pb_gfx_api_3ds_register_framebuffer_texture(
+            active_runtime->graphics, address, framebuffer)) {
+        if (active_runtime != NULL) {
+            active_runtime->stats.platform_warnings++;
+            runtime_fail(active_runtime,
+                         "framebuffer texture registration failed");
+            if (active_runtime->log != NULL) {
+                pb_log_write(active_runtime->log, PB_LOG_ERROR,
+                             "framebuffer",
+                             "registration failed address=%p id=%d",
+                             address, framebuffer);
+            }
+        }
+    }
 }
 
 MusicControlData gMusicControlData[2];
@@ -733,4 +802,3 @@ b32 dx_debug_should_hide_models(void) { return false; }
 void dx_hashed_debug_printf(const char *file, s32 line, const char *format, ...) {
     (void)file; (void)line; (void)format;
 }
-

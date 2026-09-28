@@ -862,6 +862,71 @@ static bool testRuntimeTextureEvictionFrame(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeFramebufferCommands(PBGfxApi3DS *api) {
+    static uint16_t captureSentinel[PB_RENDER_GAME_WIDTH *
+                                    PB_RENDER_GAME_HEIGHT];
+    uint16_t readback[32U * 64U];
+    const int capture = pb_gfx_api_3ds_create_framebuffer(
+        api, PB_RENDER_GAME_WIDTH, PB_RENDER_GAME_HEIGHT);
+    const int renderTarget =
+        pb_gfx_api_3ds_create_framebuffer(api, 32U, 64U);
+    CHECK(capture > 0);
+    CHECK(renderTarget > 0);
+    CHECK(pb_gfx_api_3ds_register_framebuffer_texture(
+        api, captureSentinel, capture));
+    CHECK(!pb_gfx_api_3ds_register_framebuffer_texture(
+        api, nullptr, capture));
+
+    const uint32_t copyCommand = UINT32_C(0x3B000000) |
+                                 (static_cast<uint32_t>(capture) << 11U);
+    const uint32_t readCommand = UINT32_C(0x3E000200) |
+                                 static_cast<uint32_t>(renderTarget);
+    const PBRuntimeGfx displayList[] = {
+        { .words = { copyCommand, 0U } },
+        { .words = { UINT32_C(0xFD10013F),
+                     reinterpret_cast<uintptr_t>(captureSentinel) } },
+        { .words = { UINT32_C(0xF5100000), 0U } },
+        { .words = { UINT32_C(0xF4000000), UINT32_C(0x004FC3BC) } },
+        { .words = { UINT32_C(0xF2000000), UINT32_C(0x004FC3BC) } },
+        { .words = { UINT32_C(0xEF200000), 0U } },
+        { .words = { UINT32_C(0xE45003C0), 0U } },
+        { .words = { UINT32_C(0xE1000000), 0U } },
+        { .words = { UINT32_C(0xF1000000), UINT32_C(0x10000400) } },
+        { .words = { UINT32_C(0x21000000),
+                     static_cast<uintptr_t>(renderTarget) } },
+        { .words = { UINT32_C(0xED000000), UINT32_C(0x00080100) } },
+        { .words = { UINT32_C(0x22000000), 0U } },
+        { .words = { readCommand,
+                     reinterpret_cast<uintptr_t>(readback) } },
+        { .words = { 0U, UINT32_C(0x00400020) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    const PBGfxBridgeStats beforeBridge = *pb_gfx_api_3ds_stats(api);
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    const PBGfxBridgeStats *afterBridge = pb_gfx_api_3ds_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->framebuffer_copies == before.framebuffer_copies + 1U);
+    CHECK(after->framebuffer_samples >= before.framebuffer_samples + 1U);
+    CHECK(after->framebuffer_failures == before.framebuffer_failures);
+    CHECK(after->texture_fallbacks == before.texture_fallbacks);
+    CHECK(afterBridge->draw_calls == beforeBridge.draw_calls + 1U);
+    CHECK(afterBridge->triangles == beforeBridge.triangles + 2U);
+    CHECK(pb_gbi_command_span(0x3EU) == 2U);
+    CHECK(pb_gbi_command_span(0x3FU) == 2U);
+
+    const PBRuntimeGfx invalidCopy[] = {
+        { .words = { UINT32_C(0x3B003800), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    const uint32_t failuresBeforeInvalid = after->framebuffer_failures;
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, invalidCopy));
+    CHECK(pb_gfx_api_3ds_runtime_stats(api)->framebuffer_failures ==
+          failuresBeforeInvalid + 1U);
+    return true;
+}
+
 static bool testExactInterface() {
     PB3DS::GfxRenderingAPI3DS api(nullptr);
     CHECK(std::strcmp(api.GetName(), "PICA200 (citro3d)") == 0);
@@ -967,10 +1032,37 @@ static bool testExactInterface() {
     CHECK(api.RenderDiagnostic());
     CHECK(stats->frames_presented == 11);
 
-    CHECK(api.CreateFramebuffer() == -1);
+    const int captureFramebuffer =
+        api.CreateRuntimeFramebuffer(PB_RENDER_GAME_WIDTH,
+                                     PB_RENDER_GAME_HEIGHT);
+    const int renderFramebuffer = api.CreateRuntimeFramebuffer(32U, 64U);
+    CHECK(captureFramebuffer == 1);
+    CHECK(renderFramebuffer == 2);
+    uint16_t framebufferSentinel = 0U;
+    CHECK(api.RegisterRuntimeFramebufferTexture(&framebufferSentinel,
+                                                captureFramebuffer));
+    CHECK(api.FindRuntimeFramebufferTexture(&framebufferSentinel) ==
+          captureFramebuffer);
+    uint32_t framebufferWidth = 0U;
+    uint32_t framebufferHeight = 0U;
+    CHECK(api.GetRuntimeFramebufferDimensions(
+        renderFramebuffer, &framebufferWidth, &framebufferHeight));
+    CHECK(framebufferWidth == 32U);
+    CHECK(framebufferHeight == 64U);
+    CHECK(api.GetFramebufferTextureId(captureFramebuffer) != nullptr);
     CHECK(api.GetFramebufferTextureId(0) == nullptr);
+    uint16_t readback[32U * 64U];
+    api.StartFrame();
+    CHECK(api.CopyRuntimeFramebuffer(captureFramebuffer, 0));
+    CHECK(api.StartRuntimeFramebuffer(renderFramebuffer));
+    CHECK(api.ReadRuntimeFramebuffer(renderFramebuffer, 32U, 64U,
+                                     readback));
+    CHECK(api.StartRuntimeFramebuffer(0));
+    api.EndFrame();
+    CHECK(api.CreateRuntimeFramebuffer(16U, 16U) == 3);
+    CHECK(api.CreateRuntimeFramebuffer(8U, 8U) == -1);
     CHECK(api.GetPixelDepth(0, {}).empty());
-    CHECK(stats->rejected_commands >= 3);
+    CHECK(stats->rejected_commands >= 3U);
     return true;
 }
 
@@ -1022,6 +1114,7 @@ static bool testCBoundary() {
     CHECK(testRuntimeTwoCycleBindsBothTiles(api));
     CHECK(testRuntimeTwoCycleUsesBaseTileWithoutLod(api));
     CHECK(testRuntimeTextureEvictionFrame(api));
+    CHECK(testRuntimeFramebufferCommands(api));
     CHECK(!pb_gfx_api_3ds_prepare_title_flow(nullptr, &assets));
     CHECK(!pb_gfx_api_3ds_render_title_flow(api, nullptr));
     CHECK(!pb_gfx_api_3ds_prepare_world_background(

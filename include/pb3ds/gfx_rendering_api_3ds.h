@@ -24,6 +24,9 @@ typedef struct {
     uint64_t legacy_unsafe_modulate_batches;
     uint64_t depth_target_clears;
     uint64_t copy_rectangles;
+    uint64_t framebuffer_copies;
+    uint64_t framebuffer_samples;
+    uint32_t framebuffer_failures;
     uint32_t unknown_commands;
     uint32_t missing_resources;
     uint32_t malformed_lists;
@@ -156,6 +159,16 @@ class GfxRenderingAPI3DS final : public Fast::GfxRenderingAPI {
     void SetCurrentPrimDepth(float depth) override;
     void SetCullMode(int8_t keepSign) override;
 
+    int CreateRuntimeFramebuffer(uint32_t width, uint32_t height);
+    bool RegisterRuntimeFramebufferTexture(const void *address, int fbId);
+    int FindRuntimeFramebufferTexture(const void *address) const;
+    bool CopyRuntimeFramebuffer(int destinationId, int sourceId);
+    bool StartRuntimeFramebuffer(int framebufferId);
+    bool GetRuntimeFramebufferDimensions(int framebufferId, uint32_t *width,
+                                         uint32_t *height) const;
+    bool ReadRuntimeFramebuffer(int framebufferId, uint32_t width,
+                                uint32_t height, uint16_t *rgba16);
+
     bool PrepareDiagnostic();
     bool RenderDiagnostic();
     bool PrepareFirstFrame(const uint8_t *rgba, uint16_t textureWidth,
@@ -230,6 +243,11 @@ bool pb_gfx_api_3ds_render_display_list(PBGfxApi3DS *api,
 void pb_gfx_api_3ds_invalidate_texture(PBGfxApi3DS *api,
                                        const void *address);
 void pb_gfx_api_3ds_clear_depth(PBGfxApi3DS *api);
+int pb_gfx_api_3ds_create_framebuffer(PBGfxApi3DS *api, uint32_t width,
+                                      uint32_t height);
+bool pb_gfx_api_3ds_register_framebuffer_texture(PBGfxApi3DS *api,
+                                                  const void *address,
+                                                  int framebuffer_id);
 void pb_gfx_api_3ds_set_active(PBGfxApi3DS *api, bool active);
 const PBGfxBridgeStats *pb_gfx_api_3ds_stats(const PBGfxApi3DS *api);
 const PBRuntimeGfxStats *pb_gfx_api_3ds_runtime_stats(

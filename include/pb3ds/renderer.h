@@ -33,6 +33,9 @@ extern "C" {
 #define PB_RENDER_TEXTURE_MIN_DIMENSION 8U
 #define PB_RENDER_TEXTURE_MAX_DIMENSION 1024U
 #define PB_RENDER_FOG_LUT_VALUES 256U
+#define PB_RENDER_MAX_FRAMEBUFFERS 4U
+#define PB_RENDER_CAPTURE_TEXTURE_WIDTH 512U
+#define PB_RENDER_CAPTURE_TEXTURE_HEIGHT 256U
 /*
  * Mtx_OrthoTilt still needs dummy near/far because it fills the whole
  * matrix, but row 2 is then replaced with identity. N64 clip Z is converted
@@ -610,6 +613,9 @@ size_t pb_renderer_swizzled_texel_index(uint16_t x, uint16_t y,
 bool pb_renderer_swizzle_rgba8(uint8_t *destination, size_t destination_size,
                                const uint8_t *source, size_t source_size,
                                uint16_t width, uint16_t height);
+bool pb_renderer_capture_target_xy(uint16_t n64_x, uint16_t n64_y,
+                                   uint16_t *target_x,
+                                   uint16_t *target_y);
 bool pb_renderer_vertex_buffer_size(size_t stride, size_t vertex_count,
                                     size_t *bytes);
 bool pb_renderer_stream_reserve(size_t capacity_vertices,
@@ -667,6 +673,21 @@ bool pb_renderer_3ds_set_sampler(PBRenderer3DS *renderer,
                                  PBTextureWrap wrap_t);
 bool pb_renderer_3ds_delete_texture(PBRenderer3DS *renderer,
                                     uint32_t texture_id);
+bool pb_renderer_3ds_create_framebuffer(PBRenderer3DS *renderer,
+                                        int framebuffer_id, uint16_t width,
+                                        uint16_t height);
+bool pb_renderer_3ds_copy_framebuffer(PBRenderer3DS *renderer,
+                                      int destination_id, int source_id);
+bool pb_renderer_3ds_start_framebuffer(PBRenderer3DS *renderer,
+                                       int framebuffer_id);
+bool pb_renderer_3ds_bind_framebuffer_texture(PBRenderer3DS *renderer,
+                                               int tile, int framebuffer_id);
+bool pb_renderer_3ds_set_framebuffer_sampler(
+    PBRenderer3DS *renderer, int framebuffer_id, PBTextureFilter filter,
+    PBTextureWrap wrap_s, PBTextureWrap wrap_t);
+bool pb_renderer_3ds_read_framebuffer(PBRenderer3DS *renderer,
+                                      int framebuffer_id, uint16_t width,
+                                      uint16_t height, uint16_t *rgba16);
 bool pb_renderer_3ds_set_combiner(PBRenderer3DS *renderer,
                                   int combiner_mode);
 bool pb_renderer_3ds_set_combiner_program(PBRenderer3DS *renderer,
