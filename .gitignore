@@ -13,6 +13,7 @@ build/
 *.n64
 *.v64
 *.o2r
+assets-manifest.json
 romfs/assets/
 sdmc/
 

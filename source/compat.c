@@ -1,171 +1,125 @@
 #include "pb3ds/compat.h"
-#include "pb3ds/f3d.h"
-#include "pb3ds/fs.h"
-#include "pb3ds/gfx.h"
-#include "pb3ds/input.h"
-#include "pb3ds/log.h"
-#include "pb3ds/time.h"
+#include "pb3ds/platform.h"
 
-#include <stdarg.h>
-#include <stdio.h>
+#include <3ds.h>
+#include <ctype.h>
+#include <limits.h>
 #include <string.h>
 
-static PBCompatState g_compat;
-static bool g_ready;
-
-static void format_log(PBLogLevel level, const char *fmt, va_list args) {
-    char message[192];
-
-    vsnprintf(message, sizeof(message), fmt != NULL ? fmt : "", args);
-    pb_log(level, "compat", message);
-}
-
-void pb_compat_init(void) {
-    memset(&g_compat, 0, sizeof(g_compat));
-    g_compat.resources = PB_COMPAT_READY;
-    g_compat.logging = PB_COMPAT_READY;
-    g_compat.config = PB_COMPAT_DEFERRED_M15;
-    g_compat.controller = PB_COMPAT_READY;
-    g_compat.time = PB_COMPAT_READY;
-    g_compat.gfx = PB_COMPAT_READY;
-    g_compat.audio = PB_COMPAT_DEFERRED_M14;
-    g_ready = true;
-}
-
-void pb_compat_query(PBCompatState *state) {
-    if (!g_ready) {
-        pb_compat_init();
+static char *trim(char *text) {
+    while (isspace((unsigned char)*text)) {
+        text++;
     }
-    if (state == NULL) {
-        return;
+
+    char *end = text + strlen(text);
+    while (end > text && isspace((unsigned char)end[-1])) {
+        end--;
     }
-    *state = g_compat;
+    *end = '\0';
+    return text;
 }
 
-const char *pb_compat_status_name(PBCompatStatus status) {
-    switch (status) {
-        case PB_COMPAT_READY:
-            return "ready";
-        case PB_COMPAT_UNSUPPORTED:
-            return "unsupported";
-        case PB_COMPAT_DEFERRED_M8:
-            return "deferred-m8";
-        case PB_COMPAT_DEFERRED_M9:
-            return "deferred-m9";
-        case PB_COMPAT_DEFERRED_M10:
-            return "deferred-m10";
-        case PB_COMPAT_DEFERRED_M11:
-            return "deferred-m11";
-        case PB_COMPAT_DEFERRED_M14:
-            return "deferred-m14";
-        case PB_COMPAT_DEFERRED_M15:
-            return "deferred-m15";
-        default:
-            return "unknown";
+void pb_config_init(PBConfig *config) {
+    memset(config, 0, sizeof(*config));
+}
+
+bool pb_config_load(PBConfig *config, const char *path) {
+    FILE *file = fopen(path, "r");
+    if (file == NULL) {
+        return false;
     }
-}
 
-PBCompatStatus pb_compat_unsupported(const char *symbol) {
-    if (!g_ready) {
-        pb_compat_init();
+    char line[PB_CONFIG_KEY_CAPACITY + PB_CONFIG_VALUE_CAPACITY + 8];
+    while (config->count < PB_CONFIG_MAX_ENTRIES &&
+           fgets(line, sizeof(line), file) != NULL) {
+        char *key = trim(line);
+        if (*key == '\0' || *key == '#' || *key == ';') {
+            continue;
+        }
+
+        char *separator = strchr(key, '=');
+        if (separator == NULL) {
+            continue;
+        }
+        *separator = '\0';
+
+        key = trim(key);
+        char *value = trim(separator + 1);
+        if (*key == '\0') {
+            continue;
+        }
+
+        PBConfigEntry *entry = &config->entries[config->count];
+        (void)snprintf(entry->key, sizeof(entry->key), "%s", key);
+        (void)snprintf(entry->value, sizeof(entry->value), "%s", value);
+        config->count++;
     }
-    snprintf(g_compat.last_unsupported, sizeof(g_compat.last_unsupported), "%s",
-             symbol != NULL ? symbol : "unknown");
-    pb_log(PB_LOG_ERROR, "compat", g_compat.last_unsupported);
-    return PB_COMPAT_UNSUPPORTED;
+
+    fclose(file);
+    return true;
 }
 
-bool pb_compat_desktop_engine_allowed(void) {
-    return false;
-}
-
-void pb_compat_poll_controller(PBOSContPad *pad) {
-    PBInputSample sample;
-
-    if (pad == NULL) {
-        return;
+const char *pb_config_get(const PBConfig *config, const char *key,
+                          const char *fallback) {
+    for (size_t index = 0; index < config->count; index++) {
+        if (strcmp(config->entries[index].key, key) == 0) {
+            return config->entries[index].value;
+        }
     }
-    pb_input_last(&sample);
-    pb_input_map_n64(&sample, pad);
+    return fallback;
 }
 
-uint64_t pb_compat_tick_ms(void) {
-    return pb_time_ms();
-}
-
-#ifndef PB3DS_GAME_OBJECTS
-void *ResourceGetDataByName(const char *name) {
-    if (!g_ready) {
-        pb_compat_init();
+bool pb_archive_open(PBArchive *archive, const char *path) {
+    archive->file = fopen(path, "rb");
+    archive->size = 0;
+    if (archive->file == NULL) {
+        return false;
     }
-    return pb_fs_lookup(name, NULL);
-}
-#endif
 
-void *GameEngine_GetDataExact(const char *name) {
-    return ResourceGetDataByName(name);
-}
-
-void GameEngine_LogInfo(const char *fmt, ...) {
-    va_list args;
-
-    va_start(args, fmt);
-    format_log(PB_LOG_INFO, fmt, args);
-    va_end(args);
-}
-
-void GameEngine_LogWarn(const char *fmt, ...) {
-    va_list args;
-
-    va_start(args, fmt);
-    format_log(PB_LOG_WARNING, fmt, args);
-    va_end(args);
-}
-
-void GameEngine_LogError(const char *fmt, ...) {
-    va_list args;
-
-    va_start(args, fmt);
-    format_log(PB_LOG_ERROR, fmt, args);
-    va_end(args);
-}
-
-void Graphics_PushFrame(void *display_list) {
-    pb_gfx_submit_dl(display_list, 0);
-    if (display_list != NULL) {
-        pb_f3d_execute(display_list, 0);
+    if (fseek(archive->file, 0, SEEK_END) != 0) {
+        pb_archive_close(archive);
+        return false;
     }
-}
-
-void GameEngine_StartAudioFrame(void) {
-}
-
-void GameEngine_EndAudioFrame(void) {
-}
-
-void GameEngine_HoldFrame(void) {
-    pb_loop_hold_frame();
-}
-
-int GameEngine_GetSaveFilePath(char *dst, unsigned dst_size) {
-    if (dst == NULL || dst_size == 0U) {
-        return -1;
+    const long end = ftell(archive->file);
+    if (end < 0 || fseek(archive->file, 0, SEEK_SET) != 0) {
+        pb_archive_close(archive);
+        return false;
     }
-    snprintf(dst, dst_size, "%s", PB_FS_SDMC_ROOT);
-    return 0;
+
+    archive->size = (size_t)end;
+    return true;
 }
 
-int CVarGetInteger(const char *name, int default_value) {
-    (void)name;
-    return default_value;
+size_t pb_archive_read(PBArchive *archive, size_t offset, void *buffer,
+                       size_t size) {
+    if (archive->file == NULL || offset > archive->size ||
+        offset > (size_t)LONG_MAX) {
+        return 0;
+    }
+
+    const size_t available = archive->size - offset;
+    size_t requested = size < available ? size : available;
+    if (requested > PB_ARCHIVE_MAX_READ) {
+        requested = PB_ARCHIVE_MAX_READ;
+    }
+    if (fseek(archive->file, (long)offset, SEEK_SET) != 0) {
+        return 0;
+    }
+    return fread(buffer, 1, requested, archive->file);
 }
 
-float CVarGetFloat(const char *name, float default_value) {
-    (void)name;
-    return default_value;
+void pb_archive_close(PBArchive *archive) {
+    if (archive->file != NULL) {
+        fclose(archive->file);
+        archive->file = NULL;
+    }
+    archive->size = 0;
 }
 
-void CVarSetInteger(const char *name, int value) {
-    (void)name;
-    (void)value;
+uint64_t pb_platform_time_ms(void) {
+    return osGetTime();
+}
+
+PBAudioStatus pb_platform_audio_status(void) {
+    return PB_AUDIO_DEFERRED_M14;
 }

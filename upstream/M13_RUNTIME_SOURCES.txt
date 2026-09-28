@@ -41,6 +41,15 @@ src/worker.c
 src/43F0.c
 src/5B320.c
 src/state_title_screen.c
+src/state_file_select.c
+src/filemenu/filemenu_common.c
+src/filemenu/filemenu_createfile.c
+src/filemenu/filemenu_gfx.c
+src/filemenu/filemenu_info.c
+src/filemenu/filemenu_main.c
+src/filemenu/filemenu_msg.c
+src/filemenu/filemenu_styles.c
+src/filemenu/filemenu_yesno.c
 src/create_audio_system_obfuscated.c
 src/state_pause.c
 src/curtains.c

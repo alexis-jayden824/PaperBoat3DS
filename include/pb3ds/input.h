@@ -3,78 +3,64 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pb3ds/compat.h"
+#define PB_INPUT_STICK_LIMIT 80
+#define PB_INPUT_CIRCLE_DEADZONE 15
+#define PB_INPUT_CIRCLE_MAX 156
+#define PB_INPUT_TOUCH_WIDTH 320
+#define PB_INPUT_TOUCH_HEIGHT 240
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/*
- * libctru KEY_* layout, defined here so callers never include 3ds.h.
- * SELECT is reserved for the future PaperBoat menu (M16) and is never
- * written into an N64 OSContPad.
- */
-#define PB_KEY_A (1U << 0)
-#define PB_KEY_B (1U << 1)
-#define PB_KEY_SELECT (1U << 2)
-#define PB_KEY_START (1U << 3)
-#define PB_KEY_DRIGHT (1U << 4)
-#define PB_KEY_DLEFT (1U << 5)
-#define PB_KEY_DUP (1U << 6)
-#define PB_KEY_DDOWN (1U << 7)
-#define PB_KEY_R (1U << 8)
-#define PB_KEY_L (1U << 9)
-#define PB_KEY_X (1U << 10)
-#define PB_KEY_Y (1U << 11)
-#define PB_KEY_ZL (1U << 14)
-#define PB_KEY_ZR (1U << 15)
-#define PB_KEY_CSTICK_RIGHT (1U << 24)
-#define PB_KEY_CSTICK_LEFT (1U << 25)
-#define PB_KEY_CSTICK_UP (1U << 26)
-#define PB_KEY_CSTICK_DOWN (1U << 27)
-
-/* PaperBoat / libultra OSContPad button bits (include/PR/os_cont.h). */
-#define PB_CONT_A 0x8000U
-#define PB_CONT_B 0x4000U
-#define PB_CONT_Z 0x2000U
-#define PB_CONT_START 0x1000U
-#define PB_CONT_UP 0x0800U
-#define PB_CONT_DOWN 0x0400U
-#define PB_CONT_LEFT 0x0200U
-#define PB_CONT_RIGHT 0x0100U
-#define PB_CONT_L 0x0020U
-#define PB_CONT_R 0x0010U
-#define PB_CONT_C_UP 0x0008U
-#define PB_CONT_C_DOWN 0x0004U
-#define PB_CONT_C_LEFT 0x0002U
-#define PB_CONT_C_RIGHT 0x0001U
-
-#define PB_STICK_DEADZONE 15
-#define PB_STICK_3DS_MAX 156
-#define PB_STICK_N64_MAX 80
+typedef enum {
+    PB_N64_C_RIGHT = 0x0001,
+    PB_N64_C_LEFT = 0x0002,
+    PB_N64_C_DOWN = 0x0004,
+    PB_N64_C_UP = 0x0008,
+    PB_N64_R = 0x0010,
+    PB_N64_L = 0x0020,
+    PB_N64_D_RIGHT = 0x0100,
+    PB_N64_D_LEFT = 0x0200,
+    PB_N64_D_DOWN = 0x0400,
+    PB_N64_D_UP = 0x0800,
+    PB_N64_START = 0x1000,
+    PB_N64_Z = 0x2000,
+    PB_N64_B = 0x4000,
+    PB_N64_A = 0x8000,
+} PBN64Button;
 
 typedef struct {
-    uint32_t held;
-    uint32_t down;
-    int16_t stick_x;
-    int16_t stick_y;
-    int16_t cstick_x;
-    int16_t cstick_y;
+    uint32_t keys_held;
+    int16_t circle_x;
+    int16_t circle_y;
+    uint16_t touch_x;
+    uint16_t touch_y;
+    bool touch_active;
 } PBInputSample;
 
-void pb_input_poll(PBInputSample *sample);
-void pb_input_last(PBInputSample *sample);
-void pb_input_map_n64(const PBInputSample *sample, PBOSContPad *pad);
-int8_t pb_input_scale_stick(int16_t axis);
-bool pb_input_select_reserved(void);
-bool pb_input_select_pressed(const PBInputSample *sample);
+typedef struct {
+    uint32_t native_held;
+    uint32_t native_pressed;
+    uint32_t native_released;
+    uint16_t n64_held;
+    uint16_t n64_pressed;
+    uint16_t n64_released;
+    int8_t stick_x;
+    int8_t stick_y;
+    uint16_t touch_x;
+    uint16_t touch_y;
+    bool touch_held;
+    bool touch_pressed;
+    bool touch_released;
+    bool menu_requested;
+    bool suspended;
+    bool waiting_for_neutral;
+    uint64_t frame_index;
+} PBInputState;
 
-#ifndef __3DS__
-void pb_input_host_set(uint32_t held, uint32_t down);
-void pb_input_host_set_stick(int16_t x, int16_t y);
-void pb_input_host_set_cstick(int16_t x, int16_t y);
-#endif
+void pb_input_init(PBInputState *state);
+void pb_input_update(PBInputState *state, const PBInputSample *sample);
+void pb_input_poll(PBInputState *state);
+void pb_input_suspend(PBInputState *state);
+void pb_input_resume(PBInputState *state);
 
-#ifdef __cplusplus
-}
-#endif
+uint16_t pb_input_map_buttons(uint32_t keys_held);
+int8_t pb_input_scale_circle_axis(int16_t value);
+

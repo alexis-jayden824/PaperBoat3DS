@@ -1,4 +1,4 @@
-name: Nintendo 3DS M13 build
+name: Nintendo 3DS M13 gameplay build
 
 on:
   push:
@@ -15,53 +15,31 @@ env:
   PB3DS_MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
 
 jobs:
-  game-core-compile:
-    runs-on: ubuntu-latest
-    container:
-      image: devkitpro/devkitarm@sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-      - name: Compile pinned PaperBoat runtime closure
-        run: make m13-game-core
-      - name: Probe PaperBoat runtime link
-        run: make -j2 M13_LINK_GAME=1
-
-  host-contract:
+  host-contracts:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-      - name: Test M1 toolchain lock
-        run: sh tools/test_m1.sh
-      - name: Test M2 upstream lock
-        run: PB3DS_VERIFY_UPSTREAM=1 sh tools/test_m2.sh
-      - name: Test M0 bootstrap contract
-        run: sh tools/test_bootstrap.sh
-      - name: Test M3 platform contract
-        run: sh tools/test_platform.sh
-      - name: Test M4 diagnostics contract
-        run: sh tools/test_m4.sh
-      - name: Test M5 PaperBoat slice
-        run: sh tools/test_m5.sh
-      - name: Test M6 compatibility contract
-        run: sh tools/test_m6.sh
-      - name: Test M7 legal asset pipeline
-        run: sh tools/test_m7.sh
-      - name: Test M8 input contract
-        run: sh tools/test_m8.sh
-      - name: Test M9 filesystem contract
-        run: sh tools/test_m9.sh
-      - name: Test M10 loop contract
-        run: sh tools/test_m10.sh
-      - name: Test M11 gfx contract
-        run: sh tools/test_m11.sh
-      - name: Test M12 title contract
-        run: sh tools/test_m12.sh
-      - name: Test M13 runtime contract
-        run: sh tools/test_m13.sh
-      - name: Test PaperBoat OTR resource decoding
-        run: sh tools/test_game_resources.sh
+      - name: Fetch pinned PaperBoat for host contracts
+        run: sh tools/fetch_upstream.sh
+      - name: Test synthetic asset pipeline
+        run: sh tools/test_asset_pipeline.sh
+      - name: Test host runtime contracts
+        run: |
+          HOST_CC=cc sh tools/test_memory_policy.sh build/host-m6
+          HOST_CC=cc sh tools/test_input_backend.sh build/host-m8
+          HOST_CC=cc sh tools/test_renderer_contract.sh build/host-m9
+          HOST_CC=cc sh tools/test_gfx_bridge.sh build/host-m10-bridge
+          HOST_CC=cc HOST_CXX=c++ sh tools/test_gfx_api_contract.sh build/host-m10-api
+          HOST_CC=cc sh tools/test_first_frame.sh build/host-m11
+          HOST_CC=cc sh tools/test_title_flow.sh build/host-m12-flow
+          HOST_CC=cc sh tools/test_title_layout.sh build/host-m12-layout
+          python3 tests/test_m13_runtime_generation.py \
+            tools/generate_m13_runtime.py .cache/upstream/PaperBoat
+          HOST_CC=cc sh tools/test_world_boot.sh build/host-m13-world
+          HOST_CC=cc sh tools/test_world_scene.sh build/host-m13-scene
+          SANITIZE=1 HOST_CC=cc sh tools/test_runtime_resources.sh \
+            build/host-m13-resources
 
   build:
     runs-on: ubuntu-latest
@@ -75,53 +53,37 @@ jobs:
           "$DEVKITARM/bin/arm-none-eabi-gcc" --version
           make --version
           cat toolchain/TOOLCHAINS.lock
-      - name: Test M1 toolchain lock
-        run: sh tools/test_m1.sh
-      - name: Test M2 upstream lock
-        run: sh tools/test_m2.sh
-      - name: Test M0 bootstrap contract
-        run: make bootstrap-test
-      - name: Test M3 platform contract
-        run: make m3-platform-test
-      - name: Test M4 diagnostics contract
-        run: make m4-diag-test
-      - name: Fetch pinned PaperBoat slice
-        run: make fetch
-      - name: Test M5 PaperBoat slice
-        run: make m5-slice-test
-      - name: Test M6 compatibility contract
-        run: make m6-compat-test
-      - name: Test M7 legal asset pipeline
-        run: make m7-assets-test
-      - name: Test M8 input contract
-        run: make m8-input-test
-      - name: Test M9 filesystem contract
-        run: make m9-fs-test
-      - name: Test M10 loop contract
-        run: make m10-loop-test
-      - name: Test M11 gfx contract
-        run: make m11-gfx-test
-      - name: Test M12 title contract
-        run: make m12-title-test
-      - name: Test M13 runtime contract
-        run: make m13-runtime-test
-      - name: Test PaperBoat OTR resource decoding
-        run: sh tools/test_game_resources.sh
-      - name: Build 3DSX
+      - name: Fetch pinned PaperBoat
+        run: make fetch-upstream
+      - name: Run graphics and runtime contracts
+        run: |
+          SANITIZE=1 make m10-graphics-test
+          make m11-frame-test
+          make m12-flow-test
+          make m12-layout-test
+          make m13-world-test
+          SANITIZE=1 sh tools/test_runtime_resources.sh
+      - name: Cross-compile and verify PaperBoat runtime
+        run: |
+          make m5-core-check
+          make m13-core-check
+      - name: Build gameplay 3DSX
         run: |
           make -j2 \
             PB3DS_BUILD_SHA="$GITHUB_SHA" \
             PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          make m6-budget-check
       - name: Write build metadata
         run: |
-          PB3DS_VERSION="$(awk '/^#define PB3DS_VERSION / { gsub(/"/, "", $3); print $3 }' include/pb3ds/version.h)" \
-          PB3DS_BUILD_SHA="$GITHUB_SHA" \
-          PB3DS_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-          PB3DS_DOCKER_IMAGE="$PB3DS_DOCKER_IMAGE" \
-          PB3DS_DOCKER_DIGEST="$PB3DS_DOCKER_DIGEST" \
-          PB3DS_MAKEROM_COMMIT="$PB3DS_MAKEROM_COMMIT" \
-          sh tools/write_build_info.sh build/build-info.txt
-          cat build/build-info.txt
+          mkdir -p build
+          cat > build/build-info.txt <<EOF
+          version=$(awk '/^#define PB3DS_VERSION / { gsub(/"/, "", $3); print $3 }' include/pb3ds/version.h)
+          git_sha=$GITHUB_SHA
+          git_ref=$GITHUB_REF_NAME
+          build_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          paperboat_commit=$(awk -F= '/^PAPERBOAT_COMMIT=/ { print $2 }' upstream/PAPERBOAT.lock)
+          runtime=title-file-select-toad-town
+          EOF
       - name: Build pinned makerom
         run: |
           git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
@@ -132,53 +94,45 @@ jobs:
           install -m 0755 "$RUNNER_TEMP/Project_CTR/makerom/bin/makerom" "$GITHUB_WORKSPACE/.tools/makerom"
       - name: Build CCI and CIA packages
         run: make MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" packages
-      - name: Verify expected outputs
+      - name: Verify and stage outputs
         run: |
           test -s PaperBoat3DS-Refolded.elf
           test -s PaperBoat3DS-Refolded.3dsx
           test -s PaperBoat3DS-Refolded.3ds
           test -s PaperBoat3DS-Refolded.cia
-          test -s build/build-info.txt
           grep -q "git_sha=$GITHUB_SHA" build/build-info.txt
-      - name: Stage download zip
-        run: |
-          python3 - <<'PY'
+          python3 - <<'PYZIP'
           import zipfile
           from pathlib import Path
-
           archive = Path("PaperBoat3DS-Refolded.zip")
           entries = (
-              ("PaperBoat3DS-Refolded.3dsx", "PaperBoat3DS-Refolded.3dsx"),
-              ("PaperBoat3DS-Refolded.3ds", "PaperBoat3DS-Refolded.3ds"),
-              ("PaperBoat3DS-Refolded.cia", "PaperBoat3DS-Refolded.cia"),
-              ("PaperBoat3DS-Refolded.smdh", "PaperBoat3DS-Refolded.smdh"),
-              ("build/build-info.txt", "build-info.txt"),
+              "PaperBoat3DS-Refolded.3dsx",
+              "PaperBoat3DS-Refolded.3ds",
+              "PaperBoat3DS-Refolded.cia",
+              "PaperBoat3DS-Refolded.smdh",
           )
           with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-              for src, name in entries:
-                  zf.write(src, arcname=name)
-          if archive.stat().st_size < 1:
-              raise SystemExit("empty zip")
-          PY
-          test -s PaperBoat3DS-Refolded.zip
-          cp -f PaperBoat3DS-Refolded.zip pb3ds.zip
-      - name: Upload Homebrew artifacts
+              for source in entries:
+                  zf.write(source)
+              zf.write("build/build-info.txt", "build-info.txt")
+          PYZIP
+          cp PaperBoat3DS-Refolded.zip pb3ds.zip
+      - name: Upload gameplay artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pb3ds
           if-no-files-found: error
           compression-level: 0
-          path: |
-            pb3ds.zip
+          path: pb3ds.zip
           retention-days: 14
-      - name: Publish packages on Releases
+      - name: Publish rolling gameplay packages
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ci-latest
           name: CI packages (latest)
           draft: false
-          prerelease: false
+          prerelease: true
           make_latest: true
           fail_on_unmatched_files: true
           files: |
@@ -188,15 +142,7 @@ jobs:
             PaperBoat3DS-Refolded.3ds
             PaperBoat3DS-Refolded.cia
           body: |
-            Rolling CI packages from `${{ github.sha }}` (`${{ github.ref_name }}`).
+            Rolling M13 gameplay packages from `${{ github.sha }}` (`${{ github.ref_name }}`).
 
-            **iPhone:** GitHub's app cannot download Actions artifacts. Open
-            [Releases / latest](https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest)
-            and download `pb3ds.zip`.
-
-            Direct zip:
-            https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest/download/pb3ds.zip
-
-            - Homebrew Launcher: `PaperBoat3DS-Refolded.3dsx`
-            - Folium / CCI: `PaperBoat3DS-Refolded.3ds`
-            - FBI: `PaperBoat3DS-Refolded.cia`
+            Copy `PaperBoat3DS-Refolded.3dsx` to `/3ds/PaperBoat3DS/` and place
+            the legally generated `paperboat.o2r` and `pm64.o2r` beside it.

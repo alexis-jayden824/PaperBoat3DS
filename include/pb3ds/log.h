@@ -1,25 +1,22 @@
 #pragma once
 
-#include <stddef.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#define PB_LOG_RING_CAPACITY 16U
-#define PB_LOG_RING_LINE 96U
+#include <stdbool.h>
+#include <stdio.h>
 
 typedef enum {
-    PB_LOG_INFO = 0,
+    PB_LOG_INFO,
     PB_LOG_WARNING,
     PB_LOG_ERROR,
 } PBLogLevel;
 
-void pb_log(PBLogLevel level, const char *component, const char *message);
-const char *pb_log_level_name(PBLogLevel level);
-size_t pb_log_count(void);
-const char *pb_log_line(size_t oldest_index);
+typedef struct {
+    FILE *file;
+    unsigned int entries_written;
+    unsigned int entries_dropped;
+} PBLog;
 
-#ifdef __cplusplus
-}
-#endif
+bool pb_log_init(PBLog *log);
+bool pb_log_is_persistent(const PBLog *log);
+void pb_log_write(PBLog *log, PBLogLevel level, const char *component,
+                  const char *format, ...);
+void pb_log_close(PBLog *log);

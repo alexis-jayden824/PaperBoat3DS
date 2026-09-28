@@ -1,88 +1,248 @@
-#include "pb3ds/compat.h"
 #include "pb3ds/input.h"
 
+#include <3ds.h>
+#include <stddef.h>
 #include <string.h>
 
-bool pb_input_select_reserved(void) {
-    return true;
+static uint16_t clamp_touch_coordinate(uint16_t value, uint16_t limit) {
+    if (value >= limit) {
+        return (uint16_t)(limit - 1U);
+    }
+    return value;
 }
 
-bool pb_input_select_pressed(const PBInputSample *sample) {
-    return sample != NULL && (sample->down & PB_KEY_SELECT) != 0U;
+static void clear_live_state(PBInputState *state) {
+    state->native_held = 0;
+    state->native_pressed = 0;
+    state->native_released = 0;
+    state->n64_held = 0;
+    state->n64_pressed = 0;
+    state->n64_released = 0;
+    state->stick_x = 0;
+    state->stick_y = 0;
+    state->touch_held = false;
+    state->touch_pressed = false;
+    state->touch_released = false;
+    state->menu_requested = false;
 }
 
-int8_t pb_input_scale_stick(int16_t axis) {
-    int32_t scaled;
+static void normalized_dpad(uint32_t keys, bool *up, bool *down,
+                            bool *left, bool *right) {
+    *up = (keys & KEY_DUP) != 0;
+    *down = (keys & KEY_DDOWN) != 0;
+    *left = (keys & KEY_DLEFT) != 0;
+    *right = (keys & KEY_DRIGHT) != 0;
 
-    if (axis > -PB_STICK_DEADZONE && axis < PB_STICK_DEADZONE) {
+    if (*up && *down) {
+        *up = false;
+        *down = false;
+    }
+    if (*left && *right) {
+        *left = false;
+        *right = false;
+    }
+}
+
+uint16_t pb_input_map_buttons(uint32_t keys_held) {
+    uint16_t buttons = 0;
+    bool up;
+    bool down;
+    bool left;
+    bool right;
+
+    if ((keys_held & KEY_A) != 0) {
+        buttons |= PB_N64_A;
+    }
+    if ((keys_held & KEY_B) != 0) {
+        buttons |= PB_N64_B;
+    }
+    if ((keys_held & (KEY_X | KEY_ZL)) != 0) {
+        buttons |= PB_N64_Z;
+    }
+    if ((keys_held & KEY_Y) != 0) {
+        buttons |= PB_N64_C_DOWN;
+    }
+    if ((keys_held & KEY_START) != 0) {
+        buttons |= PB_N64_START;
+    }
+    if ((keys_held & (KEY_R | KEY_ZR)) != 0) {
+        buttons |= PB_N64_R;
+    }
+
+    normalized_dpad(keys_held, &up, &down, &left, &right);
+    const bool dpad_active = up || down || left || right;
+
+    /*
+     * Paper Mario uses the C buttons substantially more often than the N64
+     * D-pad. The physical D-pad therefore supplies C by default. Holding L
+     * shifts it to the N64 D-pad and suppresses L for that chord.
+     */
+    if ((keys_held & KEY_L) != 0 && dpad_active) {
+        if (up) {
+            buttons |= PB_N64_D_UP;
+        }
+        if (down) {
+            buttons |= PB_N64_D_DOWN;
+        }
+        if (left) {
+            buttons |= PB_N64_D_LEFT;
+        }
+        if (right) {
+            buttons |= PB_N64_D_RIGHT;
+        }
+    } else {
+        if ((keys_held & KEY_L) != 0) {
+            buttons |= PB_N64_L;
+        }
+        if (up) {
+            buttons |= PB_N64_C_UP;
+        }
+        if (down) {
+            buttons |= PB_N64_C_DOWN;
+        }
+        if (left) {
+            buttons |= PB_N64_C_LEFT;
+        }
+        if (right) {
+            buttons |= PB_N64_C_RIGHT;
+        }
+    }
+
+    if ((keys_held & KEY_CSTICK_UP) != 0) {
+        buttons |= PB_N64_C_UP;
+    }
+    if ((keys_held & KEY_CSTICK_DOWN) != 0) {
+        buttons |= PB_N64_C_DOWN;
+    }
+    if ((keys_held & KEY_CSTICK_LEFT) != 0) {
+        buttons |= PB_N64_C_LEFT;
+    }
+    if ((keys_held & KEY_CSTICK_RIGHT) != 0) {
+        buttons |= PB_N64_C_RIGHT;
+    }
+
+    return buttons;
+}
+
+int8_t pb_input_scale_circle_axis(int16_t value) {
+    int32_t magnitude = value;
+    int32_t sign = 1;
+
+    if (magnitude < 0) {
+        sign = -1;
+        magnitude = -magnitude;
+    }
+    if (magnitude <= PB_INPUT_CIRCLE_DEADZONE) {
         return 0;
     }
-    scaled = ((int32_t)axis * PB_STICK_N64_MAX) / PB_STICK_3DS_MAX;
-    if (scaled > PB_STICK_N64_MAX) {
-        scaled = PB_STICK_N64_MAX;
+    if (magnitude >= PB_INPUT_CIRCLE_MAX) {
+        return (int8_t)(sign * PB_INPUT_STICK_LIMIT);
     }
-    if (scaled < -PB_STICK_N64_MAX) {
-        scaled = -PB_STICK_N64_MAX;
-    }
-    return (int8_t)scaled;
+
+    const int32_t usable_range = PB_INPUT_CIRCLE_MAX - PB_INPUT_CIRCLE_DEADZONE;
+    const int32_t scaled =
+        ((magnitude - PB_INPUT_CIRCLE_DEADZONE) * PB_INPUT_STICK_LIMIT +
+         usable_range / 2) /
+        usable_range;
+    return (int8_t)(sign * scaled);
 }
 
-void pb_input_map_n64(const PBInputSample *sample, PBOSContPad *pad) {
-    uint32_t keys;
-
-    if (pad == NULL) {
+void pb_input_init(PBInputState *state) {
+    if (state == NULL) {
         return;
     }
-    memset(pad, 0, sizeof(*pad));
-    if (sample == NULL) {
-        return;
-    }
-
-    /* SELECT is platform-reserved and must never reach the game pad. */
-    keys = sample->held & ~PB_KEY_SELECT;
-
-    if ((keys & PB_KEY_A) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_A;
-    }
-    if ((keys & PB_KEY_B) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_B;
-    }
-    if ((keys & PB_KEY_START) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_START;
-    }
-    if ((keys & PB_KEY_DUP) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_UP;
-    }
-    if ((keys & PB_KEY_DDOWN) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_DOWN;
-    }
-    if ((keys & PB_KEY_DLEFT) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_LEFT;
-    }
-    if ((keys & PB_KEY_DRIGHT) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_RIGHT;
-    }
-    /* Old 3DS has no ZL; Paper Mario uses Z constantly, so L is Z. */
-    if ((keys & (PB_KEY_L | PB_KEY_ZL)) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_Z;
-    }
-    if ((keys & PB_KEY_R) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_R;
-    }
-    if ((keys & (PB_KEY_X | PB_KEY_CSTICK_UP)) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_C_UP;
-    }
-    if ((keys & (PB_KEY_ZR | PB_KEY_CSTICK_DOWN)) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_C_DOWN;
-    }
-    if ((keys & (PB_KEY_Y | PB_KEY_CSTICK_LEFT)) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_C_LEFT;
-    }
-    if ((keys & PB_KEY_CSTICK_RIGHT) != 0U) {
-        pad->button |= (uint16_t)PB_CONT_C_RIGHT;
-    }
-
-    pad->stick_x = pb_input_scale_stick(sample->stick_x);
-    pad->stick_y = pb_input_scale_stick(sample->stick_y);
-    pad->errnum = 0U;
+    memset(state, 0, sizeof(*state));
 }
+
+void pb_input_update(PBInputState *state, const PBInputSample *sample) {
+    if (state == NULL || sample == NULL) {
+        return;
+    }
+
+    state->frame_index++;
+    if (state->suspended) {
+        clear_live_state(state);
+        return;
+    }
+
+    const int8_t next_stick_x = pb_input_scale_circle_axis(sample->circle_x);
+    const int8_t next_stick_y = pb_input_scale_circle_axis(sample->circle_y);
+    if (state->waiting_for_neutral) {
+        const bool neutral = sample->keys_held == 0 && !sample->touch_active &&
+                             next_stick_x == 0 && next_stick_y == 0;
+        clear_live_state(state);
+        if (neutral) {
+            state->waiting_for_neutral = false;
+        }
+        return;
+    }
+
+    const uint32_t previous_native = state->native_held;
+    const uint16_t previous_n64 = state->n64_held;
+    const bool previous_touch = state->touch_held;
+
+    state->native_held = sample->keys_held;
+    state->native_pressed = sample->keys_held & ~previous_native;
+    state->native_released = previous_native & ~sample->keys_held;
+
+    state->n64_held = pb_input_map_buttons(sample->keys_held);
+    state->n64_pressed = (uint16_t)(state->n64_held & ~previous_n64);
+    state->n64_released = (uint16_t)(previous_n64 & ~state->n64_held);
+    state->stick_x = next_stick_x;
+    state->stick_y = next_stick_y;
+
+    state->touch_held = sample->touch_active;
+    state->touch_pressed = sample->touch_active && !previous_touch;
+    state->touch_released = !sample->touch_active && previous_touch;
+    if (sample->touch_active) {
+        state->touch_x = clamp_touch_coordinate(sample->touch_x,
+                                                PB_INPUT_TOUCH_WIDTH);
+        state->touch_y = clamp_touch_coordinate(sample->touch_y,
+                                                PB_INPUT_TOUCH_HEIGHT);
+    }
+
+    state->menu_requested = (state->native_pressed & KEY_SELECT) != 0;
+}
+
+void pb_input_poll(PBInputState *state) {
+    if (state == NULL) {
+        return;
+    }
+
+    PBInputSample sample = { 0 };
+    circlePosition circle = { 0 };
+    touchPosition touch = { 0 };
+
+    hidScanInput();
+    sample.keys_held = hidKeysHeld();
+    hidCircleRead(&circle);
+    sample.circle_x = circle.dx;
+    sample.circle_y = circle.dy;
+    sample.touch_active = (sample.keys_held & KEY_TOUCH) != 0;
+    if (sample.touch_active) {
+        hidTouchRead(&touch);
+        sample.touch_x = touch.px;
+        sample.touch_y = touch.py;
+    }
+
+    pb_input_update(state, &sample);
+}
+
+void pb_input_suspend(PBInputState *state) {
+    if (state == NULL) {
+        return;
+    }
+    clear_live_state(state);
+    state->suspended = true;
+    state->waiting_for_neutral = true;
+}
+
+void pb_input_resume(PBInputState *state) {
+    if (state == NULL) {
+        return;
+    }
+    clear_live_state(state);
+    state->suspended = false;
+    state->waiting_for_neutral = true;
+}
+

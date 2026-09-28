@@ -1,31 +1,34 @@
 #pragma once
 
 /*
- * PaperBoat-facing 3DS platform boundary (M3–M13).
+ * PaperBoat-facing 3DS platform boundary (master roadmap M3).
  *
- * Game and compatibility code include this header instead of 3ds.h.
- * Audio is declared and deferred until M14. Extra OS threads are forbidden.
- * SELECT is reserved for M16. citro3d lives in source/gfx_pica.c.
+ * Game and compatibility code should go through these headers rather than
+ * scattering libctru calls. Audio is declared but deferred until M14.
+ * Extra OS threads are not used: PaperBoat is stepped from the APT main
+ * loop (M10) so suspend/resume stay on one ARM11 context.
+ *
+ * Graphics live in pb3ds/renderer.h and pb3ds/gfx_rendering_api_3ds.h.
+ * Diagnostics on-device live in pb3ds/diagnostics.h (libctru).
  */
 
-#include "pb3ds/assert.h"
-#include "pb3ds/assets.h"
-#include "pb3ds/audio.h"
-#include "pb3ds/bootstrap.h"
 #include "pb3ds/compat.h"
-#include "pb3ds/diag.h"
-#include "pb3ds/f3d.h"
-#include "pb3ds/fs.h"
-#include "pb3ds/gfx.h"
-#include "pb3ds/hw.h"
 #include "pb3ds/input.h"
 #include "pb3ds/log.h"
 #include "pb3ds/memory.h"
-#include "pb3ds/paperboat.h"
-#include "pb3ds/runtime.h"
-#include "pb3ds/system.h"
-#include "pb3ds/tev.h"
-#include "pb3ds/tex.h"
-#include "pb3ds/thread.h"
-#include "pb3ds/time.h"
-#include "pb3ds/title.h"
+#include "pb3ds/o2r.h"
+#include "pb3ds/renderer.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum {
+    PB_AUDIO_DEFERRED_M14 = 0,
+} PBAudioStatus;
+
+PBAudioStatus pb_platform_audio_status(void);
+
+#ifdef __cplusplus
+}
+#endif

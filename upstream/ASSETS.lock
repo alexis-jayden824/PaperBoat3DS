@@ -1,9 +1,0 @@
-# Host-only legal dump identity. Never commit ROMs or .o2r archives.
-# SHA-1 is the PaperBoat 1.0.1 config.yml key (Companion::CalculateHash).
-
-PAPERMARIO_US_NAME=pm64
-PAPERMARIO_US_SHA1=3837f44cda784b466c9a2d99df70d77c322b97a0
-BASEROM_FILENAME=baserom.us.z64
-PM64_O2R=pm64.o2r
-PAPERBOAT_O2R=paperboat.o2r
-OUTPUT_DIR=.cache/assets

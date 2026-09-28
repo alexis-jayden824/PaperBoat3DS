@@ -31,7 +31,8 @@ AreaConfig gAreas[] = {
 '''
 
 
-GAME_MODES = r'''#include "game_modes.h"
+GAME_MODES = r'''#include "common.h"
+#include "game_modes.h"
 
 extern void PB3DS_RuntimeUnsupportedMode(s32 modeID);
 
@@ -58,7 +59,7 @@ static void game_mode_nop(void) {}
 const GameModeData GameModeTemplates[] = {
     [GAME_MODE_STARTUP] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
     [GAME_MODE_LOGOS] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
-    [GAME_MODE_TITLE_SCREEN] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
+    [GAME_MODE_TITLE_SCREEN] = MODE(state_init_title_screen, state_step_title_screen, state_drawUI_title_screen),
     [GAME_MODE_ENTER_DEMO_WORLD] = MODE(state_init_enter_demo, state_step_enter_world, state_drawUI_enter_world),
     [GAME_MODE_ENTER_WORLD] = MODE(state_init_enter_world, state_step_enter_world, state_drawUI_enter_world),
     [GAME_MODE_WORLD] = MODE(state_init_world, state_step_world, state_drawUI_world),
@@ -68,8 +69,8 @@ const GameModeData GameModeTemplates[] = {
     [GAME_MODE_END_BATTLE] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
     [GAME_MODE_PAUSE] = MODE(state_init_pause, state_step_pause, state_drawUI_pause),
     [GAME_MODE_UNPAUSE] = MODE(state_init_unpause, state_step_unpause, state_drawUI_unpause),
-    [GAME_MODE_FILE_SELECT] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
-    [GAME_MODE_END_FILE_SELECT] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
+    [GAME_MODE_FILE_SELECT] = MODE(state_init_file_select, state_step_file_select, state_drawUI_file_select),
+    [GAME_MODE_END_FILE_SELECT] = MODE(state_init_exit_file_select, state_step_exit_file_select, state_drawUI_exit_file_select),
     [GAME_MODE_INTRO] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
     [GAME_MODE_DEMO] = MODE(game_mode_nop, game_mode_nop, game_mode_nop),
 };
@@ -78,10 +79,12 @@ BSS s32 CurGameModeID;
 BSS GameModeData CurGameMode;
 
 static b32 mode_supported(s32 modeID) {
-    return modeID == GAME_MODE_STARTUP ||
+    return modeID == GAME_MODE_STARTUP || modeID == GAME_MODE_TITLE_SCREEN ||
            (modeID >= GAME_MODE_ENTER_DEMO_WORLD &&
             modeID <= GAME_MODE_GAME_OVER) ||
-           modeID == GAME_MODE_PAUSE || modeID == GAME_MODE_UNPAUSE;
+           modeID == GAME_MODE_PAUSE || modeID == GAME_MODE_UNPAUSE ||
+           modeID == GAME_MODE_FILE_SELECT ||
+           modeID == GAME_MODE_END_FILE_SELECT;
 }
 
 s32 get_game_mode(void) { return CurGameModeID; }
@@ -92,6 +95,17 @@ void set_game_mode(s32 modeID) {
         return;
     }
     if (!mode_supported(modeID)) PB3DS_RuntimeUnsupportedMode(modeID);
+    /* M13 deliberately contains only the accepted Toad Town maps. Preserve
+     * the real title and file menu, then route a confirmed slot into mac_00
+     * instead of following a save into an unlinked chapter map. */
+    if (modeID == GAME_MODE_ENTER_WORLD &&
+        CurGameModeID == GAME_MODE_END_FILE_SELECT) {
+        gGameStatusPtr->areaID = 1;
+        gGameStatusPtr->mapID = 1;
+        gGameStatusPtr->entryID = 1;
+        gGameStatusPtr->prevArea = 1;
+        gGameStatusPtr->demoState = DEMO_STATE_NONE;
+    }
     const GameModeData *template = &GameModeTemplates[modeID];
     CurGameModeID = modeID;
     CurGameMode = *template;
@@ -258,6 +272,18 @@ def main() -> int:
         mac_01_main, "EVS_BindExitTriggers", MAC_01_EXIT_TRIGGERS
     )
 
+    title_screen = (
+        args.upstream / "src/state_title_screen.c"
+    ).read_text(encoding="utf-8")
+    title_timeout = "    TitleScreen_TimeLeft = 480;"
+    if title_screen.count(title_timeout) != 1:
+        raise SystemExit("pinned title timeout changed")
+    # M13 does not link the intro/demo maps. Keep the authentic title in its
+    # input state until the player opens the authentic file menu.
+    title_screen = title_screen.replace(
+        title_timeout, "    TitleScreen_TimeLeft = 32767;"
+    )
+
     heaps = (args.upstream / "src/heaps.c").read_text(encoding="utf-8")
     pause_aux = "BSS u8 D_80200000[0x4000] ALIGNED(0x1000);"
     pause_aux_fixed = "BSS u8 D_80200000[0x38000] ALIGNED(0x1000);"
@@ -279,6 +305,9 @@ def main() -> int:
         HEAP_STORAGE, encoding="utf-8"
     )
     (args.output / "runtime_heaps.c").write_text(heaps, encoding="utf-8")
+    (args.output / "runtime_title_screen.c").write_text(
+        title_screen, encoding="utf-8"
+    )
     (args.output / "runtime_mac_00_main.c").write_text(
         mac_00_main, encoding="utf-8"
     )

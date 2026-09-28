@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "paperboat_release": "1.0.1",
+  "paperboat_commit": "424c220f0863c29b9fe55cc674baceff88e9e14f",
+  "libultraship_commit": "7aa03b6c830b059e3ddd6ad20d3f289c5f406161",
+  "torch_commit": "106f4e3056f07fe3a8758bb14a060f8423b6877f",
+  "archives": {
+    "paperboat": {
+      "filename": "paperboat.o2r",
+      "source_directory": "port"
+    },
+    "pm64": {
+      "filename": "pm64.o2r",
+      "minimum_entries": 200,
+      "required_entries": [
+        "portVersion",
+        "version"
+      ]
+    }
+  },
+  "supported_roms": [
+    {
+      "name": "Paper Mario (USA)",
+      "byte_order": "z64-big-endian",
+      "sha1": "3837f44cda784b466c9a2d99df70d77c322b97a0"
+    }
+  ]
+}

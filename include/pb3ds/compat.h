@@ -1,68 +1,47 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+
+#include "pb3ds/memory.h"
+
+#define PB_CONFIG_MAX_ENTRIES 24
+#define PB_CONFIG_KEY_CAPACITY 40
+#define PB_CONFIG_VALUE_CAPACITY 96
+#define PB_ARCHIVE_MAX_READ PB_ARCHIVE_STREAM_CHUNK
+
+typedef struct {
+    char key[PB_CONFIG_KEY_CAPACITY];
+    char value[PB_CONFIG_VALUE_CAPACITY];
+} PBConfigEntry;
+
+typedef struct {
+    PBConfigEntry entries[PB_CONFIG_MAX_ENTRIES];
+    size_t count;
+} PBConfig;
+
+typedef struct {
+    FILE *file;
+    size_t size;
+} PBArchive;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Minimum PaperBoat engine surface (M6). This is not desktop libultraship.
- * Unsupported and deferred calls fail explicitly and are logged.
- */
-#define PB_COMPAT_NAME_MAX 80U
+void pb_config_init(PBConfig *config);
+bool pb_config_load(PBConfig *config, const char *path);
+const char *pb_config_get(const PBConfig *config, const char *key,
+                          const char *fallback);
 
-typedef enum {
-    PB_COMPAT_READY = 0,
-    PB_COMPAT_UNSUPPORTED,
-    PB_COMPAT_DEFERRED_M8,
-    PB_COMPAT_DEFERRED_M9,
-    PB_COMPAT_DEFERRED_M10,
-    PB_COMPAT_DEFERRED_M11,
-    PB_COMPAT_DEFERRED_M14,
-    PB_COMPAT_DEFERRED_M15,
-} PBCompatStatus;
+bool pb_archive_open(PBArchive *archive, const char *path);
+size_t pb_archive_read(PBArchive *archive, size_t offset, void *buffer,
+                       size_t size);
+void pb_archive_close(PBArchive *archive);
 
-typedef struct {
-    uint16_t button;
-    int8_t stick_x;
-    int8_t stick_y;
-    uint8_t errnum;
-} PBOSContPad;
-
-typedef struct {
-    PBCompatStatus resources;
-    PBCompatStatus logging;
-    PBCompatStatus config;
-    PBCompatStatus controller;
-    PBCompatStatus time;
-    PBCompatStatus gfx;
-    PBCompatStatus audio;
-    char last_unsupported[PB_COMPAT_NAME_MAX];
-} PBCompatState;
-
-void pb_compat_init(void);
-void pb_compat_query(PBCompatState *state);
-const char *pb_compat_status_name(PBCompatStatus status);
-PBCompatStatus pb_compat_unsupported(const char *symbol);
-bool pb_compat_desktop_engine_allowed(void);
-void pb_compat_poll_controller(PBOSContPad *pad);
-uint64_t pb_compat_tick_ms(void);
-
-void *ResourceGetDataByName(const char *name);
-void *GameEngine_GetDataExact(const char *name);
-void GameEngine_LogInfo(const char *fmt, ...);
-void GameEngine_LogWarn(const char *fmt, ...);
-void GameEngine_LogError(const char *fmt, ...);
-void Graphics_PushFrame(void *display_list);
-void GameEngine_StartAudioFrame(void);
-void GameEngine_EndAudioFrame(void);
-void GameEngine_HoldFrame(void);
-int GameEngine_GetSaveFilePath(char *dst, unsigned dst_size);
-int CVarGetInteger(const char *name, int default_value);
-float CVarGetFloat(const char *name, float default_value);
-void CVarSetInteger(const char *name, int value);
+uint64_t pb_platform_time_ms(void);
 
 #ifdef __cplusplus
 }
