@@ -27,10 +27,7 @@ void FrameInterpolation_RecordOpenChild() {}
 void FrameInterpolation_RecordCloseChild() {}
 void FrameInterpolation_RecordMatrixMtxFToMtx() {}
 
-int GameEngine_GetTexHeightExact() { return 0; }
-int GameEngine_GetTexWidthExact() { return 0; }
 void GameEngine_InvalidateTextureCache() {}
-int GameEngine_OTRSigCheck() { return 0; }
 
 void *OTRGetDimensionFromLeftEdge() { return 0; }
 void *OTRGetDimensionFromRightEdge() { return 0; }
@@ -40,7 +37,6 @@ int OTRGetScissorCoordX() { return 0; }
 
 void *ResourceGetDataByCrc() { return 0; }
 void *ResourceGetNameByCrc() { return 0; }
-int ResourceGetSizeByName() { return 0; }
 
 void *GetActorPos() { return 0; }
 void *Sprite_GetDataHeader() { return 0; }

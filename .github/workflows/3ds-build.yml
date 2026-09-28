@@ -60,6 +60,8 @@ jobs:
         run: sh tools/test_m12.sh
       - name: Test M13 runtime contract
         run: sh tools/test_m13.sh
+      - name: Test PaperBoat OTR resource decoding
+        run: sh tools/test_game_resources.sh
 
   build:
     runs-on: ubuntu-latest
@@ -103,6 +105,8 @@ jobs:
         run: make m12-title-test
       - name: Test M13 runtime contract
         run: make m13-runtime-test
+      - name: Test PaperBoat OTR resource decoding
+        run: sh tools/test_game_resources.sh
       - name: Build 3DSX
         run: |
           make -j2 \

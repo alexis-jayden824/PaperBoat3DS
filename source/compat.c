@@ -93,12 +93,14 @@ uint64_t pb_compat_tick_ms(void) {
     return pb_time_ms();
 }
 
+#ifndef PB3DS_GAME_OBJECTS
 void *ResourceGetDataByName(const char *name) {
     if (!g_ready) {
         pb_compat_init();
     }
     return pb_fs_lookup(name, NULL);
 }
+#endif
 
 void *GameEngine_GetDataExact(const char *name) {
     return ResourceGetDataByName(name);

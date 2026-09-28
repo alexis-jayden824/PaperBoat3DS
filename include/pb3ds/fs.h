@@ -41,6 +41,8 @@ bool pb_fs_exists(const char *logical_path);
 int pb_fs_join(char *dst, size_t dst_size, const char *leaf);
 int pb_fs_register(const char *name, const void *data, size_t size);
 void *pb_fs_lookup(const char *name, size_t *size_out);
+/* Caller owns *data_out. Avoids the fixed title/diagnostic cache for game assets. */
+bool pb_fs_load_raw(const char *name, uint8_t **data_out, size_t *size_out);
 bool pb_fs_is_aligned(const void *pointer);
 
 #ifndef __3DS__

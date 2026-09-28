@@ -13,6 +13,7 @@
 void step_game_loop(void);
 void gfx_draw_frame(void);
 void gfx_task_background(void);
+void pb_game_resources_shutdown(void);
 #endif
 
 static PBRuntimePlay g_play;
@@ -44,6 +45,9 @@ void pb_runtime_shutdown(void) {
     memset(&g_play, 0, sizeof(g_play));
     g_ready = false;
     pb_tex_shutdown();
+#ifdef PB3DS_GAME_OBJECTS
+    pb_game_resources_shutdown();
+#endif
 }
 
 void pb_runtime_frame(unsigned game_ticks) {

@@ -419,6 +419,26 @@ void *pb_fs_lookup(const char *name, size_t *size_out) {
     return NULL;
 }
 
+bool pb_fs_load_raw(const char *name, uint8_t **data_out, size_t *size_out) {
+    const char *archives[] = {PB_FS_PAPERBOAT_O2R, PB_FS_PM64_O2R};
+    size_t i;
+
+    if (data_out == NULL || size_out == NULL) {
+        return false;
+    }
+    *data_out = NULL;
+    *size_out = 0U;
+    if (!g_fs_ready || name == NULL || name[0] == '\0') {
+        return false;
+    }
+    for (i = 0U; i < 2U; i++) {
+        if (zip_load_store(archives[i], name, data_out, size_out) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool pb_fs_is_aligned(const void *pointer) {
     return pointer != NULL &&
            ((uintptr_t)pointer & (uintptr_t)(PB_FS_ALIGN - 1U)) == 0U;
