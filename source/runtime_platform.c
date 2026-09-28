@@ -695,6 +695,8 @@ void sfx_play_sound_at_position(s32 sound, s32 flags, f32 x, f32 y, f32 z) { (vo
 void snd_song_poll_music_events(u32 **events, s32 *count) { if (count != NULL) *count = 0; (void)events; }
 void snd_song_flush_music_events(void) {}
 void snd_stop_sound(s32 sound) { (void)sound; }
+void snd_set_stereo(void) {}
+void snd_set_mono(void) {}
 
 s32 gBattleState;
 BattleStatus gBattleStatus;
@@ -722,4 +724,36 @@ void dx_debug_set_map_info(char *map, s32 entry) { (void)map; (void)entry; }
 b32 dx_debug_should_hide_models(void) { return false; }
 void dx_hashed_debug_printf(const char *file, s32 line, const char *format, ...) {
     (void)file; (void)line; (void)format;
+}
+
+u8 dx_ascii_char_to_msg(char in) {
+    switch (in) {
+        case '\0':
+            return MSG_CHAR_READ_END;
+        case ' ':
+        case '\t':
+            return MSG_CHAR_READ_SPACE;
+        case '\n':
+            return MSG_CHAR_READ_ENDL;
+        default:
+            if ((unsigned char)in < 0x20U) {
+                return MSG_CHAR_NOTE;
+            }
+            return (u8)((unsigned char)in - 0x20U);
+    }
+}
+
+u8 *dx_string_to_msg(u8 *msg, const char *str) {
+    if (msg == NULL) {
+        return NULL;
+    }
+    if (str == NULL) {
+        *msg = MSG_CHAR_READ_END;
+        return msg;
+    }
+    while (*str != '\0') {
+        *msg++ = dx_ascii_char_to_msg(*str++);
+    }
+    *msg = MSG_CHAR_READ_END;
+    return msg;
 }
