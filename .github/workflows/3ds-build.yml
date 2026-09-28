@@ -132,7 +132,7 @@ jobs:
           tag_name: ci-latest
           name: CI packages (latest)
           draft: false
-          prerelease: true
+          prerelease: false
           make_latest: true
           fail_on_unmatched_files: true
           files: |

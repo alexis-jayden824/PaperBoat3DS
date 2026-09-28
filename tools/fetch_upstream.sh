@@ -1,6 +1,9 @@
 #!/bin/sh
 
 set -eu
+# Public clones must fail fast on 404 instead of prompting for GitHub auth.
+GIT_TERMINAL_PROMPT=0
+export GIT_TERMINAL_PROMPT
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 lock_file="$repo_root/upstream/PAPERBOAT.lock"
