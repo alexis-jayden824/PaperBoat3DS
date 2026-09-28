@@ -3,7 +3,7 @@
 #include "pb3ds/gbi_resolve.h"
 #include "pb3ds/log.h"
 
-#include "common.h"
+#include "ultra64.h"
 #include "gbi_custom.h"
 #include <string.h>
 
