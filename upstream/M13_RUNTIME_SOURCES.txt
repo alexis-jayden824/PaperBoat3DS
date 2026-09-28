@@ -50,6 +50,7 @@ src/filemenu/filemenu_main.c
 src/filemenu/filemenu_msg.c
 src/filemenu/filemenu_styles.c
 src/filemenu/filemenu_yesno.c
+src/dx/utils.c
 src/create_audio_system_obfuscated.c
 src/state_pause.c
 src/curtains.c
