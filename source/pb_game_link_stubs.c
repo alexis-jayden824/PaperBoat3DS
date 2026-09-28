@@ -27,12 +27,10 @@ void FrameInterpolation_RecordOpenChild() {}
 void FrameInterpolation_RecordCloseChild() {}
 void FrameInterpolation_RecordMatrixMtxFToMtx() {}
 
-void *GameEngine_GetAspectRatio() { return 0; }
 int GameEngine_GetTexHeightExact() { return 0; }
 int GameEngine_GetTexWidthExact() { return 0; }
 void GameEngine_InvalidateTextureCache() {}
 int GameEngine_OTRSigCheck() { return 0; }
-void GameEngine_ReadController() {}
 
 void *OTRGetDimensionFromLeftEdge() { return 0; }
 void *OTRGetDimensionFromRightEdge() { return 0; }

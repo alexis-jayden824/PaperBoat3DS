@@ -84,6 +84,7 @@ export OFILES_BIN     := $(PICAFILES:.v.pica=.shbin.o)
 export OFILES         := $(OFILES_BIN) $(OFILES_SOURCES)
 export HFILES         := $(PICAFILES:.v.pica=_shbin.h)
 export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+                         $(if $(filter 1,$(M13_LINK_GAME)),-I$(PAPERBOAT_ROOT)/external/libultraship/include) \
                          $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                          -I$(CURDIR)/$(BUILD)
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
