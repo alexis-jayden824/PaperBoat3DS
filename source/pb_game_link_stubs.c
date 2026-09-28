@@ -50,10 +50,6 @@ void Sprite_LoadNPC() {}
 void Sprite_LoadPlayer() {}
 void Sprite_LoadPlayerRaster() {}
 
-void gDPSetTextureImageOTR() {}
-void gSPDisplayListOTR() {}
-void gSPVertexOTR() {}
-void gbi_resolve_vtx_in_static_dl() {}
 void gfx_create_framebuffer() {}
 void gfx_register_fb_texture() {}
 
