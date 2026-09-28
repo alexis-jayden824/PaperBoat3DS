@@ -867,7 +867,8 @@ static bool closure_shape_node(PBShapeClosure *closure, uint32_t offset,
             shape_u32(closure->shape + display_offset);
         char path[PB_O2R_NAME_CAPACITY];
         const int written = snprintf(path, sizeof(path), "%s/dlist_%X",
-                                     closure->shape_resource, list_offset);
+                                     closure->shape_resource,
+                                     (unsigned int)list_offset);
         if (list_offset == 0U || written < 0 ||
             (size_t)written >= sizeof(path)) {
             return closure_fail(closure, "shape display-list path invalid",
