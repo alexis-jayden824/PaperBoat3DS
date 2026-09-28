@@ -15,6 +15,16 @@ env:
   PB3DS_MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
 
 jobs:
+  game-core-compile:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm@sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Compile pinned PaperBoat runtime closure
+        run: make m13-game-core
+
   host-contract:
     runs-on: ubuntu-latest
     steps:

@@ -25,6 +25,17 @@ MAKEROM         ?= makerom
 STRIP           := $(DEVKITARM)/bin/arm-none-eabi-strip
 PAPERBOAT_COMMIT := $(shell awk -F= '/^PAPERBOAT_COMMIT=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
 PAPERBOAT_RELEASE := $(shell awk -F= '/^PAPERBOAT_RELEASE=/ { print $$2 }' $(TOPDIR)/upstream/PAPERBOAT.lock)
+PAPERBOAT_ROOT ?= $(TOPDIR)/.cache/upstream/PaperBoat
+M13_GAME_BUILD := $(TOPDIR)/build/m13-game
+M13_GAME_CFLAGS := $(ARCH) -mword-relocations -ffunction-sections -fdata-sections \
+    -O2 -std=gnu11 -Wall -Wextra -Wno-implicit-function-declaration \
+    -Wno-int-conversion -Wno-error=incompatible-pointer-types \
+    -Wno-initializer-overrides -Wno-return-mismatch -D__3DS__ \
+    -D_LANGUAGE_C -DPORT -DMODERN_COMPILER -DVERSION=us -DVERSION_US \
+    -DF3DEX_GBI_2 -D__CTX__ -DSPDLOG_ACTIVE_LEVEL=0 \
+    -I"$(TOPDIR)/include" -I"$(PAPERBOAT_ROOT)/include" \
+    -I"$(PAPERBOAT_ROOT)/src" -I"$(PAPERBOAT_ROOT)/src/port" \
+    -I"$(PAPERBOAT_ROOT)/external/libultraship/include"
 
 # Owner-only: compile/link PaperBoat game TUs (not CI default).
 # make CFLAGS+=-DPB3DS_GAME_OBJECTS after listing sources with
@@ -72,7 +83,7 @@ export INCLUDE        := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 export LIBPATHS       := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS      := $(OUTPUT).smdh
 
-.PHONY: all packages fetch fetch-torch bootstrap-test m1-lock-test m2-audit-test \
+.PHONY: all packages fetch fetch-torch fetch-game m13-game-core bootstrap-test m1-lock-test m2-audit-test \
 	m3-platform-test m4-diag-test m5-slice-test m6-compat-test m7-assets-test \
 	m8-input-test m9-fs-test m10-loop-test m11-gfx-test m12-title-test \
 	m13-runtime-test clean
@@ -142,6 +153,18 @@ fetch:
 	@sh tools/fetch_paperboat.sh
 	@mkdir -p $(BUILD)
 	@sh tools/write_paperboat_config.sh "$(BUILD)/paperboat_config.h"
+
+fetch-game:
+	@PB3DS_FETCH_FULL_GAME=1 sh tools/fetch_paperboat.sh
+	@sh tools/fetch_libultraship.sh
+	@sh tools/write_paperboat_config.sh "$(BUILD)/paperboat_config.h"
+
+# Staged compile gate: building the game closure does not yet link it into the
+# executable. The platform ABI and startup path must pass the link gate first.
+m13-game-core: fetch-game
+	@sh tools/build_m13_runtime.sh "$(PAPERBOAT_ROOT)" \
+		"$(M13_GAME_BUILD)" "$(DEVKITARM)/bin/arm-none-eabi-gcc" \
+		"$(DEVKITARM)/bin/arm-none-eabi-ar" $(M13_GAME_CFLAGS)
 
 $(BUILD)/paperboat_config.h:
 	@mkdir -p $(BUILD)

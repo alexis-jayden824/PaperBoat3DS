@@ -32,11 +32,20 @@ else
 fi
 
 git -C "$dest" checkout --detach "$commit"
+if [ "${PB3DS_FETCH_FULL_GAME:-0}" = "1" ]; then
+    # The runtime closure needs upstream headers, map scripts and game code.
+    # Preserve the small default checkout used by the boot and host contracts.
+    git -C "$dest" sparse-checkout disable
+fi
 head=$(git -C "$dest" rev-parse HEAD)
 [ "$head" = "$commit" ] || fail "PaperBoat HEAD $head != pin $commit"
 
 [ -f "$dest/CMakeLists.txt" ] || fail "missing CMakeLists.txt"
 [ -f "$dest/src/port/libc_compat.c" ] || fail "missing libc_compat.c"
 [ -f "$dest/src/port/decode_yay0.c" ] || fail "missing decode_yay0.c"
+if [ "${PB3DS_FETCH_FULL_GAME:-0}" = "1" ]; then
+    [ -f "$dest/src/main.c" ] || fail "missing PaperBoat game source"
+    [ -f "$dest/include/common.h" ] || fail "missing PaperBoat game headers"
+fi
 
 printf 'fetched PaperBoat %s into %s\n' "$commit" "$dest"
