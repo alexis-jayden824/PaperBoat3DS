@@ -32,6 +32,45 @@ COPY_CHUNK = 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 100_000
 MAX_ENTRY_BYTES = 256 * 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+OTR_TYPES = {
+    "OBLB": int.from_bytes(b"OBLB", "big"),
+    "OVTX": int.from_bytes(b"OVTX", "big"),
+    "OTEX": int.from_bytes(b"OTEX", "big"),
+    "ODLT": int.from_bytes(b"ODLT", "big"),
+    "OMTX": int.from_bytes(b"OMTX", "big"),
+    # Torch's historical Lights enum value is not the ASCII spelling LGTS.
+    "LGTS": 0x46669697,
+    "VC3S": int.from_bytes(b"VC3S", "big"),
+    "OVPT": int.from_bytes(b"OVPT", "big"),
+}
+TEXTURE_BYTES_PER_TEXEL = {
+    1: (4, 1),   # RGBA32
+    2: (2, 1),   # RGBA16
+    3: (1, 2),   # CI4
+    4: (1, 1),   # CI8
+    5: (1, 2),   # I4
+    6: (1, 1),   # I8
+    7: (1, 2),   # IA4
+    8: (1, 1),   # IA8
+    9: (2, 1),   # IA16
+}
+GBI_PACKET_SPANS = {
+    0xE4: 3,  # G_TEXRECT
+    0xE5: 3,  # G_TEXRECTFLIP
+    0x37: 3,  # G_TEXRECT_WIDE
+    0x3C: 3,  # G_IMAGERECT
+    0x3E: 2,  # G_READFB
+    0x3F: 2,  # G_REGBLENDEDTEX
+    0x20: 2,  # G_SETTIMG_OTR_HASH
+    0x31: 2,  # G_DL_OTR_HASH
+    0x32: 2,  # G_VTX_OTR_HASH
+    0x33: 2,  # G_MARKER
+    0x35: 2,  # G_BRANCH_Z_OTR
+    0x36: 2,  # G_MTX_OTR
+    0x38: 2,  # G_FILLWIDERECT
+    0x42: 2,  # G_MOVEMEM_HASH
+    0x47: 2,  # G_LOADBLOCK_WIDE
+}
 
 
 class AssetError(RuntimeError):
@@ -257,6 +296,23 @@ def validate_member_name(name: str) -> None:
         raise AssetError(f"unsafe archive member drive path: {name}")
 
 
+def resource_name_crc64(name: str) -> int:
+    """Torch/libultraship CRC64 for null-terminated resource paths."""
+    crc = (1 << 64) - 1
+    polynomial = 0x42F0E1EBA9EA3693
+    mask = (1 << 64) - 1
+    try:
+        encoded = name.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise AssetError(f"resource path is not valid UTF-8: {name!r}") from error
+    for value in encoded:
+        crc ^= value << 56
+        for _ in range(8):
+            crc = ((crc << 1) ^ polynomial) & mask if crc & (1 << 63) \
+                else (crc << 1) & mask
+    return crc
+
+
 def zip_info(name: str) -> zipfile.ZipInfo:
     info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
     info.create_system = 3
@@ -330,6 +386,113 @@ def expected_port_version(contract: dict) -> bytes:
     except (KeyError, ValueError) as error:
         raise AssetError("invalid PaperBoat release in asset contract") from error
     return struct.pack(">HHH", major, minor, patch)
+
+
+def parse_otr_resource(data: bytes, name: str) -> dict[str, int]:
+    """Validate the pinned Torch OTR envelope used by the 3DS runtime."""
+    if len(data) < 64 or data[0] not in {0, 1}:
+        raise AssetError(f"pm64 resource has a malformed OTR header: {name}")
+    endian = ">" if data[0] == 1 else "<"
+    resource_type, version = struct.unpack_from(f"{endian}II", data, 4)
+    if version != 0:
+        raise AssetError(f"pm64 resource has an unsupported version: {name}")
+    body = data[64:]
+    result = {"type": resource_type, "payload_size": len(body)}
+
+    if resource_type in {
+        OTR_TYPES["OBLB"], OTR_TYPES["OVTX"], OTR_TYPES["VC3S"]
+    }:
+        if len(body) < 4:
+            raise AssetError(f"pm64 resource body is truncated: {name}")
+        count = struct.unpack_from(f"{endian}I", body)[0]
+        payload_size = len(body) - 4
+        if resource_type == OTR_TYPES["OBLB"]:
+            valid = count == payload_size
+        elif resource_type == OTR_TYPES["OVTX"]:
+            valid = count > 0 and payload_size % 16 == 0 and count == payload_size // 16
+        else:
+            valid = count > 0 and payload_size % 6 == 0 and count == payload_size // 6
+        if not valid:
+            raise AssetError(f"pm64 resource body is malformed: {name}")
+        result["payload_size"] = payload_size
+    elif resource_type == OTR_TYPES["OTEX"]:
+        if len(body) < 16:
+            raise AssetError(f"pm64 texture header is truncated: {name}")
+        texture_type, width, height, image_size = struct.unpack_from(
+            f"{endian}IIII", body
+        )
+        if width == 0 or height == 0 or image_size != len(body) - 16:
+            raise AssetError(f"pm64 texture dimensions are malformed: {name}")
+        ratio = TEXTURE_BYTES_PER_TEXEL.get(texture_type)
+        if ratio is None:
+            raise AssetError(f"pm64 texture format is unsupported: {name}")
+        numerator, denominator = ratio
+        expected = (width * height * numerator + denominator - 1) // denominator
+        if image_size != expected:
+            raise AssetError(f"pm64 texture payload size is malformed: {name}")
+        result.update(
+            texture_type=texture_type,
+            width=width,
+            height=height,
+            payload_size=image_size,
+        )
+    elif resource_type == OTR_TYPES["ODLT"]:
+        if len(body) < 16 or body[0] != 4 or (len(body) - 8) % 8 != 0:
+            raise AssetError(f"pm64 display list is malformed: {name}")
+        packets = body[8:]
+        packet_count = len(packets) // 8
+        index = 0
+        ended = False
+        while index < packet_count:
+            word0 = struct.unpack_from(f"{endian}I", packets, index * 8)[0]
+            opcode = word0 >> 24
+            span = GBI_PACKET_SPANS.get(opcode, 1)
+            if index + span > packet_count:
+                raise AssetError(f"pm64 display list is truncated: {name}")
+            if opcode == 0xDF:
+                ended = index + span == packet_count
+                break
+            index += span
+        if not ended:
+            raise AssetError(f"pm64 display list lacks a terminal G_ENDDL: {name}")
+        result["payload_size"] = len(packets)
+    elif resource_type == OTR_TYPES["OMTX"]:
+        if len(body) != 64:
+            raise AssetError(f"pm64 matrix body is malformed: {name}")
+    elif resource_type == OTR_TYPES["LGTS"]:
+        if len(body) != 24:
+            raise AssetError(f"pm64 lights body is malformed: {name}")
+    elif resource_type == OTR_TYPES["OVPT"]:
+        if len(body) != 16:
+            raise AssetError(f"pm64 viewport body is malformed: {name}")
+    else:
+        raise AssetError(f"pm64 resource type is unsupported: {name}")
+    return result
+
+
+def verify_required_resource(
+    archive: zipfile.ZipFile,
+    member_map: dict[str, zipfile.ZipInfo],
+    requirement: dict,
+) -> None:
+    name = requirement.get("name")
+    if not isinstance(name, str) or name not in member_map:
+        raise AssetError(f"pm64 archive lacks required gameplay resource: {name}")
+    expected_type_name = requirement.get("type")
+    if expected_type_name not in OTR_TYPES:
+        raise AssetError(f"asset contract has an invalid resource type: {name}")
+    parsed = parse_otr_resource(archive.read(member_map[name]), name)
+    if parsed["type"] != OTR_TYPES[expected_type_name]:
+        raise AssetError(f"pm64 gameplay resource has the wrong type: {name}")
+    for field in ("texture_type", "width", "height"):
+        expected = requirement.get(field)
+        if expected is not None and parsed.get(field) != int(expected):
+            raise AssetError(
+                f"pm64 gameplay resource has the wrong {field}: {name}"
+            )
+    minimum = int(requirement.get("minimum_payload_size", 0))
+    if parsed["payload_size"] < minimum:
+        raise AssetError(f"pm64 gameplay resource is too small: {name}")
 
 
 def verify_archive(
@@ -420,6 +583,26 @@ def verify_archive(
                     raise AssetError(f"pm64 archive lacks required entries: {sorted(missing)}")
                 if len(member_map) < int(archive_config["minimum_entries"]):
                     raise AssetError("pm64 archive has too few entries for the pinned recipe set")
+                hash_owners: dict[int, str] = {}
+                for name in sorted(set(member_map) - required):
+                    path_hash = resource_name_crc64(name)
+                    previous = hash_owners.get(path_hash)
+                    if previous is not None and previous != name:
+                        raise AssetError(
+                            "pm64 resource CRC64 collision: "
+                            f"{previous} and {name} -> {path_hash:016x}"
+                        )
+                    hash_owners[path_hash] = name
+                prefix_counts = archive_config.get("required_prefix_counts", {})
+                if not isinstance(prefix_counts, dict):
+                    raise AssetError("asset contract has invalid prefix counts")
+                for prefix, minimum in prefix_counts.items():
+                    actual = sum(name.startswith(prefix) for name in member_map)
+                    if actual < int(minimum):
+                        raise AssetError(
+                            f"pm64 archive has {actual} entries under {prefix}; "
+                            f"expected at least {minimum}"
+                        )
                 version = archive.read("version")
                 port_version = archive.read("portVersion")
                 if len(version) != 5 or version[0] != 1:
@@ -428,6 +611,17 @@ def verify_archive(
                     raise AssetError("pm64 portVersion does not match pinned PaperBoat")
                 if rom is not None and version != expected_version_entry(rom):
                     raise AssetError("pm64 archive CRC metadata does not match the supplied ROM")
+                requirements = archive_config.get("required_resources", [])
+                if not isinstance(requirements, list):
+                    raise AssetError("asset contract has invalid gameplay resources")
+                for requirement in requirements:
+                    if not isinstance(requirement, dict):
+                        raise AssetError("asset contract has an invalid gameplay resource")
+                    verify_required_resource(archive, member_map, requirement)
+                if archive_config.get("validate_resource_envelopes", False):
+                    metadata = {"version", "portVersion"}
+                    for name in sorted(set(member_map) - metadata):
+                        parse_otr_resource(archive.read(member_map[name]), name)
     except (OSError, zipfile.BadZipFile) as error:
         raise AssetError(f"invalid O2R ZIP archive: {archive_path}") from error
 

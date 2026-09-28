@@ -18,11 +18,10 @@ unsigned long long svcGetSystemTick(void);
 #include "common.h"
 #include "audio/public.h"
 #include "battle/battle.h"
+#include "fio.h"
 #include "game_modes.h"
 #include "gbi_custom.h"
 #include "port/interpolation/FrameInterpolation.h"
-#include "saved_byte_names.h"
-#include "saved_flag_names.h"
 #include "sprite.h"
 
 _Static_assert(sizeof(Gfx) == sizeof(PBGbiPacket),
@@ -34,16 +33,24 @@ extern s8 gGameStepDelayCount;
 extern s8 StepPauseDelay;
 extern s8 StepPauseState;
 extern b32 PB3DS_RuntimeHeapStorageAligned(void);
+extern size_t Sprite_GetPlayerSize(int32_t index);
+extern void *Sprite_LoadPlayer(int32_t index, void *destination, size_t size);
+extern size_t Sprite_GetNPCSize(int32_t index);
+extern void *Sprite_LoadNPC(int32_t index, void *destination, size_t size);
+extern bool PB3DS_RuntimeValidatePlayerRasterTables(void);
+extern void port_release_map_textures(void);
+extern void port_release_background_resource(void);
 
 static PBRuntime *active_runtime;
-static uint64_t runtime_time;
 static jmp_buf runtime_panic_jump;
 static bool runtime_panic_armed;
 
 typedef enum {
     PB_START_RESOURCE_INDEX = 1,
+    PB_START_RESOURCE_PREFLIGHT,
     PB_START_GLOBALS,
     PB_START_DEFAULTS,
+    PB_START_WORLD_DEFAULTS,
     PB_START_FLASH,
     PB_START_INPUT,
     PB_START_GENERAL_HEAP,
@@ -62,21 +69,29 @@ typedef enum {
     PB_START_PRINTERS,
     PB_START_GAME_MODE,
     PB_START_NPCS,
+    PB_START_HUD_AUX,
     PB_START_HUD,
     PB_START_TRIGGERS,
     PB_START_ENTITIES,
     PB_START_PLAYER_DATA,
+    PB_START_BATTLE,
     PB_START_ENCOUNTER,
     PB_START_OVERLAYS,
     PB_START_EFFECTS,
     PB_START_SAVED_VARIABLES,
     PB_START_ITEM_ENTITIES,
+    PB_START_COLLISION,
     PB_START_MUSIC,
+    PB_START_MUSIC_PLAYERS,
     PB_START_AMBIENT,
     PB_START_SOUNDS,
     PB_START_WINDOWS,
+    PB_START_PARTNERS,
+    PB_START_MUSIC_VOLUME,
     PB_START_CURTAINS,
     PB_START_RUMBLE,
+    PB_START_SAVE_GLOBALS,
+    PB_START_SOUND_OUTPUT,
     PB_START_ENGINE_READY,
     PB_START_TITLE,
 } PBRuntimeStartupStep;
@@ -84,8 +99,11 @@ typedef enum {
 static const char *runtime_startup_stage(uint32_t step) {
     switch ((PBRuntimeStartupStep)step) {
         case PB_START_RESOURCE_INDEX: return "building resource index";
+        case PB_START_RESOURCE_PREFLIGHT:
+            return "validating M13 resources";
         case PB_START_GLOBALS: return "initializing upstream globals";
         case PB_START_DEFAULTS: return "setting engine defaults";
+        case PB_START_WORLD_DEFAULTS: return "setting startup world defaults";
         case PB_START_FLASH: return "initializing save flash";
         case PB_START_INPUT: return "clearing upstream input";
         case PB_START_GENERAL_HEAP: return "creating general heap";
@@ -104,21 +122,29 @@ static const char *runtime_startup_stage(uint32_t step) {
         case PB_START_PRINTERS: return "loading message font";
         case PB_START_GAME_MODE: return "clearing game mode";
         case PB_START_NPCS: return "clearing NPCs";
+        case PB_START_HUD_AUX: return "clearing HUD auxiliary cache";
         case PB_START_HUD: return "creating HUD cache";
         case PB_START_TRIGGERS: return "clearing triggers";
         case PB_START_ENTITIES: return "clearing entities";
         case PB_START_PLAYER_DATA: return "clearing player data";
+        case PB_START_BATTLE: return "clearing battle state";
         case PB_START_ENCOUNTER: return "initializing encounters";
         case PB_START_OVERLAYS: return "clearing screen overlays";
         case PB_START_EFFECTS: return "clearing effects";
         case PB_START_SAVED_VARIABLES: return "clearing saved variables";
         case PB_START_ITEM_ENTITIES: return "creating item workers";
+        case PB_START_COLLISION: return "initializing collision";
         case PB_START_MUSIC: return "resetting music state";
+        case PB_START_MUSIC_PLAYERS: return "initializing silent music players";
         case PB_START_AMBIENT: return "resetting ambient state";
         case PB_START_SOUNDS: return "clearing sound state";
         case PB_START_WINDOWS: return "clearing windows";
+        case PB_START_PARTNERS: return "initializing partner state";
+        case PB_START_MUSIC_VOLUME: return "resetting music volume";
         case PB_START_CURTAINS: return "initializing curtains";
         case PB_START_RUMBLE: return "initializing rumble state";
+        case PB_START_SAVE_GLOBALS: return "loading save globals";
+        case PB_START_SOUND_OUTPUT: return "applying sound preference";
         case PB_START_ENGINE_READY: return "finalizing engine data";
         case PB_START_TITLE: return "activating title screen";
         default: return "unknown startup stage";
@@ -142,6 +168,90 @@ static void runtime_fail(PBRuntime *runtime, const char *error) {
     runtime->error = error;
 }
 
+static bool runtime_validate_player_sprites(PBRuntime *runtime) {
+    static const int32_t mario_world_sprites[] = { 0, 1, 5, 6, 7, 8 };
+    for (size_t index = 0U;
+         index < sizeof(mario_world_sprites) /
+                     sizeof(mario_world_sprites[0]);
+        index++) {
+        const int32_t sprite = mario_world_sprites[index];
+        const size_t size = Sprite_GetPlayerSize(sprite);
+        void *converted = size != 0U
+                              ? pb_memory_alloc(runtime->resources.memory,
+                                                PB_MEMORY_TRANSIENT, size)
+                              : NULL;
+        const bool valid = converted != NULL &&
+                           Sprite_LoadPlayer(sprite, converted, size) ==
+                               converted;
+        if (converted != NULL) {
+            pb_memory_free(runtime->resources.memory, PB_MEMORY_TRANSIENT,
+                           converted, size);
+        }
+        if (valid) {
+            runtime->resources.error = NULL;
+            runtime->resources.archive_error = PB_O2R_OK;
+            runtime->resources.failed_name[0] = '\0';
+            continue;
+        }
+        if (runtime->resources.failed_name[0] == '\0') {
+            (void)snprintf(runtime->resources.failed_name,
+                           sizeof(runtime->resources.failed_name),
+                           "sprites/player_sprite_%ld", (long)sprite);
+        }
+        runtime->resources.error = "required player sprite malformed";
+        return false;
+    }
+    return true;
+}
+
+static bool runtime_validate_player_raster_tables(PBRuntime *runtime) {
+    if (PB3DS_RuntimeValidatePlayerRasterTables()) return true;
+    runtime->resources.error = "player raster tables malformed";
+    (void)snprintf(runtime->resources.failed_name,
+                   sizeof(runtime->resources.failed_name),
+                   "sprites/player_raster_tables");
+    return false;
+}
+
+static bool runtime_validate_intro_npc_sprites(PBRuntime *runtime) {
+    /* mac_00's STORY_INTRO group uses Luigi, Toad (all colour variants share
+     * one sheet), Chan, and Lee.  Validate the exact fresh-file path before
+     * title activation so a malformed companion cannot become a partially
+     * initialized SpriteAnimData later in MakeNpcs. */
+    static const int32_t intro_npc_sprites[] = { 0x82, 0x83, 0xA3, 0xA4 };
+    for (size_t index = 0U;
+         index < sizeof(intro_npc_sprites) /
+                     sizeof(intro_npc_sprites[0]);
+         index++) {
+        const int32_t sprite = intro_npc_sprites[index];
+        const size_t size = Sprite_GetNPCSize(sprite);
+        void *converted = size != 0U
+                              ? pb_memory_alloc(runtime->resources.memory,
+                                                PB_MEMORY_TRANSIENT, size)
+                              : NULL;
+        const bool valid = converted != NULL &&
+                           Sprite_LoadNPC(sprite, converted, size) == converted;
+        if (converted != NULL) {
+            pb_memory_free(runtime->resources.memory, PB_MEMORY_TRANSIENT,
+                           converted, size);
+        }
+        if (valid) {
+            runtime->resources.error = NULL;
+            runtime->resources.archive_error = PB_O2R_OK;
+            runtime->resources.failed_name[0] = '\0';
+            continue;
+        }
+        if (runtime->resources.failed_name[0] == '\0') {
+            (void)snprintf(runtime->resources.failed_name,
+                           sizeof(runtime->resources.failed_name),
+                           "sprites/npc_sprite_%03ld", (long)sprite);
+        }
+        runtime->resources.error = "required intro NPC sprite malformed";
+        return false;
+    }
+    return true;
+}
+
 static void runtime_set_engine_defaults(void) {
     gOverrideFlags = 0;
     gGameStatusPtr->unk_79 = 0;
@@ -160,22 +270,56 @@ static void runtime_set_engine_defaults(void) {
     gGameStatusPtr->saveCount = 0;
 }
 
+static void runtime_set_world_defaults(void) {
+    /* load_engine_data normally hands these fields to GAME_MODE_STARTUP.
+     * M13 enters title directly, so establish them before file select can
+     * create or inspect a save. */
+    gGameStatusPtr->areaID = 0;
+    gGameStatusPtr->context = CONTEXT_WORLD;
+    gGameStatusPtr->prevArea = -1;
+    gGameStatusPtr->mapID = 0;
+    gGameStatusPtr->entryID = 0;
+    gGameStatusPtr->debugUnused1 = false;
+    gGameStatusPtr->debugScripts = DEBUG_SCRIPTS_NONE;
+    gGameStatusPtr->keepUsingPartnerOnMapChange = false;
+    gGameStatusPtr->introPart = INTRO_PART_NONE;
+    gGameStatusPtr->demoBattleFlags = 0;
+    gGameStatusPtr->unk_A9 = -1;
+    gGameStatusPtr->demoState = DEMO_STATE_NONE;
+}
+
+static void runtime_apply_sound_preference(void) {
+    if (gSaveGlobals.useMonoSound == 0) {
+        gGameStatusPtr->soundOutputMode = SOUND_OUT_STEREO;
+        snd_set_stereo();
+    } else {
+        gGameStatusPtr->soundOutputMode = SOUND_OUT_MONO;
+        snd_set_mono();
+    }
+}
+
 static void runtime_finish_engine_data(void) {
     for (size_t i = 0U;
          i < sizeof(gGameStatusPtr->holdRepeatInterval) /
                  sizeof(gGameStatusPtr->holdRepeatInterval[0]); i++) {
-        gGameStatusPtr->holdRepeatInterval[i] = 3;
-        gGameStatusPtr->holdDelayTime[i] = 12;
+        /* state_step_startup replaces load_engine_data's initial 3/12 values
+         * before title/file select. Preserve the final upstream contract. */
+        gGameStatusPtr->holdRepeatInterval[i] = 4;
+        gGameStatusPtr->holdDelayTime[i] = 15;
     }
     gOverrideFlags |= GLOBAL_OVERRIDES_DISABLE_DRAW_FRAME;
-    set_game_mode(GAME_MODE_STARTUP);
+    /* The next staged step enters title directly. GAME_MODE_STARTUP remains a
+     * real restart request for the reachable soft-reset path. */
+    clear_game_mode();
 }
 
 static void runtime_activate_title(PBRuntime *runtime) {
     gGameStatusPtr->demoState = DEMO_STATE_NONE;
     set_game_mode(GAME_MODE_TITLE_SCREEN);
     if (runtime->state == PB_RUNTIME_FAILED) return;
+    runtime->restart_requested = false;
     runtime->startup_stage = "upstream runtime active";
+    runtime->next_update_ms = pb_platform_time_ms();
     runtime->state = PB_RUNTIME_ACTIVE;
     if (runtime->log != NULL) {
         pb_log_write(runtime->log, PB_LOG_INFO, "runtime",
@@ -279,8 +423,33 @@ bool pb_runtime_continue_startup(PBRuntime *runtime) {
                              (unsigned long)runtime->resources.index_allocation);
             }
             break;
+        case PB_START_RESOURCE_PREFLIGHT:
+            if (!pb_runtime_resources_validate_m13(&runtime->resources) ||
+                !runtime_validate_player_raster_tables(runtime) ||
+                !runtime_validate_player_sprites(runtime) ||
+                !runtime_validate_intro_npc_sprites(runtime)) {
+                runtime_fail(runtime, "M13 asset preflight failed");
+                if (runtime->log != NULL) {
+                    pb_log_write(runtime->log, PB_LOG_ERROR,
+                                 "runtime-preflight",
+                                 "error=\"%s\" resource=\"%s\" archive=\"%s\"",
+                                 runtime->resources.error != NULL
+                                     ? runtime->resources.error : "unknown",
+                                 runtime->resources.failed_name[0] != '\0'
+                                     ? runtime->resources.failed_name : "unknown",
+                                 pb_o2r_result_name(
+                                     runtime->resources.archive_error));
+                }
+            } else if (runtime->log != NULL) {
+                pb_log_write(runtime->log, PB_LOG_INFO,
+                             "runtime-preflight",
+                             "pinned resources ready loaded=%lu",
+                             (unsigned long)runtime->resources.count);
+            }
+            break;
         case PB_START_GLOBALS: init_game_globals(); break;
         case PB_START_DEFAULTS: runtime_set_engine_defaults(); break;
+        case PB_START_WORLD_DEFAULTS: runtime_set_world_defaults(); break;
         case PB_START_FLASH: fio_init_flash(); break;
         case PB_START_INPUT: clear_input(); break;
         case PB_START_GENERAL_HEAP:
@@ -307,21 +476,29 @@ bool pb_runtime_continue_startup(PBRuntime *runtime) {
         case PB_START_PRINTERS: clear_printers(); break;
         case PB_START_GAME_MODE: clear_game_mode(); break;
         case PB_START_NPCS: clear_npcs(); break;
+        case PB_START_HUD_AUX: hud_element_set_aux_cache(NULL, 0); break;
         case PB_START_HUD: hud_element_clear_cache(); break;
         case PB_START_TRIGGERS: clear_trigger_data(); break;
         case PB_START_ENTITIES: clear_entity_data(false); break;
         case PB_START_PLAYER_DATA: clear_player_data(); break;
+        case PB_START_BATTLE: reset_battle_status(); break;
         case PB_START_ENCOUNTER: init_encounter_status(); break;
         case PB_START_OVERLAYS: clear_screen_overlays(); break;
         case PB_START_EFFECTS: clear_effect_data(); break;
         case PB_START_SAVED_VARIABLES: clear_saved_variables(); break;
         case PB_START_ITEM_ENTITIES: clear_item_entity_data(); break;
+        case PB_START_COLLISION: initialize_collision(); break;
         case PB_START_MUSIC: bgm_reset_sequence_players(); break;
+        case PB_START_MUSIC_PLAYERS: (void)bgm_init_music_players(); break;
         case PB_START_AMBIENT: reset_ambient_sounds(); break;
         case PB_START_SOUNDS: sfx_clear_sounds(); break;
         case PB_START_WINDOWS: clear_windows(); break;
+        case PB_START_PARTNERS: partner_initialize_data(); break;
+        case PB_START_MUSIC_VOLUME: bgm_reset_volume(); break;
         case PB_START_CURTAINS: initialize_curtains(); break;
         case PB_START_RUMBLE: poll_rumble(); break;
+        case PB_START_SAVE_GLOBALS: (void)fio_load_globals(); break;
+        case PB_START_SOUND_OUTPUT: runtime_apply_sound_preference(); break;
         case PB_START_ENGINE_READY: runtime_finish_engine_data(); break;
         case PB_START_TITLE: runtime_activate_title(runtime); break;
         default: runtime_fail(runtime, "invalid runtime startup stage"); break;
@@ -355,6 +532,15 @@ bool pb_runtime_update(PBRuntime *runtime) {
     if (runtime == NULL || runtime != active_runtime ||
         runtime->state != PB_RUNTIME_ACTIVE) return false;
     runtime->frame_submitted = false;
+    const uint64_t now_ms = pb_platform_time_ms();
+    if (now_ms < runtime->next_update_ms) {
+        /* The LCD/homebrew loop may run at 60 Hz, while Paper Mario's logic
+         * and authored animations run at 30 Hz. Return to aptMainLoop so it
+         * can service lifecycle/input and wait for VBlank without advancing
+         * upstream twice as fast. */
+        runtime->stats.pacing_waits++;
+        return true;
+    }
     const int32_t mode_before = get_game_mode();
     const int8_t pause_step_before = StepPauseState;
     const int8_t pause_delay_before = StepPauseDelay;
@@ -366,7 +552,7 @@ bool pb_runtime_update(PBRuntime *runtime) {
                      (unsigned long long)runtime->stats.updates + 1U,
                      (int)pause_step_before, (int)pause_delay_before);
     }
-    const uint64_t update_started_ms = pb_platform_time_ms();
+    const uint64_t update_started_ms = now_ms;
     runtime_panic_armed = true;
     if (setjmp(runtime_panic_jump) != 0) {
         runtime_panic_armed = false;
@@ -380,6 +566,34 @@ bool pb_runtime_update(PBRuntime *runtime) {
         pb_platform_time_ms() - update_started_ms;
     runtime_panic_armed = false;
     runtime->stats.updates++;
+    if (runtime->restart_requested) {
+        /* GAME_MODE_STARTUP can be selected from inside step_game_loop.
+         * Graphics_ThreadUpdate still builds the transition frame after that
+         * callback, so map/background allocations must remain alive until it
+         * returns. GLOBAL_OVERRIDES_DISABLE_DRAW_FRAME prevents submission;
+         * now it is safe to invalidate the GPU and rebuild the runtime. */
+        if (runtime->graphics != NULL) {
+            pb_gfx_api_3ds_invalidate_texture(runtime->graphics, NULL);
+        }
+        port_release_map_textures();
+        port_release_background_resource();
+        runtime->restart_requested = false;
+        runtime->state = PB_RUNTIME_LOADING;
+        runtime->error = NULL;
+        runtime->startup_step = PB_START_RESOURCE_INDEX;
+        runtime->next_update_ms = 0U;
+        runtime->frame_submitted = false;
+        runtime_mark_startup_stage(runtime);
+        if (runtime->log != NULL) {
+            pb_log_write(runtime->log, PB_LOG_INFO, "runtime-restart",
+                         "soft reset entered staged title initialization");
+        }
+        return true;
+    }
+    /* 33, 33, 34 ms gives an exact 100 ms per three authored frames without
+     * catch-up bursts after a slow frame. */
+    runtime->next_update_ms = update_started_ms +
+        (runtime->stats.updates % 3U == 0U ? 34U : 33U);
     runtime->stats.last_update_ms = update_elapsed_ms;
     if (update_elapsed_ms > runtime->stats.max_update_ms) {
         runtime->stats.max_update_ms = update_elapsed_ms;
@@ -414,10 +628,20 @@ bool pb_runtime_update(PBRuntime *runtime) {
 
 void pb_runtime_shutdown(PBRuntime *runtime) {
     if (runtime == NULL) return;
+    /* Drop GPU cache entries while their resource backing is still alive.
+     * This also flushes any pending batch before the archive-owned payloads
+     * below are released. */
+    if (runtime->graphics != NULL) {
+        pb_gfx_api_3ds_invalidate_texture(runtime->graphics, NULL);
+    }
+    port_release_map_textures();
+    port_release_background_resource();
     if (active_runtime == runtime) active_runtime = NULL;
     pb_runtime_resources_clear(&runtime->resources);
     runtime->startup_stage = NULL;
     runtime->startup_step = 0U;
+    runtime->next_update_ms = 0U;
+    runtime->restart_requested = false;
     runtime->state = PB_RUNTIME_INACTIVE;
 }
 
@@ -432,6 +656,18 @@ void PB3DS_RuntimeUnsupportedMode(s32 modeID) {
     }
 }
 
+void PB3DS_RuntimeRestartToTitle(void) {
+    if (active_runtime == NULL ||
+        active_runtime->state != PB_RUNTIME_ACTIVE) {
+        return;
+    }
+    /* This callback runs from step_game_loop. Defer teardown until the
+     * enclosing Graphics_ThreadUpdate has finished building (but not
+     * submitting) its transition frame. */
+    gOverrideFlags |= GLOBAL_OVERRIDES_DISABLE_DRAW_FRAME;
+    active_runtime->restart_requested = true;
+}
+
 void Graphics_PushFrame(Gfx *displayList) {
     if (active_runtime == NULL || active_runtime->graphics == NULL ||
         displayList == NULL) return;
@@ -441,8 +677,23 @@ void Graphics_PushFrame(Gfx *displayList) {
         runtime_fail(active_runtime,
                      "required display-list operation failed");
         if (active_runtime->log != NULL) {
+            const PBRuntimeGfxStats *stats =
+                pb_gfx_api_3ds_runtime_stats(active_runtime->graphics);
             pb_log_write(active_runtime->log, PB_LOG_ERROR, "gfx",
-                         "required display-list operation failed");
+                         "required display-list operation failed "
+                         "opcode=%02x unknown=%lu missing=%lu malformed=%lu "
+                         "texture_fallbacks=%llu framebuffer_failures=%lu",
+                         stats != NULL ? stats->last_unknown_opcode : 0U,
+                         (unsigned long)(stats != NULL
+                                             ? stats->unknown_commands : 0U),
+                         (unsigned long)(stats != NULL
+                                             ? stats->missing_resources : 0U),
+                         (unsigned long)(stats != NULL
+                                             ? stats->malformed_lists : 0U),
+                         (unsigned long long)(stats != NULL
+                             ? stats->texture_fallbacks : 0U),
+                         (unsigned long)(stats != NULL
+                             ? stats->framebuffer_failures : 0U));
         }
         return;
     }
@@ -647,7 +898,14 @@ uint32_t osGetCount(void) {
     return (uint32_t)(pb_platform_time_ms() * UINT64_C(46875));
 #endif
 }
-void osSetTime(OSTime time) { runtime_time = time; }
+void PB3DS_RuntimeSleepMs(s32 milliseconds) {
+    if (milliseconds <= 0) return;
+#ifdef __3DS__
+    svcSleepThread((long long)milliseconds * 1000000LL);
+#else
+    (void)milliseconds;
+#endif
+}
 
 void gSPVertexOTR(Gfx *packet, uintptr_t vertices, int count, int first) {
     if (GameEngine_OTRSigCheck((const char *)vertices)) {
@@ -733,6 +991,13 @@ u16 gCurrentDoorSounds;
 u16 gCurrentRoomDoorSounds;
 
 void bgm_reset_sequence_players(void) { memset(gMusicControlData, 0, sizeof(gMusicControlData)); }
+s32 bgm_init_music_players(void) {
+    /* Audio output is intentionally silent in M13, but both logical sequence
+     * players still begin in a deterministic stopped state. */
+    bgm_reset_sequence_players();
+    return 1;
+}
+void bgm_reset_volume(void) {}
 void bgm_update_music_control(void) {}
 s32 bgm_set_song(s32 player, s32 song, s32 variation, s32 fade, s16 volume) {
     (void)player; (void)song; (void)variation; (void)fade; (void)volume; return 1;

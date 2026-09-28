@@ -5,8 +5,9 @@ PaperBoat / Paper Mario 64, using PaperBoat as the behavioral reference and a
 dedicated 3DS platform layer for graphics, audio, input, filesystem, timing,
 memory, threading, and hardware services.
 
-This repository is at **M13**. M0–M12 are shell through title bind. M13 is
-the Fast3D / runtime gate (game objects remain opt-in; see `docs/M13.md`).
+This repository is at **M13 playtest candidate**. M0–M12 are shell through
+title bind. The normal M13 artifact links and enters the bounded PaperBoat
+game runtime; New 3DS XL acceptance evidence is still pending.
 
 M14+ stays gated behind M13 runtime/rendering acceptance on hardware.
 
@@ -99,12 +100,15 @@ states. Upright T. No Fast3D raster and no fake logo geometry.
 
 400×240 top framebuffer, 320×240 source with 40 px pillars, upright UVs.
 
-## M13 — Full PaperBoat Runtime + Renderer Integration — **implemented (host contract)**
+## M13 — Full PaperBoat Runtime + Renderer Integration — **playtest candidate**
 
-F3DEX2 interpreter, N64 tex/CI cache, combiner→TEV, citro3d frame
-begin/draw/end, tiled PICA upload, APT loop calling `step_game_loop` only
-when `PB3DS_GAME_OBJECTS` and both `.o2r` files are present. `boot_main`
-is not linked. Full game TU compile is owner-side, not CI-default.
+The default CI build links the selected PaperBoat title/file-menu/pause and
+`mac_00`/`mac_01` closure. Device-side resource preflight opens a staged APT
+startup, then the 30 Hz upstream update/draw path feeds the Fast3D/texture/TEV
+and framebuffer implementation. `boot_main` is linked for closure validation
+but replaced at execution by the non-blocking staged initializer. Host and CI
+contracts are green; visible title → file select → overworld and sustained
+New 3DS XL behavior remain the binding acceptance evidence.
 
 ## M14 — Audio Backend — blocked on hardware M13 acceptance
 

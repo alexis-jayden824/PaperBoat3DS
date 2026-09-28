@@ -23,6 +23,7 @@ typedef struct {
     uint64_t updates;
     uint64_t frames_submitted;
     uint64_t held_frames;
+    uint64_t pacing_waits;
     uint64_t last_update_ms;
     uint64_t max_update_ms;
     uint32_t slow_updates;
@@ -51,7 +52,9 @@ typedef struct {
     const char *error;
     const char *startup_stage;
     uint32_t startup_step;
+    uint64_t next_update_ms;
     bool frame_submitted;
+    bool restart_requested;
 } PBRuntime;
 
 void pb_runtime_init(PBRuntime *runtime, PBArchive *archive,

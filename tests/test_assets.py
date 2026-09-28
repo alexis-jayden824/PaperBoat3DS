@@ -1,10 +1,13 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
+import struct
 
 import sys
 
@@ -46,6 +49,28 @@ def write_zip(path: Path, members: list[tuple[str, bytes]]) -> None:
             archive.writestr(name, data)
 
 
+def otr_resource(type_name: str, body: bytes) -> bytes:
+    header = bytearray(64)
+    header[0] = 1
+    struct.pack_into(">II", header, 4, assets.OTR_TYPES[type_name], 0)
+    return bytes(header) + body
+
+
+def otr_blob(payload: bytes) -> bytes:
+    return otr_resource("OBLB", struct.pack(">I", len(payload)) + payload)
+
+
+def otr_texture(texture_type: int, width: int, height: int, image: bytes) -> bytes:
+    body = struct.pack(">IIII", texture_type, width, height, len(image)) + image
+    return otr_resource("OTEX", body)
+
+
+def otr_display_list(*words: int) -> bytes:
+    body = bytes((4, 0, 0, 0, 0, 0, 0, 0))
+    body += struct.pack(">" + "I" * len(words), *words)
+    return otr_resource("ODLT", body)
+
+
 class AssetPipelineTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="pb3ds-assets-test-")
@@ -62,6 +87,79 @@ class AssetPipelineTests(unittest.TestCase):
         rom.write_bytes(header + bytes(range(64)))
         sha1 = hashlib.sha1(rom.read_bytes()).hexdigest()
         return rom, contract_for(sha1)
+
+    def test_runtime_preflight_matches_asset_contract(self) -> None:
+        """Keep build-time archive checks identical to the native gate."""
+        repository = Path(__file__).resolve().parents[1]
+        source = (repository / "source/runtime_resources.c").read_text()
+        body = source.split(
+            "static const PBRuntimeResourceRequirement m13_requirements[] = {",
+            1,
+        )[1].split("\n};", 1)[0]
+        contract = json.loads(
+            (repository / "upstream/ASSET_CONTRACT.json").read_text()
+        )
+        declared = {
+            item["name"]: item
+            for item in contract["archives"]["pm64"]["required_resources"]
+        }
+        expected: dict[str, dict[str, int | str]] = {}
+
+        for name, width, height in re.findall(
+            r'REQUIRE_CI4_PAIR\("([^"]+)",\s*(\d+)U,\s*(\d+)U\)',
+            body,
+        ):
+            expected[name] = {
+                "type": "OTEX", "texture_type": 3,
+                "width": int(width), "height": int(height),
+            }
+            expected[name + ".pal"] = {
+                "type": "OTEX", "texture_type": 2,
+                "width": 16, "height": 1,
+            }
+
+        texture_types = {
+            "PB_RESOURCE_TEXTURE_RGBA32": 1,
+            "PB_RESOURCE_TEXTURE_RGBA16": 2,
+            "PB_RESOURCE_TEXTURE_CI4": 3,
+            "PB_RESOURCE_TEXTURE_CI8": 4,
+            "PB_RESOURCE_TEXTURE_I4": 5,
+            "PB_RESOURCE_TEXTURE_I8": 6,
+            "PB_RESOURCE_TEXTURE_IA4": 7,
+            "PB_RESOURCE_TEXTURE_IA8": 8,
+            "PB_RESOURCE_TEXTURE_IA16": 9,
+        }
+        for name, texture_type, width, height in re.findall(
+            r'REQUIRE_TEXTURE\("([^"]+)",\s*([A-Z0-9_]+),\s*'
+            r'(\d+)U,\s*(\d+)U\)',
+            body,
+        ):
+            expected[name] = {
+                "type": "OTEX", "texture_type": texture_types[texture_type],
+                "width": int(width), "height": int(height),
+            }
+
+        resource_types = {
+            "TYPE_BLOB": "OBLB", "TYPE_VERTEX": "OVTX",
+            "TYPE_DL": "ODLT", "TYPE_MATRIX": "OMTX",
+        }
+        for name, resource_type, minimum in re.findall(
+            r'REQUIRE\("([^"]+)",\s*([A-Z0-9_]+),\s*'
+            r'(sizeof\(PBRuntimeGfx\)|0x[0-9A-Fa-f]+U|\d+U)\)',
+            body,
+        ):
+            size = (8 if minimum == "sizeof(PBRuntimeGfx)" else
+                    int(minimum[:-1], 0))
+            expected[name] = {
+                "type": resource_types[resource_type],
+                "minimum_payload_size": size,
+            }
+
+        self.assertEqual(set(declared), set(expected))
+        for name, fields in expected.items():
+            for field, value in fields.items():
+                self.assertEqual(declared[name].get(field), value,
+                                 f"{name}: {field}")
 
     def make_port_source(self) -> Path:
         source = self.root / "port"
@@ -168,6 +266,27 @@ class AssetPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(assets.AssetError, "duplicate"):
             assets.verify_archive(archive, "paperboat", contract_for("0" * 40))
 
+    def test_pm64_resource_hash_matches_runtime_and_rejects_collisions(self) -> None:
+        self.assertEqual(
+            assets.resource_name_crc64("sprites/player_sprite_1_raster_0"),
+            0xC75C43705A0EE73F,
+        )
+        rom, contract = self.make_rom()
+        contract["archives"]["pm64"]["minimum_entries"] = 4
+        archive = self.root / "hash-collision.o2r"
+        write_zip(
+            archive,
+            [
+                ("version", assets.expected_version_entry(rom)),
+                ("portVersion", assets.expected_port_version(contract)),
+                ("resource/a", b"a"),
+                ("resource/b", b"b"),
+            ],
+        )
+        with mock.patch.object(assets, "resource_name_crc64", return_value=1):
+            with self.assertRaisesRegex(assets.AssetError, "CRC64 collision"):
+                assets.verify_archive(archive, "pm64", contract, rom=rom)
+
     def test_pm64_metadata_is_bound_to_rom_and_release(self) -> None:
         rom, contract = self.make_rom()
         archive = self.root / "pm64.o2r"
@@ -184,6 +303,118 @@ class AssetPipelineTests(unittest.TestCase):
             ],
         )
         with self.assertRaisesRegex(assets.AssetError, "CRC metadata"):
+            assets.verify_archive(archive, "pm64", contract, rom=rom)
+
+    def test_pm64_gameplay_resource_contract_is_enforced(self) -> None:
+        rom, contract = self.make_rom()
+        pm64 = contract["archives"]["pm64"]
+        pm64["minimum_entries"] = 4
+        pm64["required_prefix_counts"] = {"shapes/mac_00_shape/dlist_": 1}
+        pm64["required_resources"] = [
+            {
+                "name": "title_screen/title_logo_img",
+                "type": "OTEX",
+                "texture_type": 1,
+                "width": 2,
+                "height": 1,
+                "minimum_payload_size": 8,
+            },
+            {
+                "name": "shapes/mac_00_shape",
+                "type": "OBLB",
+                "minimum_payload_size": 4,
+            },
+        ]
+        archive = self.root / "gameplay.o2r"
+        common = [
+            ("version", assets.expected_version_entry(rom)),
+            ("portVersion", assets.expected_port_version(contract)),
+            ("title_screen/title_logo_img", otr_texture(1, 2, 1, b"12345678")),
+            ("shapes/mac_00_shape", otr_blob(b"shape")),
+            ("shapes/mac_00_shape/dlist_20", b"prefix-only"),
+        ]
+        write_zip(archive, common)
+        record = assets.verify_archive(archive, "pm64", contract, rom=rom)
+        self.assertEqual(record["entry_count"], len(common))
+
+        malformed = list(common)
+        malformed[2] = (
+            "title_screen/title_logo_img",
+            otr_texture(1, 1, 1, b"1234"),
+        )
+        write_zip(archive, malformed)
+        with self.assertRaisesRegex(assets.AssetError, "wrong width"):
+            assets.verify_archive(archive, "pm64", contract, rom=rom)
+
+        write_zip(archive, [item for item in common if item[0] != "shapes/mac_00_shape"])
+        with self.assertRaisesRegex(assets.AssetError, "lacks required gameplay resource"):
+            assets.verify_archive(archive, "pm64", contract, rom=rom)
+
+    def test_pm64_gameplay_resource_rejects_malformed_otr(self) -> None:
+        rom, contract = self.make_rom()
+        contract["archives"]["pm64"]["required_resources"] = [
+            {"name": "bad", "type": "OBLB", "minimum_payload_size": 1}
+        ]
+        archive = self.root / "malformed-gameplay.o2r"
+        write_zip(
+            archive,
+            [
+                ("version", assets.expected_version_entry(rom)),
+                ("portVersion", assets.expected_port_version(contract)),
+                ("bad", b"not-an-otr-resource"),
+            ],
+        )
+        with self.assertRaisesRegex(assets.AssetError, "malformed OTR header"):
+            assets.verify_archive(archive, "pm64", contract, rom=rom)
+
+    def test_pinned_native_resource_envelopes_are_validated(self) -> None:
+        valid = {
+            "matrix": otr_resource("OMTX", struct.pack(">16I", *range(16))),
+            "lights": otr_resource("LGTS", bytes(range(24))),
+            "viewport": otr_resource(
+                "OVPT", struct.pack(">hhhhhhhh", 640, 480, 511, 0,
+                                    640, 480, 511, 0)
+            ),
+            "vec3s": otr_resource(
+                "VC3S", struct.pack(">Ihhhhhh", 2, -1, 2, -3, 4, -5, 6)
+            ),
+            "display-list": otr_display_list(
+                0x42000000, 0x08000100,
+                0x01234567, 0x89ABCDEF,
+                0xDF000000, 0,
+            ),
+        }
+        for name, data in valid.items():
+            with self.subTest(name=name):
+                parsed = assets.parse_otr_resource(data, name)
+                self.assertGreater(parsed["payload_size"], 0)
+
+        malformed = {
+            "matrix": otr_resource("OMTX", bytes(63)),
+            "lights": otr_resource("LGTS", bytes(23)),
+            "viewport": otr_resource("OVPT", bytes(15)),
+            "vec3s": otr_resource("VC3S", struct.pack(">Ihhh", 2, 1, 2, 3)),
+            "display-list": otr_display_list(0x42000000, 0),
+        }
+        for name, data in malformed.items():
+            with self.subTest(name=name):
+                with self.assertRaises(assets.AssetError):
+                    assets.parse_otr_resource(data, name)
+
+    def test_full_pm64_envelope_validation_rejects_unchecked_entries(self) -> None:
+        rom, contract = self.make_rom()
+        contract["archives"]["pm64"]["validate_resource_envelopes"] = True
+        archive = self.root / "all-envelopes.o2r"
+        common = [
+            ("version", assets.expected_version_entry(rom)),
+            ("portVersion", assets.expected_port_version(contract)),
+            ("logos/LOGO_1", otr_blob(b"valid")),
+        ]
+        write_zip(archive, common)
+        assets.verify_archive(archive, "pm64", contract, rom=rom)
+        common[-1] = ("logos/LOGO_1", b"not-an-envelope")
+        write_zip(archive, common)
+        with self.assertRaisesRegex(assets.AssetError, "malformed OTR header"):
             assets.verify_archive(archive, "pm64", contract, rom=rom)
 
     def test_normalization_removes_order_and_timestamp_variance(self) -> None:

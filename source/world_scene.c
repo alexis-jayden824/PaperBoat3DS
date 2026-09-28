@@ -1,4 +1,5 @@
 #include "pb3ds/world_scene.h"
+#include "pb3ds/gbi_command_span.h"
 
 #include <3ds.h>
 #include <math.h>
@@ -196,12 +197,6 @@ static bool parse_blob(const uint8_t *data, size_t size, PBBlobView *blob) {
     blob->data = &resource.body[sizeof(uint32_t)];
     blob->size = payload_size;
     return true;
-}
-
-static bool opcode_is_expanded(uint8_t opcode) {
-    return opcode == 0x20U || opcode == 0x31U || opcode == 0x32U ||
-           opcode == 0x33U || opcode == 0x35U || opcode == 0x36U ||
-           opcode == 0x42U;
 }
 
 static const PBMapContract *find_map_contract(const char *map_id) {
@@ -500,6 +495,22 @@ static bool parse_display_list_resource(uint8_t *data, size_t size,
                                    resource.big_endian);
     const uint32_t low = read_u32(&resource.body[20],
                                   resource.big_endian);
+    size_t offset = 8U;
+    bool ended = false;
+    while (offset <= resource.body_size - 8U) {
+        const uint8_t opcode = (uint8_t)(
+            read_u32(&resource.body[offset], resource.big_endian) >> 24U);
+        const size_t span = pb_gbi_command_span(opcode);
+        if (span == 0U || span > (resource.body_size - offset) / 8U) {
+            return false;
+        }
+        offset += span * 8U;
+        if (opcode == PB_G_END_DL) {
+            ended = offset == resource.body_size;
+            break;
+        }
+    }
+    if (!ended) return false;
     display_list->allocation = data;
     display_list->allocation_size = size;
     display_list->resource = resource;
@@ -702,19 +713,19 @@ static bool interpret_display_list(PBDisplayListInterpreter *interpreter,
         const uint32_t word1 =
             read_u32(&resource->body[offset + 4U], resource->big_endian);
         const uint8_t opcode = (uint8_t)(word0 >> 24U);
-        offset += 8U;
+        const size_t span = pb_gbi_command_span(opcode);
+        if (span == 0U || span > (resource->body_size - offset) / 8U) {
+            return false;
+        }
         uint64_t extra = 0U;
-        if (opcode_is_expanded(opcode)) {
-            if (offset > resource->body_size - 8U) {
-                return false;
-            }
+        if (span > 1U) {
             const uint32_t high =
-                read_u32(&resource->body[offset], resource->big_endian);
-            const uint32_t low = read_u32(&resource->body[offset + 4U],
+                read_u32(&resource->body[offset + 8U], resource->big_endian);
+            const uint32_t low = read_u32(&resource->body[offset + 12U],
                                           resource->big_endian);
             extra = ((uint64_t)high << 32U) | low;
-            offset += 8U;
         }
+        offset += span * 8U;
         interpreter->scene->stats.display_list_commands++;
 
         if (opcode == 0xD9U) {

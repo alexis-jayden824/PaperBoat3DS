@@ -77,6 +77,12 @@ typedef struct {
 } PBWorldFlow;
 
 void pb_world_boot_init(PBWorldBoot *boot);
+/* Validate Torch's already-native PM64 map payloads before handing them to
+ * upstream loaders, which assume every serialized offset is trusted. */
+bool pb_world_validate_shape_payload(const uint8_t *data, size_t size,
+                                     PBWorldBootStats *stats);
+bool pb_world_validate_collision_payload(const uint8_t *data, size_t size,
+                                         PBWorldBootStats *stats);
 PBWorldBootResult pb_world_boot_load(PBWorldBoot *boot,
                                      PBArchive *game_archive,
                                      PBMemoryMonitor *memory);

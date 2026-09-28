@@ -1,4 +1,5 @@
 #include "pb3ds/world_boot.h"
+#include "pb3ds/gbi_command_span.h"
 
 #include <limits.h>
 #include <string.h>
@@ -22,6 +23,10 @@
 #define PB_WORLD_MAX_SHAPE_NODES 512U
 #define PB_WORLD_MAX_SHAPE_DEPTH 32U
 #define PB_WORLD_MAX_NAME_ENTRIES 512U
+#define PB_WORLD_MAX_PROPERTIES 4096U
+#define PB_WORLD_MAX_CHILD_REFS 2048U
+/* Leave allocator metadata/headroom inside the upstream 0x40000-byte heap. */
+#define PB_WORLD_COLLISION_HEAP_BYTES 0x3E000U
 #define PB_WORLD_BACKGROUND_WIDTH 296U
 #define PB_WORLD_BACKGROUND_HEIGHT 200U
 #define PB_WORLD_BACKGROUND_TEXTURE_WIDTH 512U
@@ -44,6 +49,8 @@ typedef struct {
     uint32_t offsets[PB_WORLD_MAX_SHAPE_NODES];
     uint32_t count;
     uint32_t display_lists;
+    uint32_t properties;
+    uint32_t child_refs;
 } PBShapeValidation;
 
 static uint16_t read_u16(const uint8_t *bytes, bool big_endian) {
@@ -65,6 +72,10 @@ static uint32_t read_u32(const uint8_t *bytes, bool big_endian) {
 
 static int32_t read_s32(const uint8_t *bytes, bool big_endian) {
     return (int32_t)read_u32(bytes, big_endian);
+}
+
+static int16_t read_s16(const uint8_t *bytes, bool big_endian) {
+    return (int16_t)read_u16(bytes, big_endian);
 }
 
 static bool span_is_valid(size_t size, uint32_t offset, size_t length) {
@@ -174,10 +185,25 @@ static bool validate_shape_node(const uint8_t *data, size_t size,
     const int32_t property_count = read_s32(&node[8], big_endian);
     const uint32_t property_offset = read_u32(&node[12], big_endian);
     if (property_count < 0 || property_count > 1024 ||
+        (uint32_t)property_count >
+            PB_WORLD_MAX_PROPERTIES - validation->properties ||
         (property_count > 0 &&
          (!span_is_valid(size, property_offset,
                          (size_t)property_count * 12U)))) {
         return false;
+    }
+    validation->properties += (uint32_t)property_count;
+    for (int32_t index = 0; index < property_count; index++) {
+        const uint8_t *property =
+            &data[(size_t)property_offset + (size_t)index * 12U];
+        const int32_t key = read_s32(property, big_endian);
+        const uint32_t value = read_u32(&property[8], big_endian);
+        if (key == 0x5E && value != 0U) {
+            if (value >= size ||
+                memchr(&data[value], '\0', size - value) == NULL) {
+                return false;
+            }
+        }
     }
 
     const uint32_t group_offset = read_u32(&node[16], big_endian);
@@ -188,16 +214,26 @@ static bool validate_shape_node(const uint8_t *data, size_t size,
         return false;
     }
     const uint8_t *group = &data[group_offset];
+    const uint32_t matrix_offset = read_u32(&group[0], big_endian);
+    const uint32_t lights_offset = read_u32(&group[4], big_endian);
     const int32_t light_count = read_s32(&group[8], big_endian);
     const int32_t child_count = read_s32(&group[12], big_endian);
     const uint32_t child_offset = read_u32(&group[16], big_endian);
-    if (light_count < 0 || light_count > 8 || child_count < 0 ||
+    if (light_count < 0 || light_count > 7 || child_count < 0 ||
         child_count > (int32_t)PB_WORLD_MAX_SHAPE_NODES ||
+        (uint32_t)child_count >
+            PB_WORLD_MAX_CHILD_REFS - validation->child_refs ||
+        (matrix_offset != 0U &&
+         !span_is_valid(size, matrix_offset, 64U)) ||
+        (lights_offset != 0U &&
+         !span_is_valid(size, lights_offset,
+                        8U + (size_t)light_count * 16U)) ||
         (child_count > 0 &&
          !span_is_valid(size, child_offset,
                         (size_t)child_count * sizeof(uint32_t)))) {
         return false;
     }
+    validation->child_refs += (uint32_t)child_count;
     for (int32_t index = 0; index < child_count; index++) {
         const uint32_t child = read_u32(
             &data[(size_t)child_offset + (size_t)index * sizeof(uint32_t)],
@@ -211,31 +247,33 @@ static bool validate_shape_node(const uint8_t *data, size_t size,
     return true;
 }
 
-static bool validate_shape(const PBWorldBlob *blob,
-                           PBWorldBootStats *stats) {
-    if (blob == NULL || stats == NULL || blob->size < 32U) {
+bool pb_world_validate_shape_payload(const uint8_t *data, size_t size,
+                                     PBWorldBootStats *stats) {
+    if (data == NULL || stats == NULL || size < 32U) {
         return false;
     }
     /* Torch's PM64 blob payloads preserve the little-endian port layout. */
     const bool big_endian = false;
-    const uint32_t root_offset = read_u32(&blob->data[0], big_endian);
-    const uint32_t vertex_offset = read_u32(&blob->data[4], big_endian);
-    const uint32_t model_names = read_u32(&blob->data[8], big_endian);
-    const uint32_t collider_names = read_u32(&blob->data[12], big_endian);
-    const uint32_t zone_names = read_u32(&blob->data[16], big_endian);
+    const uint32_t root_offset = read_u32(&data[0], big_endian);
+    const uint32_t vertex_offset = read_u32(&data[4], big_endian);
+    const uint32_t model_names = read_u32(&data[8], big_endian);
+    const uint32_t collider_names = read_u32(&data[12], big_endian);
+    const uint32_t zone_names = read_u32(&data[16], big_endian);
     if (root_offset == 0U || vertex_offset == 0U ||
-        !span_is_valid(blob->size, vertex_offset, 16U) ||
-        !validate_name_table(blob->data, blob->size, model_names,
+        !span_is_valid(size, root_offset, 20U) ||
+        read_s32(&data[root_offset], big_endian) != 7 ||
+        !span_is_valid(size, vertex_offset, 16U) ||
+        !validate_name_table(data, size, model_names,
                              big_endian) ||
-        !validate_name_table(blob->data, blob->size, collider_names,
+        !validate_name_table(data, size, collider_names,
                              big_endian) ||
-        !validate_name_table(blob->data, blob->size, zone_names,
+        !validate_name_table(data, size, zone_names,
                              big_endian)) {
         return false;
     }
     PBShapeValidation validation;
     memset(&validation, 0, sizeof(validation));
-    if (!validate_shape_node(blob->data, blob->size, root_offset, 0U,
+    if (!validate_shape_node(data, size, root_offset, 0U,
                              big_endian, &validation)) {
         return false;
     }
@@ -246,7 +284,8 @@ static bool validate_shape(const PBWorldBlob *blob,
 
 static bool validate_hit_section(const uint8_t *data, size_t size,
                                  uint32_t offset, uint32_t *colliders,
-                                 uint32_t *vertices, uint32_t *triangles) {
+                                 uint32_t *vertices, uint32_t *triangles,
+                                 size_t *heap_bytes) {
     if (!span_is_valid(size, offset, 24U)) {
         return false;
     }
@@ -257,7 +296,8 @@ static bool validate_hit_section(const uint8_t *data, size_t size,
     const uint32_t vertex_offset = read_u32(&header[12], false);
     const uint16_t bounds_words = read_u16(&header[16], false);
     const uint32_t bounds_offset = read_u32(&header[20], false);
-    if (collider_count == 0U || vertex_count == 0U ||
+    if (collider_count == 0U || collider_count > 1024U ||
+        vertex_count == 0U || vertex_count > 1024U ||
         !span_is_valid(size, collider_offset,
                        (size_t)collider_count * 12U) ||
         !span_is_valid(size, vertex_offset, (size_t)vertex_count * 6U) ||
@@ -265,10 +305,29 @@ static bool validate_hit_section(const uint8_t *data, size_t size,
         return false;
     }
     uint32_t triangle_count = 0U;
+    const size_t fixed_heap = (size_t)bounds_words * 4U +
+                              (size_t)vertex_count * 12U +
+                              (size_t)collider_count * 28U;
+    if (fixed_heap > PB_WORLD_COLLISION_HEAP_BYTES - *heap_bytes) {
+        return false;
+    }
+    *heap_bytes += fixed_heap;
     for (uint16_t index = 0; index < collider_count; index++) {
         const uint8_t *collider =
             &data[(size_t)collider_offset + (size_t)index * 12U];
-        const uint16_t count = read_u16(&collider[6], false);
+        const int16_t bounds_index = read_s16(&collider[0], false);
+        const int16_t next_sibling = read_s16(&collider[2], false);
+        const int16_t first_child = read_s16(&collider[4], false);
+        const int16_t signed_count = read_s16(&collider[6], false);
+        if ((bounds_index >= 0 &&
+             ((uint32_t)bounds_index > bounds_words ||
+              7U > (uint32_t)bounds_words - (uint32_t)bounds_index)) ||
+            next_sibling < -1 || next_sibling >= (int16_t)collider_count ||
+            first_child < -1 || first_child >= (int16_t)collider_count ||
+            signed_count < 0) {
+            return false;
+        }
+        const uint16_t count = (uint16_t)signed_count;
         const uint32_t triangle_offset = read_u32(&collider[8], false);
         if (count > 0U &&
             !span_is_valid(size, triangle_offset, (size_t)count * 4U)) {
@@ -277,6 +336,11 @@ static bool validate_hit_section(const uint8_t *data, size_t size,
         if (UINT32_MAX - triangle_count < count) {
             return false;
         }
+        const size_t triangle_heap = (size_t)count * 64U;
+        if (triangle_heap > PB_WORLD_COLLISION_HEAP_BYTES - *heap_bytes) {
+            return false;
+        }
+        *heap_bytes += triangle_heap;
         for (uint16_t triangle = 0; triangle < count; triangle++) {
             const uint32_t packed = read_u32(
                 &data[(size_t)triangle_offset + (size_t)triangle * 4U],
@@ -295,22 +359,23 @@ static bool validate_hit_section(const uint8_t *data, size_t size,
     return true;
 }
 
-static bool validate_collision(const PBWorldBlob *blob,
-                               PBWorldBootStats *stats) {
-    if (blob == NULL || stats == NULL || blob->size < 8U) {
+bool pb_world_validate_collision_payload(const uint8_t *data, size_t size,
+                                         PBWorldBootStats *stats) {
+    if (data == NULL || stats == NULL || size < 8U) {
         return false;
     }
-    const uint32_t collision_offset = read_u32(&blob->data[0], false);
-    const uint32_t zone_offset = read_u32(&blob->data[4], false);
+    const uint32_t collision_offset = read_u32(&data[0], false);
+    const uint32_t zone_offset = read_u32(&data[4], false);
+    size_t heap_bytes = 0U;
     return collision_offset != 0U && zone_offset != 0U &&
            validate_hit_section(
-               blob->data, blob->size, collision_offset,
+               data, size, collision_offset,
                &stats->collision_colliders, &stats->collision_vertices,
-               &stats->collision_triangles) &&
-           validate_hit_section(blob->data, blob->size, zone_offset,
+               &stats->collision_triangles, &heap_bytes) &&
+           validate_hit_section(data, size, zone_offset,
                                 &stats->zone_colliders,
                                 &stats->zone_vertices,
-                                &stats->zone_triangles);
+                                &stats->zone_triangles, &heap_bytes);
 }
 
 static bool validate_vertices(const uint8_t *data, size_t size,
@@ -330,12 +395,6 @@ static bool validate_vertices(const uint8_t *data, size_t size,
     return true;
 }
 
-static bool display_list_opcode_is_expanded(uint8_t opcode) {
-    return opcode == 0x20U || opcode == 0x31U || opcode == 0x32U ||
-           opcode == 0x33U || opcode == 0x35U || opcode == 0x36U ||
-           opcode == 0x42U;
-}
-
 static bool validate_display_list(const uint8_t *data, size_t size,
                                   uint32_t *command_count) {
     PBWorldResource resource;
@@ -350,16 +409,13 @@ static bool validate_display_list(const uint8_t *data, size_t size,
         const uint32_t word0 =
             read_u32(&resource.body[offset], resource.big_endian);
         const uint8_t opcode = (uint8_t)(word0 >> 24U);
-        offset += 8U;
-        count++;
-        if (display_list_opcode_is_expanded(opcode)) {
-            if (offset > resource.body_size - 8U) {
-                return false;
-            }
-            offset += 8U;
-            count++;
-        }
+        const size_t span = pb_gbi_command_span(opcode);
+        if (span == 0U || span > (resource.body_size - offset) / 8U ||
+            span > UINT32_MAX - count) return false;
+        offset += span * 8U;
+        count += (uint32_t)span;
         if (opcode == PB_F3DEX2_END_DL) {
+            if (offset != resource.body_size) return false;
             *command_count = count;
             return true;
         }
@@ -441,7 +497,8 @@ PBWorldBootResult pb_world_boot_load(PBWorldBoot *boot,
     }
     PBWorldBlob shape_blob;
     if (!parse_blob(shape_data, shape_size, &shape_blob) ||
-        !validate_shape(&shape_blob, &boot->world_stats)) {
+        !pb_world_validate_shape_payload(shape_blob.data, shape_blob.size,
+                                         &boot->world_stats)) {
         boot->result = PB_WORLD_BOOT_SHAPE_INVALID;
         goto finish;
     }
@@ -453,7 +510,9 @@ PBWorldBootResult pb_world_boot_load(PBWorldBoot *boot,
     }
     PBWorldBlob collision_blob;
     if (!parse_blob(collision_data, collision_size, &collision_blob) ||
-        !validate_collision(&collision_blob, &boot->world_stats)) {
+        !pb_world_validate_collision_payload(collision_blob.data,
+                                             collision_blob.size,
+                                             &boot->world_stats)) {
         boot->result = PB_WORLD_BOOT_COLLISION_INVALID;
         goto finish;
     }

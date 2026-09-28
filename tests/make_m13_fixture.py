@@ -38,18 +38,30 @@ def blob_resource(data: bytes) -> bytes:
     return resource_header(BLOB_TYPE) + struct.pack("<I", len(data)) + data
 
 
-def shape_resource(valid: bool = True) -> bytes:
+def shape_resource(valid: bool = True, texture_name: Optional[str] = None,
+                   display_list_offset: int = 0x20) -> bytes:
     data = bytearray(256)
     struct.pack_into("<IIIII", data, 0, 32, 64, 200, 208, 216)
     struct.pack_into("<iIiII", data, 32, 7, 0, 0, 0, 128)
-    struct.pack_into("<iIiII", data, 96, 2, 180, 0, 0, 0)
+    property_count = int(texture_name is not None)
+    property_offset = 160 if property_count else 0
+    struct.pack_into("<iIiII", data, 96, 2, 180, property_count,
+                     property_offset, 0)
     struct.pack_into("<IIiiI", data, 128, 0, 0, 0, 1, 152)
     struct.pack_into("<I", data, 152, 96)
-    struct.pack_into("<II", data, 180, 0x20 if valid else 0, 0)
+    if property_count:
+        struct.pack_into("<III", data, property_offset, 0x5E, 0, 236)
+    struct.pack_into("<II", data, 180,
+                     display_list_offset if valid else 0, 0)
     struct.pack_into("<I", data, 200, 224)
     struct.pack_into("<I", data, 208, 227)
     struct.pack_into("<I", data, 216, 230)
     data[224:233] = b"db\0db\0db\0"
+    if texture_name is not None:
+        encoded = texture_name.encode("ascii") + b"\0"
+        if 236 + len(encoded) > len(data):
+            raise ValueError("fixture texture name is too long")
+        data[236:236 + len(encoded)] = encoded
     return blob_resource(bytes(data))
 
 

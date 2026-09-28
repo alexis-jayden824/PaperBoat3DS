@@ -36,6 +36,7 @@ jobs:
           HOST_CC=cc sh tools/test_title_layout.sh build/host-m12-layout
           python3 tests/test_m13_runtime_generation.py \
             tools/generate_m13_runtime.py .cache/upstream/PaperBoat
+          sh tools/test_runtime_startup.sh
           HOST_CC=cc sh tools/test_world_boot.sh build/host-m13-world
           HOST_CC=cc sh tools/test_world_scene.sh build/host-m13-scene
           HOST_CC=cc sh tools/test_runtime_flash.sh build/host-m13-flash
@@ -63,6 +64,7 @@ jobs:
           make m12-flow-test
           make m12-layout-test
           make m13-world-test
+          sh tools/test_runtime_startup.sh
           SANITIZE=1 sh tools/test_runtime_resources.sh
       - name: Cross-compile and verify PaperBoat runtime
         run: |

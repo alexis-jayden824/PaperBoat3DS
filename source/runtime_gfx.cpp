@@ -356,7 +356,8 @@ class RuntimeDisplayListRenderer {
             stats.screen_max_x = 0;
             stats.screen_max_y = 0;
         }
-        if (interpreted && flushed && targetRestored) {
+        if (interpreted && flushed && targetRestored && !malformed &&
+            !fatalFrameError) {
             stats.frames_rendered++;
         }
         if (malformed) {
@@ -373,10 +374,12 @@ class RuntimeDisplayListRenderer {
                          lastCommandIndex, lastDepth);
         }
 #endif
-        /* A single malformed opcode must not kill the game loop. Pause HUD
-         * lists can contain leftover pointers; skipping those commands is
-         * enough for START to keep stepping. */
-        return flushed && targetRestored && !fatalFrameError;
+        /* Missing assets, malformed packets, and unsupported commands are
+         * integration failures.  Returning success here used to let a frame
+         * containing magenta fallback textures or skipped geometry advance
+         * the game while looking superficially healthy. */
+        return interpreted && flushed && targetRestored && !malformed &&
+               !fatalFrameError;
     }
 
     void InvalidateTexture(const void *address) {
@@ -609,6 +612,22 @@ class RuntimeDisplayListRenderer {
         activeFramebufferHeight = PB_RENDER_TOP_HEIGHT;
     }
 
+    void FailMissingResource() {
+        stats.missing_resources++;
+        fatalFrameError = true;
+    }
+
+    void FailMalformedList() {
+        malformed = true;
+        fatalFrameError = true;
+    }
+
+    void FailUnsupportedCommand(uint8_t opcode) {
+        stats.unknown_commands++;
+        stats.last_unknown_opcode = opcode;
+        fatalFrameError = true;
+    }
+
     const void *Resolve(uintptr_t address) const {
         if ((address & 1U) != 0U && address <= UINT32_MAX) {
             const uint32_t encoded = static_cast<uint32_t>(address);
@@ -633,7 +652,7 @@ class RuntimeDisplayListRenderer {
             const void *data = ResourceGetDataByName(
                 static_cast<const char *>(resolved));
             if (data == nullptr) {
-                stats.missing_resources++;
+                FailMissingResource();
                 if (otrMissing != nullptr) *otrMissing = true;
             }
             return data;
@@ -693,7 +712,7 @@ class RuntimeDisplayListRenderer {
 
     void ApplyMatrix(uint8_t parameters, const int32_t *address) {
         if (address == nullptr) {
-            stats.missing_resources++;
+            FailMissingResource();
             return;
         }
         const Matrix decoded = DecodeMatrix(address);
@@ -767,11 +786,12 @@ class RuntimeDisplayListRenderer {
     void LoadVertices(const N64Vertex *source, size_t count,
                       size_t destination) {
         if (source == nullptr) {
-            stats.missing_resources++;
+            FailMissingResource();
             return;
         }
         if (destination >= vertices.size() ||
             count > vertices.size() - destination) {
+            FailMalformedList();
             return;
         }
         for (size_t index = 0U; index < count; index++) {
@@ -1592,6 +1612,7 @@ class RuntimeDisplayListRenderer {
         if (height == 0U) height = 1U;
         if (width > UINT16_MAX || height > UINT16_MAX) {
             stats.texture_fallbacks++;
+            fatalFrameError = true;
             return FallbackTexture(uploadUnit);
         }
         const uint32_t key = TextureKey(
@@ -1616,6 +1637,7 @@ class RuntimeDisplayListRenderer {
                            &textureHeight, &sourceWidth, &sourceHeight,
                            &type)) {
             stats.texture_fallbacks++;
+            fatalFrameError = true;
             return FallbackTexture(uploadUnit);
         }
         if (textures.size() >= kRuntimeTextureLimit) EvictOldestTexture();
@@ -2147,7 +2169,7 @@ class RuntimeDisplayListRenderer {
             source.resourceHeight = ResourceGetTexHeightByName(path);
             source.resourceType = pb_runtime_resource_texture_type(path);
             source.payloadSize = pb_runtime_resource_payload_size(path);
-            if (source.data == nullptr) stats.missing_resources++;
+            if (source.data == nullptr) FailMissingResource();
         } else {
             const void *resolved = Resolve(address);
             if (resolved != nullptr &&
@@ -2160,9 +2182,10 @@ class RuntimeDisplayListRenderer {
                 source.resourceHeight = ResourceGetTexHeightByName(path);
                 source.resourceType = pb_runtime_resource_texture_type(path);
                 source.payloadSize = pb_runtime_resource_payload_size(path);
-                if (source.data == nullptr) stats.missing_resources++;
+                if (source.data == nullptr) FailMissingResource();
             } else {
                 source.data = static_cast<const uint8_t *>(resolved);
+                if (source.data == nullptr) FailMissingResource();
             }
         }
         if (path == nullptr && source.data != nullptr) {
@@ -2224,7 +2247,10 @@ class RuntimeDisplayListRenderer {
 
     void LoadTexture(size_t tileIndex, uint32_t word0 = 0U,
                      uint32_t word1 = 0U, bool loadTile = false) {
-        if (tileIndex >= tiles.size()) return;
+        if (tileIndex >= tiles.size()) {
+            FailMalformedList();
+            return;
+        }
         const size_t tmemIndex =
             std::min<size_t>(tiles[tileIndex].tmem,
                              loadedTextures.size() - 1U);
@@ -2259,18 +2285,30 @@ class RuntimeDisplayListRenderer {
     }
 
     void LoadPalette(size_t tileIndex, size_t entries) {
-        if (tileIndex >= tiles.size() || textureToLoad.data == nullptr) return;
+        if (tileIndex >= tiles.size()) {
+            FailMalformedList();
+            return;
+        }
+        if (textureToLoad.data == nullptr) {
+            FailMissingResource();
+            return;
+        }
         const Tile &tile = tiles[tileIndex];
-        if (tile.tmem < 256U) return;
+        if (tile.tmem < 256U) {
+            FailMalformedList();
+            return;
+        }
         const size_t firstEntry = tile.tmem - 256U;
         if (firstEntry >= paletteEntriesValid.size() ||
             entries > paletteEntriesValid.size() - firstEntry ||
             entries > SIZE_MAX / 2U) {
+            FailMalformedList();
             return;
         }
         const size_t bytes = entries * 2U;
         if (textureToLoad.payloadSize != 0U &&
             bytes > textureToLoad.payloadSize) {
+            FailMalformedList();
             return;
         }
         /* RDP TLUT is persistent 512-byte TMEM. CI8 palettes commonly arrive
@@ -2345,25 +2383,33 @@ class RuntimeDisplayListRenderer {
                 case G_VTX: {
                     const size_t count = (word0 >> 12U) & 0xFFU;
                     const size_t end = (word0 >> 1U) & 0x7FU;
-                    if (count == 0U || end < count) break;
+                    if (count == 0U || end < count) {
+                        FailMalformedList();
+                        return false;
+                    }
                     bool otrMissing = false;
                     const N64Vertex *verticesData =
                         static_cast<const N64Vertex *>(
                             ResolveMaybeOtr(command.words.w1, &otrMissing));
-                    if (otrMissing) break;
+                    if (otrMissing) return false;
                     LoadVertices(verticesData, count, end - count);
+                    if (fatalFrameError) return false;
                     break;
                 }
                 case G_VTX_WIDE: {
                     const size_t count = (word0 >> 12U) & 0xFFU;
                     const size_t end = (word0 >> 1U) & 0x7FU;
-                    if (count == 0U || end < count) break;
+                    if (count == 0U || end < count) {
+                        FailMalformedList();
+                        return false;
+                    }
                     bool otrMissing = false;
                     const N64Vertex *verticesData =
                         static_cast<const N64Vertex *>(
                             ResolveMaybeOtr(command.words.w1, &otrMissing));
-                    if (otrMissing) break;
+                    if (otrMissing) return false;
                     LoadVertices(verticesData, count, end - count);
+                    if (fatalFrameError) return false;
                     break;
                 }
                 case G_VTX_OTR_FILEPATH: {
@@ -2379,8 +2425,10 @@ class RuntimeDisplayListRenderer {
                     if (data != nullptr) {
                         LoadVertices(data + offset, count, destination);
                     } else {
-                        stats.missing_resources++;
+                        FailMissingResource();
+                        return false;
                     }
+                    if (fatalFrameError) return false;
                     break;
                 }
                 case G_VTX_OTR_HASH: {
@@ -2399,19 +2447,31 @@ class RuntimeDisplayListRenderer {
                         LoadVertices(reinterpret_cast<const N64Vertex *>(data),
                                      count, end - count);
                     } else {
-                        stats.missing_resources++;
+                        if (data == nullptr) {
+                            FailMissingResource();
+                        } else {
+                            FailMalformedList();
+                        }
+                        return false;
                     }
+                    if (fatalFrameError) return false;
                     break;
                 }
                 case G_MODIFYVTX: {
                     const size_t vertex = (word0 >> 1U) & 0x7FFFU;
                     const uint8_t where = static_cast<uint8_t>(word0 >> 16U);
-                    if (vertex < vertices.size() && where == G_MWO_POINT_ST) {
-                        vertices[vertex].textureS =
-                            static_cast<float>(static_cast<int16_t>(word1 >> 16U));
-                        vertices[vertex].textureT =
-                            static_cast<float>(static_cast<int16_t>(word1));
+                    if (vertex >= vertices.size() || !vertices[vertex].valid) {
+                        FailMalformedList();
+                        return false;
                     }
+                    if (where != G_MWO_POINT_ST) {
+                        FailUnsupportedCommand(opcode);
+                        return false;
+                    }
+                    vertices[vertex].textureS =
+                        static_cast<float>(static_cast<int16_t>(word1 >> 16U));
+                    vertices[vertex].textureT =
+                        static_cast<float>(static_cast<int16_t>(word1));
                     break;
                 }
                 case G_TRI1:
@@ -2479,6 +2539,7 @@ class RuntimeDisplayListRenderer {
                     ApplyMatrix(parameters,
                                 static_cast<const int32_t *>(
                                     Resolve(command.words.w1)));
+                    if (fatalFrameError) return false;
                     break;
                 }
                 case G_MTX_OTR_FILEPATH:
@@ -2491,7 +2552,8 @@ class RuntimeDisplayListRenderer {
                             static_cast<uint8_t>(word0 & 0xFFU) ^ 0x01U,
                             static_cast<const int32_t *>(matrix));
                     } else {
-                        stats.missing_resources++;
+                        FailMissingResource();
+                        return false;
                     }
                     break;
                 case G_MTX_OTR: {
@@ -2504,7 +2566,8 @@ class RuntimeDisplayListRenderer {
                             static_cast<uint8_t>(word0 & 0xFFU) ^ 0x01U,
                             static_cast<const int32_t *>(matrix));
                     } else {
-                        stats.missing_resources++;
+                        FailMissingResource();
+                        return false;
                     }
                     break;
                 }
@@ -2538,15 +2601,32 @@ class RuntimeDisplayListRenderer {
                     const uint16_t offset = static_cast<uint16_t>(word0);
                     if (type == G_MW_SEGMENT) {
                         const size_t segment = offset / 4U;
-                        if (segment < segmentPointers.size()) {
-                            segmentPointers[segment] = command.words.w1;
+                        if (offset % 4U != 0U ||
+                            segment >= segmentPointers.size()) {
+                            FailMalformedList();
+                            return false;
                         }
+                        segmentPointers[segment] = command.words.w1;
                     } else if (type == G_MW_NUMLIGHT) {
-                        lightCount = std::min<size_t>(word1 / 24U + 1U,
-                                                      lights.size());
+                        if (offset != 0U || word1 % 24U != 0U ||
+                            word1 / 24U >= lights.size()) {
+                            FailMalformedList();
+                            return false;
+                        }
+                        lightCount = word1 / 24U + 1U;
                     } else if (type == G_MW_FOG) {
+                        if (offset != 0U) {
+                            FailMalformedList();
+                            return false;
+                        }
                         fogMultiply = static_cast<int16_t>(word1 >> 16U);
                         fogOffset = static_cast<int16_t>(word1);
+                    } else if (type != 0x04U && type != 0x0EU) {
+                        /* CLIP and PERSPNORM affect the RSP's clipping
+                         * precision only. Other state changes need a real
+                         * implementation before they can be accepted. */
+                        FailUnsupportedCommand(opcode);
+                        return false;
                     }
                     break;
                 }
@@ -2556,38 +2636,69 @@ class RuntimeDisplayListRenderer {
                     const uint8_t offset =
                         static_cast<uint8_t>(word0 >> 8U) * 8U;
                     const void *data = Resolve(command.words.w1);
-                    if (type == G_MV_VIEWPORT && data != nullptr) {
+                    if ((type == G_MV_VIEWPORT || type == G_MV_LIGHT) &&
+                        data == nullptr) {
+                        FailMissingResource();
+                        return false;
+                    }
+                    if (type == G_MV_VIEWPORT && offset == 0U) {
                         ApplyN64Viewport(
                             static_cast<const N64Viewport *>(data));
-                    } else if (type == G_MV_LIGHT && data != nullptr) {
+                    } else if (type == G_MV_LIGHT) {
                         const int light = static_cast<int>(offset) / 24 - 2;
-                        if (light >= 0 &&
-                            static_cast<size_t>(light) < lights.size()) {
-                            std::memcpy(&lights[static_cast<size_t>(light)],
-                                        data, sizeof(N64Light));
+                        if (offset % 24U != 0U || light < 0 ||
+                            static_cast<size_t>(light) >= lights.size()) {
+                            FailMalformedList();
+                            return false;
                         }
+                        std::memcpy(&lights[static_cast<size_t>(light)],
+                                    data, sizeof(N64Light));
+                    } else {
+                        FailUnsupportedCommand(opcode);
+                        return false;
                     }
                     break;
                 }
                 case G_MOVEMEM_HASH: {
                     Flush();
-                    const uint8_t type = static_cast<uint8_t>(word0);
+                    /* Torch replaces the original pointer packet with a
+                     * metadata word followed by CRC64.  Unlike ordinary
+                     * F3DEX2 MOVEMEM, index/offset are in w1; bit 8 records
+                     * that a light pointer referred to Lights1::l at base+8.
+                     */
+                    const uint8_t type = static_cast<uint8_t>(word1 >> 24U);
                     const uint8_t offset =
-                        static_cast<uint8_t>(word0 >> 8U) * 8U;
+                        static_cast<uint8_t>(word1 >> 16U);
+                    const uint8_t hasOffset =
+                        static_cast<uint8_t>(word1 >> 8U);
+                    if (hasOffset > 1U || (word1 & 0xFFU) != 0U ||
+                        (type == G_MV_VIEWPORT && hasOffset != 0U) ||
+                        (type != G_MV_VIEWPORT && type != G_MV_LIGHT)) {
+                        FailMalformedList();
+                        return false;
+                    }
                     const uint64_t hash = HashCommand(displayList[++index]);
                     commandCount++;
-                    const void *data = ResourceGetDataByCrc(hash);
-                    if (data == nullptr) stats.missing_resources++;
+                    const uint8_t *resource =
+                        static_cast<const uint8_t *>(
+                            ResourceGetDataByCrc(hash));
+                    if (resource == nullptr) {
+                        FailMissingResource();
+                        return false;
+                    }
+                    const void *data = resource + (hasOffset != 0U ? 8U : 0U);
                     if (type == G_MV_VIEWPORT && data != nullptr) {
                         ApplyN64Viewport(
                             static_cast<const N64Viewport *>(data));
                     } else if (type == G_MV_LIGHT && data != nullptr) {
                         const int light = static_cast<int>(offset) / 24 - 2;
-                        if (light >= 0 &&
-                            static_cast<size_t>(light) < lights.size()) {
-                            std::memcpy(&lights[static_cast<size_t>(light)],
-                                        data, sizeof(N64Light));
+                        if (offset % 24U != 0U || light < 0 ||
+                            static_cast<size_t>(light) >= lights.size()) {
+                            FailMalformedList();
+                            return false;
                         }
+                        std::memcpy(&lights[static_cast<size_t>(light)],
+                                    data, sizeof(N64Light));
                     }
                     break;
                 }
@@ -2599,8 +2710,11 @@ class RuntimeDisplayListRenderer {
                             ResolveMaybeOtr(command.words.w1, &otrMissing));
                     if (nested != nullptr &&
                         !RunList(nested, depth + 1U)) return false;
+                    if (nested == nullptr) {
+                        if (!otrMissing) FailMissingResource();
+                        return false;
+                    }
                     if (((word0 >> 16U) & 1U) != 0U) return true;
-                    (void)otrMissing;
                     break;
                 }
                 case G_DL_OTR_FILEPATH: {
@@ -2613,7 +2727,10 @@ class RuntimeDisplayListRenderer {
                     if (nested != nullptr && !RunList(nested, depth + 1U)) {
                         return false;
                     }
-                    if (nested == nullptr) stats.missing_resources++;
+                    if (nested == nullptr) {
+                        FailMissingResource();
+                        return false;
+                    }
                     if (((word0 >> 16U) & 1U) != 0U) return true;
                     break;
                 }
@@ -2627,7 +2744,10 @@ class RuntimeDisplayListRenderer {
                     if (nested != nullptr && !RunList(nested, depth + 1U)) {
                         return false;
                     }
-                    if (nested == nullptr) stats.missing_resources++;
+                    if (nested == nullptr) {
+                        FailMissingResource();
+                        return false;
+                    }
                     if (((word0 >> 16U) & 1U) != 0U) return true;
                     break;
                 }
@@ -2659,8 +2779,8 @@ class RuntimeDisplayListRenderer {
                             static_cast<const PBRuntimeGfx *>(
                                 ResourceGetDataByCrc(hash));
                         if (branch == nullptr) {
-                            stats.missing_resources++;
-                            break;
+                            FailMissingResource();
+                            return false;
                         }
                         return RunList(branch, depth + 1U);
                     }
@@ -2686,8 +2806,9 @@ class RuntimeDisplayListRenderer {
                     if (path != nullptr) {
                         SetTextureImage(word0, command.words.w1, path);
                     } else {
-                        stats.missing_resources++;
+                        FailMissingResource();
                         textureToLoad = {};
+                        return false;
                     }
                     break;
                 }
@@ -3206,24 +3327,31 @@ class RuntimeDisplayListRenderer {
                      * visible through the unsupported-command statistic. */
                     index++;
                     commandCount++;
-                    stats.unknown_commands++;
-                    stats.last_unknown_opcode = G_REGBLENDEDTEX;
-                    break;
-                case G_PUSH_SHADER:
-                case G_POP_SHADER:
-                case G_SETTARGETINTERPINDEX:
-                case G_SETUNIFORM:
+                    FailUnsupportedCommand(G_REGBLENDEDTEX);
+                    return false;
                 case G_RDPLOADSYNC:
                 case G_RDPPIPESYNC:
                 case G_RDPTILESYNC:
                 case G_RDPFULLSYNC:
                 case 0x00:
+                    /* Synchronization is implicit in the synchronous PICA200
+                     * command stream; the canonical NOP has no state. */
+                    break;
+                case G_PUSH_SHADER:
+                case G_POP_SHADER:
+                case G_SETTARGETINTERPINDEX:
+                case G_SETUNIFORM:
                 case 0x23:
                 case 0x28:
                 case 0x39:
                 case 0x3A:
                 case 0x40:
-                    break;
+                    /* These custom libultraship operations have observable
+                     * shader/framebuffer state.  M13 does not emit them; if
+                     * an asset or future patch does, fail the frame instead
+                     * of reporting a visually incorrect success. */
+                    FailUnsupportedCommand(opcode);
+                    return false;
                 default:
                     if (unknownCommands[opcode]++ == 0U) {
 #ifndef __3DS__
@@ -3233,9 +3361,8 @@ class RuntimeDisplayListRenderer {
                                      opcode, word0, word1, depth, index);
 #endif
                     }
-                    stats.unknown_commands++;
-                    stats.last_unknown_opcode = opcode;
-                    break;
+                    FailUnsupportedCommand(opcode);
+                    return false;
             }
         }
         malformed = true;

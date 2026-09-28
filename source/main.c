@@ -137,15 +137,15 @@ static void print_bottom_screen(PrintConsole *console,
                (unsigned int)title_flow->selected_slot + 1U);
         printf("\x1b[7;2HUpstream: %s\n",
                pb_runtime_state_name(runtime->state));
-        printf("\x1b[8;2Hboot_main linked; game loop active\n");
+        printf("\x1b[8;2HUpstream game loop: 30 Hz active\n");
         printf("\x1b[9;2HRes:%lu hit:%lu probe:%lu\n",
                (unsigned long)runtime->resources.count,
                (unsigned long)runtime->resources.hits,
                (unsigned long)runtime->resources.lookup_probes);
-        printf("\x1b[10;2HUpdates:%llu frames:%llu held:%llu\n",
+        printf("\x1b[10;2HUpdates:%llu frames:%llu pace:%llu\n",
                (unsigned long long)runtime->stats.updates,
                (unsigned long long)runtime->stats.frames_submitted,
-               (unsigned long long)runtime->stats.held_frames);
+               (unsigned long long)runtime->stats.pacing_waits);
         printf("\x1b[11;2HMode:%ld block:%lu warn:%lu pause:%d/%d\n",
                (long)runtime->stats.game_mode,
                (unsigned long)runtime->stats.unsupported_mode,
@@ -167,8 +167,10 @@ static void print_bottom_screen(PrintConsole *console,
             printf("\x1b[12;2HError: %.30s\n",
                    runtime->error != NULL ? runtime->error : "unknown");
             printf("\x1b[13;2HResource: %.27s\n",
-                   runtime->resources.error != NULL
-                       ? runtime->resources.error : "none");
+                   runtime->resources.failed_name[0] != '\0'
+                       ? runtime->resources.failed_name
+                       : (runtime->resources.error != NULL
+                              ? runtime->resources.error : "none"));
         }
         if (graphics_ready) {
             printf("\x1b[15;2HGPU:%llu Draws:%llu Tris:%llu\n",
@@ -566,13 +568,17 @@ int main(int argc, char **argv) {
                 runtime_failure_logged = true;
                 pb_log_write(&log, PB_LOG_ERROR, "runtime-launch",
                              "startup failed stage=\"%s\" error=%s "
-                             "resource=%s",
+                             "resource_error=%s asset=%s archive=%s",
                              runtime.startup_stage != NULL
                                  ? runtime.startup_stage : "unknown",
                              runtime.error != NULL
                                  ? runtime.error : "unknown",
                              runtime.resources.error != NULL
-                                 ? runtime.resources.error : "none");
+                                 ? runtime.resources.error : "none",
+                             runtime.resources.failed_name[0] != '\0'
+                                 ? runtime.resources.failed_name : "none",
+                             pb_o2r_result_name(
+                                 runtime.resources.archive_error));
             }
             state.redraw_bottom = true;
         } else if (runtime.state == PB_RUNTIME_ACTIVE &&
@@ -582,11 +588,16 @@ int main(int argc, char **argv) {
                 if (!runtime_failure_logged) {
                     runtime_failure_logged = true;
                     pb_log_write(&log, PB_LOG_ERROR, "runtime",
-                                 "update failed: %s resource=%s",
+                                 "update failed: %s resource_error=%s "
+                                 "asset=%s archive=%s",
                                  runtime.error != NULL
                                      ? runtime.error : "unknown",
                                  runtime.resources.error != NULL
-                                     ? runtime.resources.error : "none");
+                                     ? runtime.resources.error : "none",
+                                 runtime.resources.failed_name[0] != '\0'
+                                     ? runtime.resources.failed_name : "none",
+                                 pb_o2r_result_name(
+                                     runtime.resources.archive_error));
                 }
             }
         } else if (title_flow_ready &&
@@ -733,6 +744,9 @@ int main(int argc, char **argv) {
                      "legacy_unsafe_modulate_batches=%llu "
                      "texture_fallbacks=%llu "
                      "texture_evictions=%llu "
+                     "depth_clears=%llu copy_rectangles=%llu "
+                     "framebuffer_copies=%llu framebuffer_samples=%llu "
+                     "framebuffer_failures=%lu "
                      "unknown=%lu missing=%lu malformed=%lu "
                      "clipped=%lu huge=%lu culled=%lu invalid=%lu "
                      "game_viewport=%ld,%ld,%lu,%lu "
@@ -757,6 +771,11 @@ int main(int argc, char **argv) {
                          runtime_gfx_stats->legacy_unsafe_modulate_batches,
                      (unsigned long long)runtime_gfx_stats->texture_fallbacks,
                      (unsigned long long)runtime_gfx_stats->texture_evictions,
+                     (unsigned long long)runtime_gfx_stats->depth_target_clears,
+                     (unsigned long long)runtime_gfx_stats->copy_rectangles,
+                     (unsigned long long)runtime_gfx_stats->framebuffer_copies,
+                     (unsigned long long)runtime_gfx_stats->framebuffer_samples,
+                     (unsigned long)runtime_gfx_stats->framebuffer_failures,
                      (unsigned long)runtime_gfx_stats->unknown_commands,
                      (unsigned long)runtime_gfx_stats->missing_resources,
                      (unsigned long)runtime_gfx_stats->malformed_lists,

@@ -18,9 +18,13 @@ static uint8_t titleCopyrightPixels[256U * 32U * 4U];
 static uint8_t worldMapPixels[8U * 8U * 4U];
 static uint8_t worldActorPixels[8U * 8U * 4U];
 static PBWorldTriangle worldTriangle;
+static uint64_t hashedResourceKey;
+static void *hashedResourceData;
 
 extern "C" void *ResourceGetDataByName(const char *) { return nullptr; }
-extern "C" void *ResourceGetDataByCrc(uint64_t) { return nullptr; }
+extern "C" void *ResourceGetDataByCrc(uint64_t hash) {
+    return hash == hashedResourceKey ? hashedResourceData : nullptr;
+}
 extern "C" const char *ResourceGetNameByCrc(uint64_t) { return nullptr; }
 extern "C" size_t pb_runtime_resource_payload_size(const char *) { return 0U; }
 extern "C" uint32_t pb_runtime_resource_texture_type(const char *) {
@@ -149,6 +153,44 @@ static bool testRuntimeDisplayList(PBGfxApi3DS *api) {
     return true;
 }
 
+static bool testRuntimeRejectsMissingAndUnsupportedInputs(PBGfxApi3DS *api) {
+    static const char missingPath[] = "__OTR__missing/display_list";
+    const PBRuntimeGfx missingResource[] = {
+        { .words = { UINT32_C(0x27000000),
+                     reinterpret_cast<uintptr_t>(missingPath) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, missingResource));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->missing_resources == before.missing_resources + 1U);
+    CHECK(after->frames_rendered == before.frames_rendered);
+
+    const PBRuntimeGfx unsupported[] = {
+        { .words = { UINT32_C(0x99000000), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    before = *after;
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, unsupported));
+    after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->unknown_commands == before.unknown_commands + 1U);
+    CHECK(after->last_unknown_opcode == UINT32_C(0x99));
+    CHECK(after->frames_rendered == before.frames_rendered);
+
+    const PBRuntimeGfx unsupportedCustomState[] = {
+        { .words = { UINT32_C(0x39000001), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    before = *after;
+    CHECK(!pb_gfx_api_3ds_render_display_list(api,
+                                              unsupportedCustomState));
+    after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after->unknown_commands == before.unknown_commands + 1U);
+    CHECK(after->last_unknown_opcode == UINT32_C(0x39));
+    CHECK(after->frames_rendered == before.frames_rendered);
+    return true;
+}
+
 static bool testRuntimeMovememViewportUsesBottomLeftOrigin(PBGfxApi3DS *api) {
     /* An N64 Vp_t as delivered by G_MOVEMEM/G_MV_VIEWPORT: scale/translate
      * are int16_t[4], quarter-pixel translate, half-pixel*2 scale. This uses
@@ -174,6 +216,86 @@ static bool testRuntimeMovememViewportUsesBottomLeftOrigin(PBGfxApi3DS *api) {
     CHECK(after->game_viewport_y == 140);
     CHECK(after->game_viewport_w == 320U);
     CHECK(after->game_viewport_h == 100U);
+    return true;
+}
+
+static bool testRuntimeRejectsMalformedStateCommands(PBGfxApi3DS *api) {
+    const PBRuntimeGfx badVertex[] = {
+        { .words = { UINT32_C(0x02140000), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    PBRuntimeGfxStats before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, badVertex));
+    CHECK(pb_gfx_api_3ds_runtime_stats(api)->malformed_lists ==
+          before.malformed_lists + 1U);
+
+    const PBRuntimeGfx unsupportedState[] = {
+        { .words = { UINT32_C(0xDB0A0000), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, unsupportedState));
+    CHECK(pb_gfx_api_3ds_runtime_stats(api)->unknown_commands ==
+          before.unknown_commands + 1U);
+
+    const PBRuntimeGfx invalidLight[] = {
+        { .words = { UINT32_C(0xDC00000A), 0U } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    before = *pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, invalidLight));
+    CHECK(pb_gfx_api_3ds_runtime_stats(api)->missing_resources ==
+          before.missing_resources + 1U);
+    return true;
+}
+
+static bool testRuntimeHashedMovememUsesTorchMetadata(PBGfxApi3DS *api) {
+    struct N64ViewportTest {
+        int16_t scale[4];
+        int16_t translate[4];
+    };
+    static const N64ViewportTest viewport = {
+        { 400, 160, 0, 0 },
+        { 600, 400, 0, 0 },
+    };
+    alignas(N64ViewportTest) uint8_t resource[sizeof(viewport)] = {};
+    std::memcpy(resource, &viewport, sizeof(viewport));
+    hashedResourceKey = UINT64_C(0x0123456789ABCDEF);
+    hashedResourceData = resource;
+    const PBRuntimeGfx displayList[] = {
+        /* index=G_MV_VIEWPORT, offset=0, source is the OVPT payload base. */
+        { .words = { UINT32_C(0x42000000), UINT32_C(0x08000000) } },
+        { .words = { UINT32_C(0x01234567), UINT32_C(0x89ABCDEF) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(pb_gfx_api_3ds_render_display_list(api, displayList));
+    const PBRuntimeGfxStats *after = pb_gfx_api_3ds_runtime_stats(api);
+    CHECK(after != nullptr);
+    CHECK(after->game_viewport_x == 90);
+    CHECK(after->game_viewport_y == 100);
+    CHECK(after->game_viewport_w == 200U);
+    CHECK(after->game_viewport_h == 80U);
+
+    const PBRuntimeGfx offsetViewport[] = {
+        { .words = { UINT32_C(0x42000000), UINT32_C(0x08000100) } },
+        { .words = { UINT32_C(0x01234567), UINT32_C(0x89ABCDEF) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, offsetViewport));
+    const PBRuntimeGfx unsupportedMove[] = {
+        { .words = { UINT32_C(0x42000000), UINT32_C(0x0C000000) } },
+        { .words = { UINT32_C(0x01234567), UINT32_C(0x89ABCDEF) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, unsupportedMove));
+    const PBRuntimeGfx misalignedLight[] = {
+        { .words = { UINT32_C(0x42000000), UINT32_C(0x0A310000) } },
+        { .words = { UINT32_C(0x01234567), UINT32_C(0x89ABCDEF) } },
+        { .words = { UINT32_C(0xDF000000), 0U } },
+    };
+    CHECK(!pb_gfx_api_3ds_render_display_list(api, misalignedLight));
+    hashedResourceKey = 0U;
+    hashedResourceData = nullptr;
     return true;
 }
 
@@ -1096,7 +1218,10 @@ static bool testCBoundary() {
     CHECK(stats->frames_presented == 7);
     CHECK(stats->draw_calls == 16);
     CHECK(testRuntimeDisplayList(api));
+    CHECK(testRuntimeRejectsMissingAndUnsupportedInputs(api));
     CHECK(testRuntimeMovememViewportUsesBottomLeftOrigin(api));
+    CHECK(testRuntimeRejectsMalformedStateCommands(api));
+    CHECK(testRuntimeHashedMovememUsesTorchMetadata(api));
     CHECK(testRuntimeInvertYMapsPositiveClipYToBottom(api));
     CHECK(testRuntimeScissorConvertsN64Rect(api));
     CHECK(testRuntimeMatrixPopUnderflow(api));

@@ -9,11 +9,23 @@ uint32_t linearSpaceFree(void) { return PB_MIB(16); }
 void *linearAlloc(size_t size) { return malloc(size); }
 void linearFree(void *p) { free(p); }
 uint64_t osGetTime(void) { return 0; }
+void is_debug_panic(const char *message) { (void)message; abort(); }
 extern int test_upstream_resource_consumer(void);
 size_t Sprite_GetPlayerSize(int32_t index);
 void *Sprite_LoadPlayer(int32_t index, void *destination, size_t size);
 size_t Sprite_GetNPCSize(int32_t index);
 void *Sprite_LoadNPC(int32_t index, void *destination, size_t size);
+bool PB3DS_RuntimeValidatePlayerRasterTables(void);
+int32_t Sprite_GetPlayerRasterHeader(int32_t *output);
+int32_t Sprite_GetPlayerRasterSets(int32_t *output, int32_t maximum);
+int32_t Sprite_GetPlayerRasterLoadDescriptors(int32_t sprite_index,
+                                               int32_t start,
+                                               int32_t *output,
+                                               int32_t count);
+void *Sprite_GetPlayerRasterPath(int32_t sprite_index,
+                                 int32_t raster_index);
+int32_t Sprite_LoadPlayerRaster(int32_t offset, void *destination,
+                                int32_t size);
 void GameEngine_InvalidateTextureCache(const void *address) { (void)address; }
 
 typedef struct {
@@ -54,8 +66,33 @@ int main(int argc, char **argv) {
     const size_t index_used = memory.snapshot.class_used[PB_MEMORY_SCENE];
     assert(pb_runtime_resource_exists("__OTR__le/blob"));
     assert(!pb_runtime_resource_exists("absent"));
+    assert(strcmp(resources.failed_name, "absent") == 0);
     assert(resources.count == 0);
     assert(memory.snapshot.class_used[PB_MEMORY_SCENE] == index_used);
+    const PBRuntimeResourceRequirement valid_requirements[] = {
+        { "le/blob", 0x4F424C42U, 0U, 0U, 0U, 4U },
+        { "le/texture", 0x4F544558U, 2U, 1U, 1U, 2U },
+    };
+    assert(pb_runtime_resources_validate(
+        &resources, valid_requirements,
+        sizeof(valid_requirements) / sizeof(valid_requirements[0])));
+    const PBRuntimeResourceRequirement wrong_type = {
+        "le/blob", 0x4F565458U, 0U, 0U, 0U, 1U
+    };
+    assert(!pb_runtime_resources_validate(&resources, &wrong_type, 1U));
+    assert(strcmp(resources.error, "required resource contract mismatch") == 0);
+    assert(strcmp(resources.failed_name, "le/blob") == 0);
+    const PBRuntimeResourceRequirement wrong_dimensions = {
+        "le/texture", 0x4F544558U, 2U, 2U, 1U, 2U
+    };
+    assert(!pb_runtime_resources_validate(&resources, &wrong_dimensions, 1U));
+    assert(strcmp(resources.failed_name, "le/texture") == 0);
+    const PBRuntimeResourceRequirement missing_requirement = {
+        "required/missing", 0U, 0U, 0U, 0U, 0U
+    };
+    assert(!pb_runtime_resources_validate(&resources, &missing_requirement, 1U));
+    assert(strcmp(resources.error, "required resource missing") == 0);
+    assert(strcmp(resources.failed_name, "required/missing") == 0);
     for (unsigned i = 0; i < 2; i++) {
         const char *tag = i ? "be" : "le";
         char name[96];
@@ -78,6 +115,30 @@ int main(int argc, char **argv) {
         assert(texture && texture[0] == 0xF8 && texture[1] == 1);
         assert(GameEngine_GetTexWidthExact(name) == 1 && GameEngine_GetTexHeightExact(name) == 1);
         assert(GameEngine_GetSizeExact(name) == 2);
+        snprintf(name, sizeof(name), "%s/matrix", tag);
+        uint32_t *matrix = ResourceGetDataByName(name);
+        assert(matrix && matrix[0] == UINT32_C(0x00010000) &&
+               matrix[5] == UINT32_C(0x00010000) &&
+               matrix[10] == UINT32_C(0x00010000) &&
+               matrix[15] == UINT32_C(0x00010000));
+        assert(ResourceGetSizeByName(name) == 16 * sizeof(*matrix));
+        snprintf(name, sizeof(name), "%s/vec3s", tag);
+        int16_t *vectors = ResourceGetDataByName(name);
+        assert(vectors && vectors[0] == -1 && vectors[1] == 2 &&
+               vectors[2] == -300 && vectors[3] == 32767 &&
+               vectors[4] == -32768 && vectors[5] == 1234);
+        assert(ResourceGetSizeByName(name) == 6 * sizeof(*vectors));
+        snprintf(name, sizeof(name), "%s/lights", tag);
+        uint8_t *lights = ResourceGetDataByName(name);
+        assert(lights && lights[0] == 0 && lights[7] == 7 &&
+               lights[8] == 8 && lights[23] == 23);
+        assert(ResourceGetSizeByName(name) == 24);
+        snprintf(name, sizeof(name), "%s/viewport", tag);
+        int16_t *viewport = ResourceGetDataByName(name);
+        assert(viewport && viewport[0] == 640 && viewport[1] == 480 &&
+               viewport[2] == 511 && viewport[4] == 640 &&
+               viewport[5] == 480);
+        assert(ResourceGetSizeByName(name) == 16);
         snprintf(name, sizeof(name), "%s/dl", tag);
         PBRuntimeGfx *dl = ResourceGetDataByName(name);
         assert(dl && dl[0].words.w0 == 0x33000000 && dl[1].words.w0 == 0xDF123456);
@@ -96,7 +157,9 @@ int main(int argc, char **argv) {
     const size_t used = memory.snapshot.class_used[PB_MEMORY_SCENE];
     const char *bad[] = {
         "bad/version", "bad/type", "bad/blob", "bad/vertex",
-        "bad/texture", "bad/dl", "bad/truncated-span-dl",
+        "bad/texture", "bad/matrix", "bad/lights", "bad/viewport",
+        "bad/vec3s",
+        "bad/dl", "bad/truncated-span-dl",
         "absent", "", NULL
     };
     for (unsigned i = 0; i < sizeof(bad)/sizeof(bad[0]); i++) {
@@ -107,9 +170,80 @@ int main(int argc, char **argv) {
     /* Calls the pinned Shape_LoadFromRawData, not a local reimplementation. */
     assert(test_upstream_resource_consumer() == 0);
 
+    /* Startup walks the actual shape tree and recursively decodes every
+     * Fast3D hash plus map texture/palette before mutating game state. */
+    assert(pb_runtime_resources_validate_shape_closure(
+        &resources, "shapes/closure_shape", "runtime_tex"));
+    assert(!pb_runtime_resources_validate_shape_closure(
+        &resources, "shapes/missing_shape", "runtime_tex"));
+    assert(strcmp(resources.error, "shape closure resource missing") == 0);
+    assert(strcmp(resources.failed_name,
+                  "shapes/missing_shape/dlist_20") == 0);
+    assert(!pb_runtime_resources_validate_shape_closure(
+        &resources, "shapes/wrong_shape", "runtime_tex"));
+    assert(strcmp(resources.error,
+                  "display-list hash resource type mismatch") == 0);
+    assert(strcmp(resources.failed_name, "le/blob") == 0);
+    assert(!pb_runtime_resources_validate_shape_closure(
+        &resources, "shapes/hash_missing_shape", "runtime_tex"));
+    assert(strcmp(resources.error, "display-list hash resource missing") == 0);
+    assert(strncmp(resources.failed_name, "crc64:", 6) == 0);
+    assert(!pb_runtime_resources_validate_shape_closure(
+        &resources, "shapes/closure_shape", "missing_tex"));
+    assert(strcmp(resources.error, "shape closure resource missing") == 0);
+    assert(strcmp(resources.failed_name,
+                  "textures/missing_tex/test_tex") == 0);
+
     /* Player image offsets can point outside the sprite blob because their
-     * fallback data lives in player_raster_image_data.  An indexed external
-     * raster path must be retained without decoding the texture early. */
+     * pixels live in indexed companion resources. The size/preflight pass
+     * decodes and validates that companion, and retains its cache-owned name. */
+    assert(PB3DS_RuntimeValidatePlayerRasterTables());
+    int32_t raster_header[3] = { -1, -1, -1 };
+    assert(Sprite_GetPlayerRasterHeader(raster_header) == 1);
+    assert(raster_header[0] == 0 && raster_header[1] == 0 &&
+           raster_header[2] == 0x100);
+    int32_t raster_sets[4] = { -1, -1, -1, -1 };
+    assert(Sprite_GetPlayerRasterSets(raster_sets, 4) == 4);
+    assert(raster_sets[0] == 0 && raster_sets[1] == 1 &&
+           raster_sets[2] == 2 && raster_sets[3] == 3);
+    int32_t descriptor = 0;
+    assert(Sprite_GetPlayerRasterLoadDescriptors(1, raster_sets[1],
+                                                  &descriptor, 1) == 1);
+    assert((uint32_t)descriptor == UINT32_C(0x00200120));
+    assert(Sprite_GetPlayerRasterLoadDescriptors(1, raster_sets[1] + 1,
+                                                  &descriptor, 1) == 0);
+    assert(Sprite_GetPlayerRasterLoadDescriptors(1, raster_sets[1],
+                                                  &descriptor, 2) == 0);
+    uint8_t raster_copy[32];
+    memset(raster_copy, 0xFF, sizeof(raster_copy));
+    assert(Sprite_LoadPlayerRaster(0x20, raster_copy,
+                                   sizeof(raster_copy)) == 1);
+    for (size_t index = 0U; index < sizeof(raster_copy); index++) {
+        assert(raster_copy[index] == 0U);
+    }
+    assert(Sprite_LoadPlayerRaster(-1, raster_copy,
+                                   sizeof(raster_copy)) == 0);
+    assert(Sprite_LoadPlayerRaster(13 * 0x20 - 16, raster_copy,
+                                   sizeof(raster_copy)) == 0);
+    assert(Sprite_GetPlayerRasterPath(1, 0) ==
+           (void *)pb_runtime_resource_otr_name(
+               "sprites/player_sprite_1_raster_0"));
+    assert(Sprite_GetPlayerRasterPath(2, 0) == NULL);
+    uint32_t *player_sets =
+        ResourceGetDataByName("sprites/player_raster_sets");
+    assert(player_sets != NULL);
+    const uint32_t saved_player_set = player_sets[2];
+    player_sets[2] = 0;
+    assert(!PB3DS_RuntimeValidatePlayerRasterTables());
+    player_sets[2] = saved_player_set;
+    uint32_t *player_descriptors =
+        ResourceGetDataByName("sprites/player_raster_load_descriptors");
+    assert(player_descriptors != NULL);
+    const uint32_t saved_descriptor = player_descriptors[0];
+    player_descriptors[0] = 0;
+    assert(!PB3DS_RuntimeValidatePlayerRasterTables());
+    player_descriptors[0] = saved_descriptor;
+    assert(PB3DS_RuntimeValidatePlayerRasterTables());
     const size_t player_size = Sprite_GetPlayerSize(1);
     assert(player_size != 0);
     void *player = malloc(player_size);
@@ -122,16 +256,14 @@ int main(int argc, char **argv) {
     assert(raster != NULL && raster->width == 8 && raster->height == 8);
     assert(strcmp(raster->image,
                   "__OTR__sprites/player_sprite_1_raster_0") == 0);
+    assert(raster->image ==
+           (void *)pb_runtime_resource_otr_name(
+               "sprites/player_sprite_1_raster_0"));
     free(player);
 
     /* A normal player raster whose companion texture is missing must fail
      * conversion instead of retaining its out-of-allocation ROM offset. */
-    const size_t missing_player_size = Sprite_GetPlayerSize(2);
-    assert(missing_player_size != 0);
-    player = malloc(missing_player_size);
-    assert(player != NULL);
-    assert(Sprite_LoadPlayer(2, player, missing_player_size) == NULL);
-    free(player);
+    assert(Sprite_GetPlayerSize(2) == 0);
 
     /* Torch deliberately omits 255x255 placeholder rasters. Keep those as a
      * null, non-drawable entry without inventing pixels or an invalid pointer. */
@@ -146,38 +278,39 @@ int main(int argc, char **argv) {
            raster->height == UINT8_MAX && raster->image == NULL);
     free(player);
 
+    /* A valid texture envelope with dimensions that disagree with the sprite
+     * raster metadata is also rejected during conversion. */
+    assert(Sprite_GetPlayerSize(4) == 0);
+
     const char *raster_name = "sprites/player_sprite_1_raster_0";
     const uint64_t raster_hash = test_path_crc64(raster_name);
     const size_t resource_count_before_crc = resources.count;
     uint8_t *raster_data = ResourceGetDataByCrc(raster_hash);
-    assert(raster_data != NULL && raster_data[0] == 'x');
+    assert(raster_data != NULL && raster_data[0] == 0x12);
     const size_t probes_before_cached_crc = resources.lookup_probes;
     const size_t hits_before_cached_crc = resources.hits;
     assert(strcmp(ResourceGetNameByCrc(raster_hash), raster_name) == 0);
     assert(resources.hits == hits_before_cached_crc + 1);
     assert(resources.lookup_probes - probes_before_cached_crc < 8);
-    assert(resources.count == resource_count_before_crc + 1);
+    assert(resources.count == resource_count_before_crc);
+    assert(ResourceGetDataByCrc(UINT64_C(0x123456789ABCDEF0)) == NULL);
+    assert(strcmp(resources.error, "resource hash lookup failed") == 0);
+    assert(strcmp(resources.failed_name,
+                  "crc64:123456789abcdef0") == 0);
 
     /* The same out-of-range image offset remains invalid for an NPC sprite,
      * whose fallback pixels must be local to its own blob. */
-    const size_t npc_size = Sprite_GetNPCSize(1);
-    assert(npc_size != 0);
-    void *npc = malloc(npc_size);
-    assert(npc != NULL && Sprite_LoadNPC(1, npc, npc_size) == NULL);
-    free(npc);
+    assert(Sprite_GetNPCSize(1) == 0);
 
     /* Component command byte ranges are validated before exposing pointers. */
-    const size_t bad_component_size = Sprite_GetNPCSize(2);
-    assert(bad_component_size != 0);
-    npc = malloc(bad_component_size);
-    assert(npc != NULL &&
-           Sprite_LoadNPC(2, npc, bad_component_size) == NULL);
-    free(npc);
+    assert(Sprite_GetNPCSize(2) == 0);
     const size_t component_size = Sprite_GetNPCSize(3);
     assert(component_size != 0);
-    npc = malloc(component_size);
+    void *npc = malloc(component_size);
     assert(npc != NULL && Sprite_LoadNPC(3, npc, component_size) == npc);
     free(npc);
+    assert(Sprite_GetNPCSize(4) == 0); /* truncated embedded CI4 raster */
+    assert(Sprite_GetNPCSize(5) == 0); /* truncated embedded RGBA16 palette */
     pb_runtime_resources_clear(&resources);
     assert(resources.count == 0 && resources.head == NULL &&
            resources.index == NULL && resources.index_count == 0 &&

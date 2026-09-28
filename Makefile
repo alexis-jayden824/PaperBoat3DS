@@ -111,7 +111,7 @@ export _3DSXFLAGS     += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 	m6-budget-check m7-assets-test m8-input-test m9-renderer-test \
 	m10-graphics-test \
 	m11-frame-test m12-flow-test m12-layout-test m13-world-test \
-	m13-flash-test m13-core-check clean
+	m13-flash-test m13-resources-test m13-startup-test m13-core-check clean
 
 all: fetch-upstream m13-runtime-lib $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -163,7 +163,15 @@ m13-flash-test:
 	@HOST_CC="$(HOST_CC)" sh tools/test_runtime_flash.sh \
 		"$(BUILD)/m13-flash-tests"
 
-m13-world-test: fetch-upstream m13-flash-test
+m13-resources-test: fetch-upstream
+	@HOST_CC="$(HOST_CC)" sh tools/test_runtime_resources.sh \
+		"$(BUILD)/m13-resource-tests"
+
+m13-startup-test:
+	@sh tools/test_runtime_startup.sh
+
+m13-world-test: fetch-upstream m13-flash-test m13-resources-test \
+		m13-startup-test
 	@python3 tests/test_m13_runtime_generation.py \
 		tools/generate_m13_runtime.py "$(PAPERBOAT_ROOT)"
 	@HOST_CC="$(HOST_CC)" sh tools/test_world_boot.sh \
