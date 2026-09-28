@@ -24,6 +24,8 @@ jobs:
         uses: actions/checkout@v5
       - name: Compile pinned PaperBoat runtime closure
         run: make m13-game-core
+      - name: Probe PaperBoat runtime link
+        run: make -j2 M13_LINK_GAME=1
 
   host-contract:
     runs-on: ubuntu-latest

@@ -54,6 +54,12 @@ LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 LIBS     := -lcitro3d -lctru -lm
 LIBDIRS  := $(CTRULIB)
 
+ifeq ($(M13_LINK_GAME),1)
+CFLAGS   += -DPB3DS_GAME_OBJECTS
+LDFLAGS  += -Wl,--undefined=boot_main
+LIBS     := $(M13_GAME_BUILD)/libpaperboat-m13.a $(LIBS)
+endif
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT  := $(CURDIR)/$(TARGET)
@@ -88,7 +94,7 @@ export _3DSXDEPS      := $(OUTPUT).smdh
 	m8-input-test m9-fs-test m10-loop-test m11-gfx-test m12-title-test \
 	m13-runtime-test clean
 
-all: $(BUILD)/paperboat_config.h $(BUILD)
+all: $(if $(filter 1,$(M13_LINK_GAME)),m13-game-core) $(BUILD)/paperboat_config.h $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 packages: all
