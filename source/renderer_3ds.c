@@ -836,8 +836,8 @@ bool pb_renderer_3ds_create_framebuffer(PBRenderer3DS *renderer,
     entry->width = width;
     entry->height = height;
     entry->filter = PB_FILTER_NEAREST;
-    entry->wrap_s = PB_WRAP_CLAMP;
-    entry->wrap_t = PB_WRAP_CLAMP;
+    entry->wrap_s = PB_WRAP_CLAMP_TO_EDGE;
+    entry->wrap_t = PB_WRAP_CLAMP_TO_EDGE;
     entry->sampler_set = true;
     entry->main_capture = main_capture;
     entry->allocated = true;
