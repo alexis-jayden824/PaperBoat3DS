@@ -1,4 +1,5 @@
 #include "pb3ds/runtime_resources.h"
+#include "pb3ds/gbi_command_span.h"
 #include "pb3ds/gbi_resolve.h"
 #include "pb3ds/texture.h"
 
@@ -49,12 +50,6 @@ static size_t loaded_bucket(const PBRuntimeResources *r, uint64_t hash) {
     return r->loaded_bucket_count != 0U
                ? (size_t)(hash % r->loaded_bucket_count)
                : 0U;
-}
-
-/* The second word-pair of these commands is payload, never an opcode. */
-static bool expanded(uint8_t op) {
-    return op == 0x20 || op == 0x31 || op == 0x32 || op == 0x33 ||
-           op == 0x35 || op == 0x36 || op == 0x42;
 }
 
 void pb_runtime_resources_init(PBRuntimeResources *r, PBArchive *archive,
@@ -201,15 +196,16 @@ static bool decode(PBRuntimeResources *r, PBRuntimeResource *entry,
         payload += 8;
         bytes -= 8;
         bool ended = false;
-        for (size_t offset = 0; offset < bytes; offset += 8) {
+        for (size_t offset = 0; offset < bytes;) {
             const uint8_t op = (uint8_t)(word(payload + offset, big) >> 24);
-            if (expanded(op)) {
-                if (bytes - offset < 16) return false;
-                offset += 8;
-            } else if (op == 0xDF) {
-                ended = offset + 8 == bytes;
+            const size_t span = pb_gbi_command_span(op);
+            if (span == 0U || span > (bytes - offset) / 8U) return false;
+            const size_t command_bytes = span * 8U;
+            if (op == 0xDF) {
+                ended = offset + command_bytes == bytes;
                 break;
             }
+            offset += command_bytes;
         }
         if (!ended || bytes / 8 > SIZE_MAX / sizeof(PBRuntimeGfx)) return false;
         allocation = bytes / 8 * sizeof(PBRuntimeGfx);

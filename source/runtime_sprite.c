@@ -195,14 +195,20 @@ static size_t convert_sprite(const uint8_t *source, size_t source_size,
         if (path != NULL) {
             rasters[i].image = (void *)path;
         } else {
-            /* Player raster offsets address the separate raster-image blob,
-             * not necessarily bytes embedded in this sprite blob.  The
-             * upstream cache loader resolves those offsets before drawing.
-             * NPC raster offsets, by contrast, must remain local. */
-            if (!player_sprite && input->image_offset >= source_size) {
-                return 0U;
+            /* Player images normally live in split companion resources.  A
+             * 255x255 entry is Torch's intentional no-image placeholder; a
+             * normal-sized missing companion is an incomplete archive, not
+             * permission to retain a pointer outside this allocation. */
+            if (input->image_offset >= source_size) {
+                if (player_sprite && input->width == UINT8_MAX &&
+                    input->height == UINT8_MAX) {
+                    rasters[i].image = NULL;
+                } else {
+                    return 0U;
+                }
+            } else {
+                rasters[i].image = raw + input->image_offset;
             }
-            rasters[i].image = raw + input->image_offset;
         }
         rasters[i].width = input->width;
         rasters[i].height = input->height;
@@ -241,7 +247,12 @@ static size_t convert_sprite(const uint8_t *source, size_t source_size,
                              sizeof(N64SpriteComponent))) return 0U;
             const N64SpriteComponent *input =
                 (const N64SpriteComponent *)(source + offsets[i]);
-            if (input->command_offset >= source_size) return 0U;
+            if (input->command_size <= 0 ||
+                (input->command_size & 1) != 0 ||
+                !range_valid(source_size, input->command_offset,
+                             (size_t)input->command_size)) {
+                return 0U;
+            }
             NativeSpriteComponent *output =
                 (NativeSpriteComponent *)component_cursor;
             output->commands = raw + input->command_offset;

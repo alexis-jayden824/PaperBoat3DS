@@ -83,10 +83,22 @@ int main(int argc, char **argv) {
         assert(dl && dl[0].words.w0 == 0x33000000 && dl[1].words.w0 == 0xDF123456);
         assert(dl[1].words.w1 == 0xCAFEBABE && dl[2].words.w0 == 0xDF000000);
         assert(ResourceGetSizeByName(name) == 3 * sizeof(*dl));
+        snprintf(name, sizeof(name), "%s/span-dl", tag);
+        dl = ResourceGetDataByName(name);
+        assert(dl && dl[0].words.w0 == 0xE4000000 &&
+               dl[1].words.w0 == 0xDF111111 &&
+               dl[3].words.w0 == 0x3E000001 &&
+               dl[4].words.w0 == 0xDF000000 &&
+               dl[5].words.w0 == 0xDF000000);
+        assert(ResourceGetSizeByName(name) == 6 * sizeof(*dl));
     }
     const size_t count = resources.count;
     const size_t used = memory.snapshot.class_used[PB_MEMORY_SCENE];
-    const char *bad[] = {"bad/version", "bad/type", "bad/blob", "bad/vertex", "bad/texture", "bad/dl", "absent", "", NULL};
+    const char *bad[] = {
+        "bad/version", "bad/type", "bad/blob", "bad/vertex",
+        "bad/texture", "bad/dl", "bad/truncated-span-dl",
+        "absent", "", NULL
+    };
     for (unsigned i = 0; i < sizeof(bad)/sizeof(bad[0]); i++) {
         assert(ResourceGetDataByName(bad[i]) == NULL && resources.error != NULL);
         assert(resources.count == count && memory.snapshot.class_used[PB_MEMORY_SCENE] == used);
@@ -112,8 +124,31 @@ int main(int argc, char **argv) {
                   "__OTR__sprites/player_sprite_1_raster_0") == 0);
     free(player);
 
+    /* A normal player raster whose companion texture is missing must fail
+     * conversion instead of retaining its out-of-allocation ROM offset. */
+    const size_t missing_player_size = Sprite_GetPlayerSize(2);
+    assert(missing_player_size != 0);
+    player = malloc(missing_player_size);
+    assert(player != NULL);
+    assert(Sprite_LoadPlayer(2, player, missing_player_size) == NULL);
+    free(player);
+
+    /* Torch deliberately omits 255x255 placeholder rasters. Keep those as a
+     * null, non-drawable entry without inventing pixels or an invalid pointer. */
+    const size_t placeholder_player_size = Sprite_GetPlayerSize(3);
+    assert(placeholder_player_size != 0);
+    player = malloc(placeholder_player_size);
+    assert(player != NULL);
+    assert(Sprite_LoadPlayer(3, player, placeholder_player_size) == player);
+    rasters = ((void ***)player)[0];
+    raster = rasters[0];
+    assert(raster != NULL && raster->width == UINT8_MAX &&
+           raster->height == UINT8_MAX && raster->image == NULL);
+    free(player);
+
     const char *raster_name = "sprites/player_sprite_1_raster_0";
     const uint64_t raster_hash = test_path_crc64(raster_name);
+    const size_t resource_count_before_crc = resources.count;
     uint8_t *raster_data = ResourceGetDataByCrc(raster_hash);
     assert(raster_data != NULL && raster_data[0] == 'x');
     const size_t probes_before_cached_crc = resources.lookup_probes;
@@ -121,7 +156,7 @@ int main(int argc, char **argv) {
     assert(strcmp(ResourceGetNameByCrc(raster_hash), raster_name) == 0);
     assert(resources.hits == hits_before_cached_crc + 1);
     assert(resources.lookup_probes - probes_before_cached_crc < 8);
-    assert(resources.count == player_resource_count + 1);
+    assert(resources.count == resource_count_before_crc + 1);
 
     /* The same out-of-range image offset remains invalid for an NPC sprite,
      * whose fallback pixels must be local to its own blob. */
@@ -129,6 +164,19 @@ int main(int argc, char **argv) {
     assert(npc_size != 0);
     void *npc = malloc(npc_size);
     assert(npc != NULL && Sprite_LoadNPC(1, npc, npc_size) == NULL);
+    free(npc);
+
+    /* Component command byte ranges are validated before exposing pointers. */
+    const size_t bad_component_size = Sprite_GetNPCSize(2);
+    assert(bad_component_size != 0);
+    npc = malloc(bad_component_size);
+    assert(npc != NULL &&
+           Sprite_LoadNPC(2, npc, bad_component_size) == NULL);
+    free(npc);
+    const size_t component_size = Sprite_GetNPCSize(3);
+    assert(component_size != 0);
+    npc = malloc(component_size);
+    assert(npc != NULL && Sprite_LoadNPC(3, npc, component_size) == npc);
     free(npc);
     pb_runtime_resources_clear(&resources);
     assert(resources.count == 0 && resources.head == NULL &&

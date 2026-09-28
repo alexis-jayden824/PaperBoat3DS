@@ -13,15 +13,28 @@ def resource(kind, body, big=False, version=0):
     return h + body
 
 
-def sparse_player_sprite():
+def sparse_player_sprite(width=8, height=8):
     """One raster whose image lives in the separate player-raster archive."""
     blob = bytearray()
     blob += struct.pack('<IIii', 20, 28, 1, 1)
     blob += struct.pack('<I', 0xFFFFFFFF)  # no animations (back sprite)
     blob += struct.pack('<II', 36, 0xFFFFFFFF)
     blob += struct.pack('<II', 44, 0xFFFFFFFF)
-    blob += struct.pack('<IBBbb', 0x1000, 8, 8, 0, -1)
+    blob += struct.pack('<IBBbb', 0x1000, width, height, 0, -1)
     blob += bytes(32)  # embedded palette fallback
+    return resource(0x4F424C42, struct.pack('<I', len(blob)) + blob)
+
+
+def component_sprite(command_offset=52, command_size=2):
+    """One animation/component, with caller-controlled command bounds."""
+    blob = bytearray()
+    blob += struct.pack('<IIii', 24, 28, 1, 1)
+    blob += struct.pack('<II', 32, 0xFFFFFFFF)
+    blob += struct.pack('<I', 0xFFFFFFFF)  # no rasters
+    blob += struct.pack('<I', 0xFFFFFFFF)  # no palettes
+    blob += struct.pack('<II', 40, 0xFFFFFFFF)
+    blob += struct.pack('<Ihhhh', command_offset, command_size, 0, 0, 0)
+    blob += struct.pack('<H', 1)  # wait one frame
     return resource(0x4F424C42, struct.pack('<I', len(blob)) + blob)
 
 
@@ -41,14 +54,36 @@ for compression, label in ((zipfile.ZIP_STORED, 'stored'), (zipfile.ZIP_DEFLATED
             # A hash payload with the ENDDL high byte must not terminate the list.
             d = bytes((4, 0, 0, 0, 0, 0, 0, 0)) + struct.pack(endian+'IIIIII', 0x33000000, 0, 0xDF123456, 0xCAFEBABE, 0xDF000000, 0)
             z.writestr(f'{tag}/dl', resource(0x4F444C54, d, big))
+            # Multi-packet payload words that resemble ENDDL must never be
+            # decoded as opcodes. TEXRECT consumes three packets and READFB
+            # consumes two before the real terminator.
+            span = bytes((4, 0, 0, 0, 0, 0, 0, 0)) + struct.pack(
+                endian + 'IIIIIIIIIIII',
+                0xE4000000, 0,
+                0xDF111111, 0x22222222,
+                0x33333333, 0x44444444,
+                0x3E000001, 0x1000,
+                0xDF000000, 0x00400020,
+                0xDF000000, 0,
+            )
+            z.writestr(f'{tag}/span-dl', resource(0x4F444C54, span, big))
         z.writestr('bad/version', resource(0x4F424C42, b'', version=1))
         z.writestr('bad/type', resource(0x12345678, b''))
         z.writestr('bad/blob', resource(0x4F424C42, struct.pack('<I', 100)+b'x'))
         z.writestr('bad/vertex', resource(0x4F565458, struct.pack('<I', 2)+bytes(16)))
         z.writestr('bad/texture', resource(0x4F544558, struct.pack('<IIII', 2, 2, 2, 1)+b'x'))
         z.writestr('bad/dl', resource(0x4F444C54, bytes((4, 0, 0, 0, 0, 0, 0, 0))+struct.pack('<II', 0x33000000, 0)))
+        z.writestr('bad/truncated-span-dl', resource(
+            0x4F444C54,
+            bytes((4, 0, 0, 0, 0, 0, 0, 0)) +
+            struct.pack('<II', 0x3E000001, 0x1000),
+        ))
         z.writestr('sprites/player_sprite_1', sparse_player_sprite())
         # Metadata presence is enough for sprite conversion; the texture must
         # remain unloaded until the renderer actually requests it.
         z.writestr('sprites/player_sprite_1_raster_0', resource(0x4F424C42, struct.pack('<I', 1)+b'x'))
+        z.writestr('sprites/player_sprite_2', sparse_player_sprite())
+        z.writestr('sprites/player_sprite_3', sparse_player_sprite(255, 255))
         z.writestr('sprites/npc_sprite_001', sparse_player_sprite())
+        z.writestr('sprites/npc_sprite_002', component_sprite(53, 4))
+        z.writestr('sprites/npc_sprite_003', component_sprite())
