@@ -31,6 +31,9 @@ def main() -> int:
         heap = (output / "runtime_heaps.c").read_text(encoding="utf-8")
         modes = (output / "runtime_game_modes.c").read_text(encoding="utf-8")
         title = (output / "runtime_title_screen.c").read_text(encoding="utf-8")
+        nusys = (output / "runtime_nusys_overrides.c").read_text(
+            encoding="utf-8"
+        )
 
     mac_00_binds = mac_00.split("EvtScript N(EVS_BindExitTriggers) = {", 1)[1]
     mac_00_binds = mac_00_binds.split("\n};", 1)[0]
@@ -66,7 +69,24 @@ def main() -> int:
     check("TitleScreen_TimeLeft = 480;" not in title,
           "generated title must replace the upstream demo timeout")
 
-    print("M13 runtime generation checks passed: 17")
+    check('#include "pb3ds/runtime_flash.h"' in nusys,
+          "NuSystem flash wrappers must use the bounded persistence service")
+    check("pb_flash_store_read" in nusys,
+          "generated flash reads must use the persistence service")
+    check("pb_flash_store_write_page" in nusys,
+          "generated flash writes must be direct page writes")
+    check("pb_flash_store_erase_sector" in nusys,
+          "generated sector erase must alter persistent storage")
+    check("u8 flash[FLASH_TOTAL_SIZE]" not in nusys,
+          "flash writes must not allocate 128 KiB on the ARM stack")
+    check("(void) page_num;\n    // No-op" not in nusys,
+          "flash erase must not silently succeed without erasing")
+    check("page_num > total_pages - n_pages" in nusys,
+          "flash reads must reject out-of-range and overflowed requests")
+    check("dramAddr == NULL" in nusys,
+          "flash wrappers must reject null transfer buffers")
+
+    print("M13 runtime generation checks passed: 25")
     return 0
 
 

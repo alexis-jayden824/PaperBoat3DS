@@ -38,6 +38,7 @@ jobs:
             tools/generate_m13_runtime.py .cache/upstream/PaperBoat
           HOST_CC=cc sh tools/test_world_boot.sh build/host-m13-world
           HOST_CC=cc sh tools/test_world_scene.sh build/host-m13-scene
+          HOST_CC=cc sh tools/test_runtime_flash.sh build/host-m13-flash
           SANITIZE=1 HOST_CC=cc sh tools/test_runtime_resources.sh \
             build/host-m13-resources
 

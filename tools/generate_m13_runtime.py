@@ -154,6 +154,69 @@ NUSYS_ABI_SIGNATURES = {
 }
 
 
+NUSYS_FLASH_STATE = r'''// Flash emulation state
+#define FLASH_PAGE_BYTES PB3DS_FLASH_PAGE_BYTES
+#define FLASH_SECTOR_BYTES PB3DS_FLASH_SECTOR_BYTES
+#define FLASH_TOTAL_SIZE PB3DS_FLASH_TOTAL_BYTES
+static u8 sFlashWriteBuf[FLASH_PAGE_BYTES];
+static char sSaveFilePath[512];
+static s32 sSaveFilePathValid = 0;
+'''
+
+NUSYS_FLASH_ERASE = r'''s32 osFlashSectorErase(u32 page_num) {
+    const u32 pages_per_sector = FLASH_SECTOR_BYTES / FLASH_PAGE_BYTES;
+    const u32 total_pages = FLASH_TOTAL_SIZE / FLASH_PAGE_BYTES;
+    flash_ensure_path();
+    if (!sSaveFilePathValid || page_num % pages_per_sector != 0 ||
+        page_num > total_pages - pages_per_sector) {
+        return -1;
+    }
+    return pb_flash_store_erase_sector(
+        sSaveFilePath, page_num * FLASH_PAGE_BYTES) ? 0 : -1;
+}
+'''
+
+NUSYS_FLASH_READ = r'''s32 osFlashReadArray(OSIoMesg* mb, s32 priority, u32 page_num, void* dramAddr, u32 n_pages, OSMesgQueue* mq) {
+    (void) mb;
+    (void) priority;
+    (void) mq;
+
+    const u32 total_pages = FLASH_TOTAL_SIZE / FLASH_PAGE_BYTES;
+    flash_ensure_path();
+    if (!sSaveFilePathValid || dramAddr == NULL || n_pages > total_pages ||
+        page_num > total_pages - n_pages) {
+        return -1;
+    }
+    return pb_flash_store_read(sSaveFilePath, page_num * FLASH_PAGE_BYTES,
+                               dramAddr, n_pages * FLASH_PAGE_BYTES) ? 0 : -1;
+}
+'''
+
+NUSYS_FLASH_BUFFER = r'''s32 osFlashWriteBuffer(OSIoMesg* mb, s32 priority, void* dramAddr, OSMesgQueue* mq) {
+    (void) mb;
+    (void) priority;
+    (void) mq;
+
+    if (dramAddr == NULL) {
+        return -1;
+    }
+    memcpy(sFlashWriteBuf, dramAddr, FLASH_PAGE_BYTES);
+    return 0;
+}
+'''
+
+NUSYS_FLASH_WRITE = r'''s32 osFlashWriteArray(u32 page_num) {
+    const u32 total_pages = FLASH_TOTAL_SIZE / FLASH_PAGE_BYTES;
+    flash_ensure_path();
+    if (!sSaveFilePathValid || page_num >= total_pages) {
+        return -1;
+    }
+    return pb_flash_store_write_page(
+        sSaveFilePath, page_num * FLASH_PAGE_BYTES, sFlashWriteBuf) ? 0 : -1;
+}
+'''
+
+
 HEAP_STORAGE = r'''#include "common.h"
 
 /*
@@ -233,6 +296,111 @@ def main() -> int:
                 f"pinned nusys_overrides.c signature changed: {upstream_signature}"
             )
         nusys = nusys.replace(upstream_signature, platform_signature)
+
+    include_marker = '#include "nu/nusys.h"\n'
+    if nusys.count(include_marker) != 1:
+        raise SystemExit("pinned nusys include block changed")
+    nusys = nusys.replace(
+        include_marker,
+        include_marker + '#include "pb3ds/runtime_flash.h"\n',
+    )
+
+    flash_state = r'''// Flash emulation state
+#define FLASH_PAGE_BYTES 128
+#define FLASH_TOTAL_SIZE 0x20000 // 128KB, matches N64 Flash chip
+static u8 sFlashWriteBuf[FLASH_PAGE_BYTES];
+static char sSaveFilePath[512];
+static s32 sSaveFilePathValid = 0;
+'''
+    flash_erase = r'''s32 osFlashSectorErase(u32 page_num) {
+    (void) page_num;
+    // No-op: game always writes immediately after erase, and
+    // osFlashWriteArray does a full read-modify-write.
+    return 0;
+}
+'''
+    flash_read = r'''s32 osFlashReadArray(OSIoMesg* mb, s32 priority, u32 page_num, void* dramAddr, u32 n_pages, OSMesgQueue* mq) {
+    (void) mb;
+    (void) priority;
+    (void) mq;
+
+    flash_ensure_path();
+
+    u32 offset = page_num * FLASH_PAGE_BYTES;
+    u32 size = n_pages * FLASH_PAGE_BYTES;
+
+    // Pre-fill with zeros (like a blank Flash chip)
+    memset(dramAddr, 0, size);
+
+    if (!sSaveFilePathValid) {
+        return 0;
+    }
+
+    FILE* fp = fopen(sSaveFilePath, "rb");
+    if (fp == NULL) {
+        return 0;
+    }
+
+    fseek(fp, offset, SEEK_SET);
+    fread(dramAddr, 1, size, fp);
+    fclose(fp);
+    return 0;
+}
+'''
+    flash_buffer = r'''s32 osFlashWriteBuffer(OSIoMesg* mb, s32 priority, void* dramAddr, OSMesgQueue* mq) {
+    (void) mb;
+    (void) priority;
+    (void) mq;
+
+    memcpy(sFlashWriteBuf, dramAddr, FLASH_PAGE_BYTES);
+    return 0;
+}
+'''
+    flash_write = r'''s32 osFlashWriteArray(u32 page_num) {
+    flash_ensure_path();
+    if (!sSaveFilePathValid) {
+        return -1;
+    }
+
+    u32 offset = page_num * FLASH_PAGE_BYTES;
+    if (offset + FLASH_PAGE_BYTES > FLASH_TOTAL_SIZE) {
+        return -1;
+    }
+
+    // Read existing save file (or start from zeros)
+    u8 flash[FLASH_TOTAL_SIZE];
+    memset(flash, 0, sizeof(flash));
+
+    FILE* fp = fopen(sSaveFilePath, "rb");
+    if (fp != NULL) {
+        fread(flash, 1, FLASH_TOTAL_SIZE, fp);
+        fclose(fp);
+    }
+
+    // Patch the page with the write buffer contents
+    memcpy(flash + offset, sFlashWriteBuf, FLASH_PAGE_BYTES);
+
+    // Write back the full file
+    fp = fopen(sSaveFilePath, "wb");
+    if (fp == NULL) {
+        return -1;
+    }
+    fwrite(flash, 1, FLASH_TOTAL_SIZE, fp);
+    fclose(fp);
+    return 0;
+}
+'''
+    flash_replacements = (
+        (flash_state, NUSYS_FLASH_STATE),
+        (flash_erase, NUSYS_FLASH_ERASE),
+        (flash_read, NUSYS_FLASH_READ),
+        (flash_buffer, NUSYS_FLASH_BUFFER),
+        (flash_write, NUSYS_FLASH_WRITE),
+    )
+    for upstream_block, replacement in flash_replacements:
+        if nusys.count(upstream_block) != 1:
+            raise SystemExit("pinned nusys flash implementation changed")
+        nusys = nusys.replace(upstream_block, replacement)
 
     # These definitions are replaced as one unit so a future upstream storage
     # change cannot silently bypass the 3DS allocator-alignment contract.
