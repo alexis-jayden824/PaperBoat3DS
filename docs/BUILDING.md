@@ -119,13 +119,14 @@ on GitHub.
 ## CI
 
 `.github/workflows/3ds-build.yml` runs both host contracts, cross-compiles
-inside the pinned digest, packages CCI and CIA, and uploads
-`PaperBoat3DS-Refolded` (short name, plus a `.zip`). Each push also updates
-the **CI packages (latest)** prerelease (`ci-latest` tag) so the `.3dsx` /
-`.3ds` / `.cia` files can be downloaded from **Releases** when the GitHub
-app does not expose Actions artifact download.
+inside the pinned digest, packages CCI and CIA, and uploads a short Actions
+artifact named `pb3ds` (a single `.zip`). Each push updates the **latest**
+GitHub Release (`ci-latest`) so phones can download from **Releases** —
+the iOS app does not download Actions artifacts.
+
+https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest/download/pb3ds.zip
 
 ```sh
 # Desktop CLI
-gh run download -R alexis-jayden824/PaperBoat3DS -n PaperBoat3DS-Refolded
+gh run download -R alexis-jayden824/PaperBoat3DS -n pb3ds
 ```

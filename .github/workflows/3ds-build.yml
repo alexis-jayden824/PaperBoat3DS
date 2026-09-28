@@ -161,20 +161,15 @@ jobs:
               raise SystemExit("empty zip")
           PY
           test -s PaperBoat3DS-Refolded.zip
+          cp -f PaperBoat3DS-Refolded.zip pb3ds.zip
       - name: Upload Homebrew artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: PaperBoat3DS-Refolded
+          name: pb3ds
           if-no-files-found: error
           compression-level: 0
           path: |
-            PaperBoat3DS-Refolded.zip
-            PaperBoat3DS-Refolded.3dsx
-            PaperBoat3DS-Refolded.3ds
-            PaperBoat3DS-Refolded.cia
-            PaperBoat3DS-Refolded.elf
-            PaperBoat3DS-Refolded.smdh
-            build/build-info.txt
+            pb3ds.zip
           retention-days: 14
       - name: Publish packages on Releases
         if: github.event_name == 'push'
@@ -183,16 +178,24 @@ jobs:
           tag_name: ci-latest
           name: CI packages (latest)
           draft: false
-          prerelease: true
-          make_latest: false
+          prerelease: false
+          make_latest: true
+          fail_on_unmatched_files: true
           files: |
+            pb3ds.zip
             PaperBoat3DS-Refolded.zip
             PaperBoat3DS-Refolded.3dsx
             PaperBoat3DS-Refolded.3ds
             PaperBoat3DS-Refolded.cia
           body: |
             Rolling CI packages from `${{ github.sha }}` (`${{ github.ref_name }}`).
-            Use **Releases** if the Actions artifact download is missing on mobile.
+
+            **iPhone:** GitHub's app cannot download Actions artifacts. Open
+            [Releases / latest](https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest)
+            and download `pb3ds.zip`.
+
+            Direct zip:
+            https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest/download/pb3ds.zip
 
             - Homebrew Launcher: `PaperBoat3DS-Refolded.3dsx`
             - Folium / CCI: `PaperBoat3DS-Refolded.3ds`

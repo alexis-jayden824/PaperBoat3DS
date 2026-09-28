@@ -32,6 +32,20 @@ archives are not in git or CI.
 
 **M0 acceptance still needs a Folium/hardware boot.** This is not Paper Mario.
 
+## Download (iPhone)
+
+The GitHub iOS app cannot download Actions artifacts (the long SHA-named
+row under a workflow run). Use **Releases** instead:
+
+https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest
+
+Download **`pb3ds.zip`**, open it in Files, then share `.3ds` into Folium
+or `.cia` into FBI. Direct file:
+
+https://github.com/alexis-jayden824/PaperBoat3DS/releases/latest/download/pb3ds.zip
+
+If Safari asks you to sign in, that is expected for this private repo.
+
 ## Build
 
 See [docs/BUILDING.md](docs/BUILDING.md).
