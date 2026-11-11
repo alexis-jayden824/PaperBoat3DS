@@ -1,54 +1,89 @@
-# Exvius3DS — FFBE Offline for New 3DS XL
+# Exvius3DS — FFBE Offline **recomp** for New 3DS XL
 
-Milestone plan to rebuild [Final Fantasy Brave Exvius Offline](https://github.com/Elvlin/exvius-offline) as a **native** dual-screen homebrew client for New Nintendo 3DS XL.
+Milestone plan to **recompile** the original Final Fantasy Brave Exvius Global client onto New Nintendo 3DS XL, using [exvius-offline](https://github.com/Elvlin/exvius-offline) as the offline/data oracle — not as an APK to “port,” and not as a clean-room rewrite of game systems.
 
-Unofficial fan preservation project. Not affiliated with Square Enix or gumi.
+Unofficial fan preservation. Not affiliated with Square Enix or gumi.
+
+## What “recomp” means here
+
+This project follows the **decomp → recompile → platform shim** lineage (SM64/OoT decomps, Ship of Harkinian, N64Recomp hosts), adapted to FFBE’s real binary:
+
+| Recomp principle | Exvius3DS application |
+| --- | --- |
+| Original game code is authority | Recover logic from Global v9.0.0 `libgame.so` (Cocos2d-x client) |
+| Recompile for a new host | Build recovered C/C++ against **devkitARM / ARM11**, not Android NDK |
+| Replace platform backends | Android / JNI / GLES / Java crypto / HTTPS → **libctru · citro3d/citro2d · ndsp · SDMC** |
+| Keep data contracts | MST tables, CPK packs, obfuscated request surface stay as the client expects |
+| Enhancements are layered | Dual-screen layout, native controls, QoL, offline economy = **mods on the recomp**, not a second game |
+
+### Explicit non-goals
+
+- Running the Android APK, ART, Chaquopy, or Frida on 3DS
+- Static ARM64→ARM11 binary translation as the primary path (wrong ABI/OS; treat as research-only if ever attempted)
+- Clean-room reimplementation of battle/party/gacha when the original client code can be recovered instead
+
+### Upstream inputs
+
+| Input | Role |
+| --- | --- |
+| Global v9.0.0 `libgame.so` (+ optional `armeabi-v7a` build if present) | Recomp source of truth for client logic |
+| exvius-offline `source/server/` + `FFBE_SERVER_CONTRACT.md` | Offline endpoint oracle; becomes **in-process stubs** the recompiled client calls |
+| exvius-offline downloaded MST/CPK (~14.5 GB) | User-owned data; PC-baked for 3DS memory/VRAM |
+| exvius-offline Frida/JS offline UX notes | Spec for enhancement mods (season filters, Lapis replay, etc.) |
+
+---
 
 ## Binding technical direction
 
-### What exvius-offline actually is
+### Architecture
 
-Elvlin/exvius-offline is **not** a portable engine. It is:
-
-- The original Global **Cocos2d-x** Android client (`libgame.so`, v9.0.0)
-- An embedded **local Python game server** (Chaquopy) that answers the client's ~211 encrypted JSON endpoints
-- Frida/JS hooks for offline UX (season summons, Vortex filters, Lapis replay, etc.)
-- ~**14.5 GB** of MST tables + CPK resource packs downloaded once to the phone
-
-That stack **cannot run on 3DS**. Exvius3DS is therefore a **native reimplementation**:
+```
+┌─────────────────────────────────────────────────────────┐
+│  Recompiled FFBE client (recovered from libgame.so)     │
+│  scenes · battle · units · UI graph · MST/CPK consumers │
+└─────────────┬───────────────────────────┬───────────────┘
+              │                           │
+              ▼                           ▼
+┌──────────────────────────┐   ┌──────────────────────────┐
+│  Platform shim (3DS)     │   │  Offline service stubs   │
+│  gfx · audio · input     │   │  (exvius-offline server  │
+│  fs · threads · crypto   │   │   logic, in-process)     │
+│  dual-screen presenter   │   └──────────────────────────┘
+└──────────────────────────┘
+              │
+              ▼
+┌──────────────────────────┐
+│  PC-baked .ex3 packs     │  user-owned; never in git
+│  (downsampled CPK/MST)   │
+└──────────────────────────┘
+```
 
 | Layer | Choice |
 | --- | --- |
-| Client | Custom C/C++ scenes + citro2d/citro3d UI/renderer |
-| Game logic | In-process C++ ports of offline `server/` domains (player, battle, gacha, events, raids-solo) |
-| Data | PC bake: MST/CPK → Exvius3DS packs (`.ex3`); user-owned, never committed |
-| Oracle | Open `source/server/` + `FFBE_SERVER_CONTRACT.md` + golden fixtures |
-| Package | `.3dsx` canonical; `.cia` optional |
-| Hardware | **New 3DS / New 3DS XL exclusive** (804 MHz, L2 cache, extended app RAM) |
-| Evidence | No milestone claimed without Folium and/or hardware logs |
+| Game code | Recovered / decompiled from `libgame.so`, recompiled for ARM11 |
+| Platform | New 3DS exclusive: 804 MHz, L2, extended app RAM; `.3dsx` canonical |
+| Graphics | Cocos/GLES draw path → citro3d/citro2d shim; dual-screen presenter as first-class host API |
+| Network | Original HTTPS+AES client path retargeted to **local stubs** (no Python on device) |
+| Data | PC bake of user MST/CPK → `.ex3`; streaming + LRU for 6 MB VRAM |
+| Evidence | Milestone complete only with Folium and/or hardware proof |
 
-### Dual-screen UX contract
+### Dual-screen UX (enhancement layer on the recomp)
 
-| Screen | Role | Content |
-| --- | --- | --- |
-| Top 400×240 | Stage / spectacle | World, battle field, summon cinema, cutscenes, unit showcase. No touch. Minimal HUD. |
-| Bottom 320×240 | Command / chrome | Touch-first FFBE panels: skill deck, items, party strip, menus, maps, filters. |
+Original FFBE is single-screen phone UI. The recomp host **splits presentation**:
 
-**Rule:** top is spectacle, bottom is agency. Phone full-screen menus become bottom sheets with live top-screen preview.
+| Screen | Role |
+| --- | --- |
+| Top 400×240 | Stage — world, battle field, cutscenes, summons (original scene root, scaled) |
+| Bottom 320×240 | Command chrome — touch menus, skill deck, party strip, maps, filters |
 
-Controls baseline:
-
-- Circle Pad — cursor / scroll / camera
-- D-pad — discrete menu nav
-- A confirm · B back · X/Y context
-- L / R / ZL / ZR — hotkeys (items, esper, auto, skip)
+Phone full-screen menus become bottom sheets with live top-screen preview. Circle Pad / shoulders / ZL/ZR are host input maps into the recompiled HID path.
 
 ### Legal / asset policy
 
-- Repository is **source-only**
-- No Square Enix APK, MST, CPK, artwork, audio, or fonts in git or CI
-- Users generate `.ex3` packs on PC from data they already own via exvius-offline (or equivalent legal personal copy)
-- Same evidence discipline as PaperBoat3DS: claims require reproducible proof
+- **Source-only** repository: no APK, `libgame.so`, MST, CPK, artwork, audio, or fonts in git/CI
+- Contributors work from **user-owned** Global v9.0.0 / exvius-offline data locally
+- CI uses synthetic fixtures and public contracts only
+- Distribution: source + host tools; players bring their own data
 
 ---
 
@@ -56,186 +91,182 @@ Controls baseline:
 
 | Phase | Sprints | Goal | Exit criteria |
 | --- | --- | --- | --- |
-| **P0 Foundations** | S0–S1 | Toolchain, legal boundary, dual-screen shell | Boots `.3dsx` on n3DS XL; both screens + diagnostics |
-| **P1 Data & State** | S2–S3 | PC pipeline + local-authoritative services | Decoded MST subset + SDMC save load/store |
-| **P2 Native GUI** | S4–S5 | FFBE-styled dual-screen UI + party systems | Home / Units / Equip / Party usable offline |
-| **P3 Playable Core** | S6–S8 | Battle + exploration + story vertical slice | Clear Chapter 1 end-to-end on hardware |
-| **P4 Systems Breadth** | S9–S11 | Summon, Vortex, raids-solo, Espers, Vision Cards | Offline loop matches exvius-offline feature set |
-| **P5 Native Feel** | S12–S14 | QoL, performance, hardware matrix, release | Ship-ready New 3DS XL homebrew (source-only) |
+| **P0 Recomp foundation** | S0–S2 | Binary inventory, host bootstrap, Cocos/platform shim skeleton | Recompiled stub links on 3DS; both screens clear |
+| **P1 Bring-up** | S3–S5 | FS/assets, crypto/JNI elimination, dual-screen presenter + input | First recovered scene frame from baked data |
+| **P2 Offline loop** | S6–S7 | In-process stubs + login/home from recompiled client | Reach Home with offline account on hardware |
+| **P3 Playable core** | S8–S10 | Party/equip paths + battle + exploration via original code | Chapter 1 clear on n3DS XL |
+| **P4 Parity & mods** | S11–S12 | Summon/Vortex/raids + dual-screen QoL enhancements | Offline feature parity + native feel checklist |
+| **P5 Ship** | S13–S14 | Perf, coverage, hardware matrix, release | Source-only RC |
 
 ---
 
 ## Sprint backlog
 
-### S0 — Architecture lock & spikes
+### S0 — Recomp methodology & binary inventory
 
 **Deliverables**
 
-- Architecture Decision Records (native client; no Android/Python on device)
-- Memory / VRAM / SD budgets for New 3DS XL exclusive
-- Map of offline `server/` modules → in-process C++ services
-- Spike: decode one MST table; blit one downsampled sprite on top screen
+- ADR: decomp→recompile (not clean rewrite; not APK run)
+- Inventory Global v9.0.0 ABIs (`arm64-v8a`, `armeabi-v7a` if present); symbol/export map; Cocos2d-x version pin
+- Partition `libgame.so` into: game logic · cocos engine · android/jni · crypto/net · third-party
+- Toolchain: Ghidra/IDA workflow docs; matching unit policy; “do not commit binaries”
 
-**Acceptance:** ADRs merged; spike Folium capture attached.
+**Acceptance:** Published inventory + ADR; one recovered function builds as a host-side unit test.
 
-### S1 — Bootstrap + dual-screen shell
-
-**Deliverables**
-
-- devkitARM Makefile; libctru, citro2d, citro3d, ndsp
-- New 3DS profile: 804 MHz, L2, extended RAM
-- Frame loop clearing both screens; APT lifecycle; diagnostics log to SDMC
-- Packages: `.3dsx`, `.3ds` (QA), `.cia` (optional)
-
-**Acceptance:** Boots on Folium + real n3DS XL; clean exit.
-
-### S2 — PC data pipeline (MST / CPK → `.ex3`)
+### S1 — New 3DS host bootstrap
 
 **Deliverables**
 
-- Host tools: MST decode, CPK extract, texture downsample/atlas/swizzle
-- Chapter / season pack layout on SDMC
-- Hash manifests; synthetic CI fixtures (no SE content)
-- Streaming residency notes (VRAM 6 MB, linear RAM budgets)
+- devkitARM app shell; 804 MHz + L2 + extended RAM
+- Diagnostics, SDMC log, APT lifecycle
+- Empty platform ABI the recompiled client will call (`ex3_plat_*`)
 
-**Acceptance:** Pipeline produces user-owned packs; CI validates format only.
+**Acceptance:** `.3dsx` boots Folium + n3DS XL; both screens painted.
 
-### S3 — Local game services + saves
-
-**Deliverables**
-
-- C++ ports of critical offline domains: account/login, user info, inventory, battle start/end, rewards
-- Atomic SDMC saves with versioning / recovery
-- Golden tests against offline server fixtures
-
-**Acceptance:** Create → login → get user info → persist round-trip.
-
-### S4 — Custom FFBE GUI shell
+### S2 — Cocos / renderer shim v0
 
 **Deliverables**
 
-- Design tokens matching FFBE (panel chrome, blues/golds, readable 240p type)
-- Scene stack: Title → Home → Units → Shop stubs
-- Bottom-screen touch chrome; top-screen stage preview
-- Input map including shoulders
+- Minimal subset of cocos2d-x types the recovered client needs (Director, Scene, Node, Sprite, Label stubs as required)
+- GLES-like draw → citro2d/citro3d translation
+- Texture upload path with size clamps for PICA (≤1024², swizzle)
 
-**Acceptance:** Navigate shell on hardware with readable dual-screen UI.
+**Acceptance:** Diagnostic cocos-like scene graph draws on top screen from host code.
 
-### S5 — Units, equipment, party
-
-**Deliverables**
-
-- Roster browser, unit detail, equip / materia, party of 6
-- Friend-unit stub as AI ally (offline)
-- Capacity limits; stat calculation vs reference
-
-**Acceptance:** Build a legal party from fixture data; stats match oracle.
-
-### S6 — Battle engine v1
+### S3 — File system, MST, CPK bring-up
 
 **Deliverables**
 
-- Turn order, skills, LB, items, status, damage formula subset
-- Victory / defeat / drops
-- Top = battle field; bottom = command deck
-- Suspend / resume mid-battle
+- Replace Android asset/APK zip paths with SDMC/RomFS
+- Recover MST decrypt/load paths from client; wire to PC-baked tables
+- CPK/resource open with streaming; chapter pack layout
+- Host PC tools: bake + hash manifest (user-owned input)
 
-**Acceptance:** Win a scripted 3-wave encounter at ≥20 FPS on n3DS XL.
+**Acceptance:** Recompiled loader reads a fixture MST + one texture pack on device.
 
-### S7 — World / town / exploration
-
-**Deliverables**
-
-- Map streaming, collision, NPC interact, chests, transitions
-- Bottom mini-map + action prompts
-
-**Acceptance:** Town → dungeon node without softlock; streaming within VRAM budget.
-
-### S8 — Story vertical slice
+### S4 — JNI / Java surface elimination
 
 **Deliverables**
 
-- Dialogue / cutscene compositor
-- Mission select; offline AP / energy rules
-- Chapter 1 through first dungeon boss
+- Catalog every JNI / `LapisJNI` / `HttpURLConnection` / SharedPreferences call site
+- Native replacements: AES-CBC envelope (double-pad aware per contract), prefs→SDMC, threading
+- Kill Android-only branches behind `ex3_plat` shims
 
-**Acceptance:** Fresh save → clear Chapter 1 boss on hardware; evidence log.
+**Acceptance:** Link of recovered client objects with **zero** unresolved Android/JNI symbols.
 
-### S9 — Summon / banners offline
-
-**Deliverables**
-
-- Season / collab banner picker (exvius-offline parity)
-- Rates UI; multi-pull; unit grant; Lapis economy
-
-**Acceptance:** Pull Standard + one seasonal banner; inventory updates.
-
-### S10 — Vortex, events, solo raids
+### S5 — Input + dual-screen presenter (first host mod)
 
 **Deliverables**
 
-- Event filters (Permanent / Seasons / Collab / Other)
-- Raid shared-progress adjusted for solo
-- Replay Lapis stage objectives
+- Map 3DS HID → original touch/virtual-pad model
+- Presenter: assign scene layers to top vs bottom; safe areas for 400×240 / 320×240
+- Touch on bottom; Circle Pad cursor; shoulder hotkey hooks (stubs)
 
-**Acceptance:** Clear one event stage + one raid reward ladder offline.
+**Acceptance:** Navigate a recovered menu scene with dual-screen split on hardware.
 
-### S11 — Espers, Vision Cards, advanced
-
-**Deliverables**
-
-- Esper unlock / grid / equip
-- Vision Card equip
-- Shops + former cash bundles for Lapis
-- Login calendar
-- Colosseum lite only if schedule allows
-
-**Acceptance:** Esper + VC affect combat; Lapis bundle purchase; daily login advances.
-
-### S12 — QoL & native feel pass
+### S6 — Offline service stubs (exvius-offline oracle)
 
 **Deliverables**
 
-- Shoulder macros; auto-battle presets; dual-pane inspect
-- Quick party dock; text scale; colorblind-safe UI
-- Home / sleep lifecycle; battery-aware frame pacing
+- Retarget client HTTP+AES transport to in-process dispatch
+- Port critical offline server handlers to C++ stubs: connect, user info, feature switches, resource version lies
+- Golden tests: stub responses match exvius-offline fixtures for the boot chain
 
-**Acceptance:** Playtest checklist marks “feels handheld-native” on n3DS XL.
+**Acceptance:** Recompiled client completes connect/login against stubs in host tests + on device.
 
-### S13 — Perf, memory, content breadth
+### S7 — Title → Home vertical bring-up
 
 **Deliverables**
 
-- Frame budgets; texture LRU; SD streaming
-- Chapter / season coverage matrix
-- Crash telemetry; known-issue triage
+- Boot through Connect / download-skip / Title / Home using recovered scenes
+- Dual-screen Home chrome (bottom nav, top showcase)
+- Save path on SDMC (recovered format or versioned wrapper)
 
-**Acceptance:** Stable 20–30 FPS combat; no OOM on long session.
+**Acceptance:** Fresh offline account reaches Home on n3DS XL; Folium + hardware evidence.
+
+### S8 — Units / equipment / party (recovered paths)
+
+**Deliverables**
+
+- Exercise original unit/equip/party UI and model code under dual-screen presenter
+- Fix only shim/host bugs; prefer client fidelity over redesign
+- Stat/calc golden tests vs offline oracle
+
+**Acceptance:** Build a party of 6 from user data; enter quest select.
+
+### S9 — Battle bring-up (recovered combat)
+
+**Deliverables**
+
+- Mission start/end + battle scene through original code
+- Bottom command deck mapping; top battle field
+- Suspend/resume; ≥20 FPS target on n3DS XL
+
+**Acceptance:** Win a scripted early-game encounter on hardware.
+
+### S10 — Exploration + Chapter 1 slice
+
+**Deliverables**
+
+- World/town/dungeon streaming via recovered map paths + baked packs
+- Dialogue/cutscene presenter
+- Chapter 1 through first major boss
+
+**Acceptance:** Fresh save → Chapter 1 boss clear on n3DS XL.
+
+### S11 — Offline parity systems
+
+**Deliverables**
+
+- Summon banners (season/collab picker), Vortex filters, solo raid progress, Lapis replay objectives — behavior from exvius-offline, invoked through recompiled client + stubs
+- Espers / Vision Cards along recovered equip paths
+- Shops + Lapis bundles; login calendar
+
+**Acceptance:** Offline loop parity checklist green for targeted seasons.
+
+### S12 — Native QoL enhancement pack
+
+**Deliverables** (host mods, not client rewrites unless required)
+
+- Dual-pane inspect; shoulder macros; auto-battle presets
+- Quick party dock; readable 240p scaling; colorblind-safe options
+- Battery frame pacing; sleep/home safety
+
+**Acceptance:** “Feels native to n3DS XL” playtest checklist passed.
+
+### S13 — Performance, memory, coverage
+
+**Deliverables**
+
+- VRAM/linear LRU; SD streaming; frame budgets
+- Long-session soak; coverage ledger across story packs in scope
+- Crash diagnostics
+
+**Acceptance:** Stable 20–30 FPS combat; no OOM on soak; coverage ledger updated.
 
 ### S14 — Hardware matrix & release
 
 **Deliverables**
 
-- n3DS XL / LL validation matrix
-- Reproducible `.3dsx` build; source-only tag
-- Compatibility notes; no SE assets in release artifacts
+- n3DS XL/LL validation matrix
+- Reproducible source release; bake-tool docs; no SE binaries in artifacts
 
 **Acceptance:** Owner-signed hardware evidence; RC tagged.
 
 ---
 
-## Native QoL (must-ship)
+## Native QoL (enhancement layer)
 
-| Feature | Intent |
+| Feature | Notes |
 | --- | --- |
-| Dual-pane inspect | Art/stats on top while equipping on bottom |
-| Shoulder macros | L items · R esper · ZL auto · ZR skip text |
-| Auto-battle presets | Bottom-screen saved AI loadouts |
-| Quick party dock | Swap units without leaving exploration |
-| Always-available Vortex | Season filters like exvius-offline |
-| Replay Lapis farms | Repeat stage objectives for Lapis |
-| Suspend-safe saves | APT home/sleep mid-battle & exploration |
-| Readable 240p UI | Large tap targets, high-contrast FFBE panels |
+| Dual-pane inspect | Host presenter: art/stats top, equip bottom |
+| Shoulder macros | Injected into recompiled input path |
+| Auto-battle presets | Bottom-screen host overlay |
+| Quick party dock | Host UI calling original party APIs |
+| Season Vortex / summons | Stub + UI parity with exvius-offline |
+| Replay Lapis farms | Offline stub behavior |
+| Suspend-safe saves | APT lifecycle in platform shim |
+| Readable 240p UI | Presenter scaling / hit targets |
 
 ---
 
@@ -243,25 +274,27 @@ Controls baseline:
 
 | Risk | Mitigation |
 | --- | --- |
-| 14.5 GB mobile assets vs 6 MB VRAM | PC bake: downsample, atlas, streamed tiles, LRU; chapter packs on SD |
-| Cocos Android client not portable | Reimplement; offline server + contract docs as oracle |
-| Combat / skill surface area | Vertical slice first; golden tests; expand by content priority |
-| Copyright / distribution | Source-only repo; user-owned data; never commit APK/MST/CPK |
-| Old 3DS too weak | New 3DS XL exclusive; Old 3DS out of scope |
+| `libgame.so` is huge, stripped, Android-bound | Partition early; shim Android edges; prefer `armeabi-v7a` recovery if available for closer ARM bring-up |
+| Matching decomp is slow | Prioritize boot→home→battle call chains; leave dead/social/IAP paths stubbed |
+| Cocos/GLES ≠ PICA | Narrow draw subset; atlas/downsample in bake; reject unsupported effects explicitly |
+| 14.5 GB assets vs 6 MB VRAM | Mandatory PC bake + streaming; chapter packs |
+| Offline server in Python | Reimplement stubs in C++ against contract + fixtures; never ship CPython on 3DS |
+| Legal exposure | Source-only; user-owned data; no binaries in git/CI |
 
 ---
 
-## Recommended first build order
+## First build order
 
-1. **S0 + S1** — lock architecture and ship a dual-screen shell.
-2. **S2 ∥ S3** — data pipeline in parallel with service stubs.
-3. **S4 → S5** — GUI and party before combat (FFBE is menu-heavy; bottom screen is the product).
-4. **S6 → S8** — battle, exploration, Chapter 1 vertical slice = first “fully playable” gate.
-5. **S9 → S14** — offline feature parity, native QoL, ship.
+1. **S0** lock recomp methodology + binary map  
+2. **S1–S2** host + cocos/gfx shim  
+3. **S3–S5** assets, JNI kill, dual-screen presenter  
+4. **S6–S7** offline stubs → Home (first “it boots as FFBE” gate)  
+5. **S8–S10** party → battle → Chapter 1 (first “playable recomp” gate)  
+6. **S11–S14** parity, QoL, ship  
 
-## Upstream references
+## References
 
-- [Elvlin/exvius-offline](https://github.com/Elvlin/exvius-offline) — offline Android preservation client + local server
-- `source/docs/analysis/FFBE_SERVER_CONTRACT.md` — client↔server surface inventory
-- [Hirurawa/ExviusReborn](https://github.com/Hirurawa/ExviusReborn) — clean-room systems notes (Godot; not a 3DS target)
-- PaperBoat3DS milestone/evidence discipline for 3DS homebrew delivery
+- [Elvlin/exvius-offline](https://github.com/Elvlin/exvius-offline) — offline data + local server oracle  
+- `source/docs/analysis/FFBE_SERVER_CONTRACT.md` — client↔server surface  
+- PaperBoat3DS — 3DS packaging/evidence discipline for a related recomp-style host  
+- Ship of Harkinian / N64Recomp — methodological analogues (platform shim + enhancements on original code)

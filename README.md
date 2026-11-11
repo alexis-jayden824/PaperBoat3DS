@@ -17,7 +17,7 @@ Pre-bootstrap. Development follows the documented M0-M24 roadmap on the `port/3d
 
 ## Related planning: Exvius3DS
 
-A separate milestone plan for a **native New 3DS XL** rebuild of [FFBE Offline](https://github.com/Elvlin/exvius-offline) (custom dual-screen GUI, offline feature parity, native QoL) lives in [`docs/EXVIUS3DS_ROADMAP.md`](docs/EXVIUS3DS_ROADMAP.md). That plan is a reimplementation roadmap — the Android Cocos client cannot run on 3DS.
+A separate milestone plan for an **FFBE Offline recomp** targeting New 3DS XL lives in [`docs/EXVIUS3DS_ROADMAP.md`](docs/EXVIUS3DS_ROADMAP.md). It recovers/recompiles Global `libgame.so` against a 3DS platform shim (with dual-screen + QoL as host enhancements). The Android APK/runtime is not the ship target.
 
 ## Legal asset policy
 
