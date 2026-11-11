@@ -52,6 +52,10 @@ export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export _3DSXDEPS := $(OUTPUT).smdh
 export _3DSXFLAGS += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 export LD := $(CC)
+export APP_TITLE APP_DESCRIPTION APP_AUTHOR
+ifeq ($(strip $(APP_ICON)),)
+export APP_ICON := $(CTRULIB)/default_icon.png
+endif
 
 .PHONY: all 3ds packages clean
 
@@ -79,7 +83,10 @@ clean:
 
 else
 
+# Force SMDH generation before 3dsxtool (3ds_rules %.3dsx: %.elf alone is not enough).
 all: $(OUTPUT).3dsx
+
+$(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS)
 
 $(OUTPUT).elf: $(OFILES)
 
