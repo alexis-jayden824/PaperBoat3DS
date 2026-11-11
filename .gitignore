@@ -13,6 +13,7 @@ exvius3ds/user_data/
 
 # Build products
 exvius3ds/build/
+exvius3ds/build3ds/
 exvius3ds/out/
 exvius3ds/exvius3ds-host.log
 exvius3ds-host.log

@@ -8,7 +8,8 @@ endif
 include $(DEVKITARM)/3ds_rules
 
 TARGET   := Exvius3DS
-BUILD    := build/3ds
+# Must be a single path component: recursive make compares $(BUILD) to $(notdir $(CURDIR)).
+BUILD    := build3ds
 SOURCES  := source
 INCLUDES := include
 ROMFS    := romfs

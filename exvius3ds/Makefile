@@ -46,10 +46,10 @@ test host-test: $(HOST_OUT)/test_crypto_envelope $(HOST_OUT)/test_plat_host $(HO
 	$(HOST_OUT)/test_bootstrap
 
 clean:
-	rm -rf $(HOST_OUT) $(ROOT)/build/3ds
+	rm -rf $(HOST_OUT) $(ROOT)/build3ds $(ROOT)/build/3ds
 	rm -f $(ROOT)/Exvius3DS.elf $(ROOT)/Exvius3DS.3dsx $(ROOT)/Exvius3DS.3ds \
 		$(ROOT)/Exvius3DS.cia $(ROOT)/Exvius3DS.smdh $(ROOT)/Exvius3DS.map \
-		$(ROOT)/exvius3ds-host.log
+		$(ROOT)/Exvius3DS-stripped.elf $(ROOT)/exvius3ds-host.log
 
 3ds packages:
 ifeq ($(strip $(DEVKITARM)),)
