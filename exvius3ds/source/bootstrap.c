@@ -51,7 +51,7 @@ Ex3PlatResult ex3_bootstrap_init(Ex3Bootstrap *boot, Ex3Plat *plat)
 
     ex3_logf(EX3_LOG_INFO, "%s %s sha=%s utc=%s", EX3_NAME, EX3_VERSION_STRING,
              EX3_BUILD_SHA, EX3_BUILD_UTC);
-    ex3_logf(EX3_LOG_INFO, "new3ds=%d boost=%d scene=s3-content",
+    ex3_logf(EX3_LOG_INFO, "new3ds=%d boost=%d scene=s4-jni-stubs",
              ex3_plat_is_new_3ds(plat) ? 1 : 0, ex3_plat_boost_enabled(plat) ? 1 : 0);
 
     boot->ready = true;

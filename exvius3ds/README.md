@@ -4,7 +4,7 @@ Native **recomp host** for Final Fantasy Brave Exvius Offline on New Nintendo 3D
 
 See [`docs/EXVIUS3DS_ROADMAP.md`](../docs/EXVIUS3DS_ROADMAP.md) and [`docs/exvius3ds/`](../docs/exvius3ds/).
 
-## Host tests (S0 + S1)
+## Host tests (S0–S4)
 
 ```bash
 make -C exvius3ds test

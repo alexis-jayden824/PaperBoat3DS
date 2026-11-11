@@ -18,13 +18,21 @@ int ex3_content_load_diag(Ex3Content *content)
     mr = ex3_mst_load_path("romfs:/fixtures/diag_enc.mst", &content->mst);
     content->mst_ok = (mr == EX3_MST_OK && content->mst.loaded) ? 1 : 0;
     if (!content->mst_ok) {
+        ex3_logf(EX3_LOG_WARN, "enc mst failed (%d): %s", (int)mr, content->mst.error);
         /* Fall back to plaintext fixture. */
         mr = ex3_mst_load_path("romfs:/fixtures/diag.mst", &content->mst);
         content->mst_ok = (mr == EX3_MST_OK && content->mst.loaded) ? 1 : 0;
+        if (!content->mst_ok) {
+            ex3_logf(EX3_LOG_WARN, "plain mst failed (%d): %s", (int)mr,
+                     content->mst.error);
+        }
     }
 
     tr = ex3_texpack_load_path("romfs:/fixtures/diag.tex", &content->tex);
     content->tex_ok = (tr == EX3_TEXPACK_OK && content->tex.loaded) ? 1 : 0;
+    if (!content->tex_ok) {
+        ex3_logf(EX3_LOG_WARN, "tex failed (%d): %s", (int)tr, content->tex.error);
+    }
 
     ex3_logf(EX3_LOG_INFO, "content mst_ok=%d records=%u tex_ok=%d %ux%u",
              content->mst_ok, content->mst.record_count, content->tex_ok,

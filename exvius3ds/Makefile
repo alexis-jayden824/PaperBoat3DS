@@ -39,6 +39,7 @@ fixtures: $(HOST_OUT)/bake_s3_fixtures | $(FIXTURES)
 HOST_OBJS := \
 	$(HOST_OUT)/crypto_envelope.o \
 	$(HOST_OUT)/aes128.o \
+	$(HOST_OUT)/base64.o \
 	$(HOST_OUT)/plat_common.o \
 	$(HOST_OUT)/plat_host.o \
 	$(HOST_OUT)/log.o \
@@ -48,7 +49,22 @@ HOST_OBJS := \
 	$(HOST_OUT)/mst.o \
 	$(HOST_OUT)/texpack.o \
 	$(HOST_OUT)/content.o \
-	$(HOST_OUT)/bootstrap.o
+	$(HOST_OUT)/bootstrap.o \
+	$(HOST_OUT)/jni.o \
+	$(HOST_OUT)/prefs.o \
+	$(HOST_OUT)/http.o \
+	$(HOST_OUT)/login.o \
+	$(HOST_OUT)/recovered_client_refs.o
+
+S4_OBJS := \
+	$(HOST_OUT)/crypto_envelope.o \
+	$(HOST_OUT)/aes128.o \
+	$(HOST_OUT)/base64.o \
+	$(HOST_OUT)/jni.o \
+	$(HOST_OUT)/prefs.o \
+	$(HOST_OUT)/http.o \
+	$(HOST_OUT)/login.o \
+	$(HOST_OUT)/recovered_client_refs.o
 
 $(HOST_OUT)/test_crypto_envelope: $(TST)/test_crypto_envelope.c $(HOST_OUT)/crypto_envelope.o
 	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $^ -o $@
@@ -71,10 +87,14 @@ $(HOST_OUT)/test_texture: $(TST)/test_texture.c $(HOST_OUT)/texture.o
 $(HOST_OUT)/test_mst: $(TST)/test_mst.c $(HOST_OBJS)
 	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(TST)/test_mst.c $(HOST_OBJS) -o $@
 
+$(HOST_OUT)/test_jni_link: $(TST)/test_jni_link.c $(S4_OBJS) | $(HOST_OUT)
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(TST)/test_jni_link.c $(S4_OBJS) -o $@
+
 test host-test: fixtures \
 		$(HOST_OUT)/test_crypto_envelope $(HOST_OUT)/test_aes128 \
 		$(HOST_OUT)/test_plat_host $(HOST_OUT)/test_bootstrap \
-		$(HOST_OUT)/test_cocos $(HOST_OUT)/test_texture $(HOST_OUT)/test_mst
+		$(HOST_OUT)/test_cocos $(HOST_OUT)/test_texture $(HOST_OUT)/test_mst \
+		$(HOST_OUT)/test_jni_link
 	$(HOST_OUT)/test_crypto_envelope
 	$(HOST_OUT)/test_aes128
 	$(HOST_OUT)/test_plat_host
@@ -82,6 +102,7 @@ test host-test: fixtures \
 	$(HOST_OUT)/test_cocos
 	$(HOST_OUT)/test_texture
 	EX3_HOST_ROOT=$(ROOT) $(HOST_OUT)/test_mst
+	$(HOST_OUT)/test_jni_link
 
 clean:
 	rm -rf $(HOST_OUT) $(ROOT)/build3ds $(ROOT)/build/3ds

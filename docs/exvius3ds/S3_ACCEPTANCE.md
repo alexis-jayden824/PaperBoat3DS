@@ -17,3 +17,7 @@
 ## Owner hardware check
 
 Bottom should be blue with status bars (not black). Top still shows gold diag scene.
+
+**Follow-up (S3→S4):** Red status bars mean MST/tex load failed. Root cause was missing
+`romfsInit()` before `fopen("romfs:/...")`. Fixed in `plat_3ds.c`; reflash and expect
+green strip + light-blue name bars + gold tex chip.

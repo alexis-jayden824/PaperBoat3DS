@@ -13,6 +13,7 @@ typedef struct {
     C3D_RenderTarget *bottom;
     aptHookCookie apt_cookie;
     bool gfx_ready;
+    bool romfs_ready;
 } Ex3Plat3DS;
 
 static u32 rgba8_to_c2d(uint32_t rgba)
@@ -97,6 +98,13 @@ Ex3PlatResult ex3_plat_init(Ex3Plat *plat)
     }
     impl->gfx_ready = true;
 
+    /* Required for fopen("romfs:/...") against the embedded .3dsx RomFS. */
+    if (R_SUCCEEDED(romfsInit())) {
+        impl->romfs_ready = true;
+    } else {
+        impl->romfs_ready = false;
+    }
+
     if (R_SUCCEEDED(APT_CheckNew3DS(&is_new))) {
         plat->is_new_3ds = is_new;
     }
@@ -125,6 +133,11 @@ void ex3_plat_shutdown(Ex3Plat *plat)
     if (plat->log_file != NULL) {
         fclose(plat->log_file);
         plat->log_file = NULL;
+    }
+
+    if (impl->romfs_ready) {
+        romfsExit();
+        impl->romfs_ready = false;
     }
 
     if (impl->gfx_ready) {

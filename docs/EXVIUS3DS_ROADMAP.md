@@ -162,13 +162,16 @@ Evidence: [`docs/exvius3ds/S3_ACCEPTANCE.md`](exvius3ds/S3_ACCEPTANCE.md), [`S3_
 
 ### S4 — JNI / Java surface elimination
 
+**Status: host software complete (2026-11-11).** S3 RomFS hardware retest owner-gated.
+
 **Deliverables**
 
 - Catalog every JNI / `LapisJNI` / `HttpURLConnection` / SharedPreferences call site
-- Native replacements: AES-CBC envelope (double-pad aware per contract), prefs→SDMC, threading
-- Kill Android-only branches behind `ex3_plat` shims
+- Native replacements: AES-CBC envelope (double-pad aware per contract), prefs→SDMC, HTTP/login stubs
+- Kill Android-only branches behind `ex3_plat` shims; `romfsInit` so fixture loads succeed on device
 
-**Acceptance:** Link of recovered client objects with **zero** unresolved Android/JNI symbols.
+**Acceptance:** Link of recovered client objects with **zero** unresolved Android/JNI symbols.  
+Evidence: [`docs/exvius3ds/S4_ACCEPTANCE.md`](exvius3ds/S4_ACCEPTANCE.md), [`S4_JNI_CATALOG.md`](exvius3ds/S4_JNI_CATALOG.md).
 
 ### S5 — Input + dual-screen presenter (first host mod)
 
