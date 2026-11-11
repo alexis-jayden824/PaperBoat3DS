@@ -29,6 +29,8 @@ HOST_OBJS := \
 	$(HOST_OUT)/plat_common.o \
 	$(HOST_OUT)/plat_host.o \
 	$(HOST_OUT)/log.o \
+	$(HOST_OUT)/texture.o \
+	$(HOST_OUT)/cocos.o \
 	$(HOST_OUT)/bootstrap.o
 
 $(HOST_OUT)/test_crypto_envelope: $(TST)/test_crypto_envelope.c $(HOST_OUT)/crypto_envelope.o
@@ -40,10 +42,19 @@ $(HOST_OUT)/test_plat_host: $(TST)/test_plat_host.c $(HOST_OBJS)
 $(HOST_OUT)/test_bootstrap: $(TST)/test_bootstrap.c $(HOST_OBJS)
 	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(TST)/test_bootstrap.c $(HOST_OBJS) -o $@
 
-test host-test: $(HOST_OUT)/test_crypto_envelope $(HOST_OUT)/test_plat_host $(HOST_OUT)/test_bootstrap
+$(HOST_OUT)/test_cocos: $(TST)/test_cocos.c $(HOST_OBJS)
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(TST)/test_cocos.c $(HOST_OBJS) -o $@
+
+$(HOST_OUT)/test_texture: $(TST)/test_texture.c $(HOST_OUT)/texture.o
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $^ -o $@
+
+test host-test: $(HOST_OUT)/test_crypto_envelope $(HOST_OUT)/test_plat_host \
+		$(HOST_OUT)/test_bootstrap $(HOST_OUT)/test_cocos $(HOST_OUT)/test_texture
 	$(HOST_OUT)/test_crypto_envelope
 	$(HOST_OUT)/test_plat_host
 	$(HOST_OUT)/test_bootstrap
+	$(HOST_OUT)/test_cocos
+	$(HOST_OUT)/test_texture
 
 clean:
 	rm -rf $(HOST_OUT) $(ROOT)/build3ds $(ROOT)/build/3ds

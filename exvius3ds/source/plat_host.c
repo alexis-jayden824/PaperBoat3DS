@@ -96,6 +96,24 @@ void ex3_plat_clear_screens(Ex3Plat *plat, uint32_t top_rgba, uint32_t bottom_rg
     plat->frame.top_rgba = top_rgba;
     plat->frame.bottom_rgba = bottom_rgba;
     plat->frame.screens_cleared = true;
+    plat->frame.draw_rect_count = 0;
+    plat->frame.last_draw_rgba = 0;
+}
+
+void ex3_plat_draw_rect(Ex3Plat *plat, Ex3Screen screen, float x, float y, float w,
+                        float h, uint32_t rgba)
+{
+    (void)screen;
+    (void)x;
+    (void)y;
+    if (plat == NULL || !plat->initialized) {
+        return;
+    }
+    if (w <= 0.0f || h <= 0.0f) {
+        return;
+    }
+    plat->frame.draw_rect_count++;
+    plat->frame.last_draw_rgba = rgba;
 }
 
 void ex3_plat_end_frame(Ex3Plat *plat)

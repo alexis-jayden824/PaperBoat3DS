@@ -28,10 +28,17 @@ typedef enum {
     EX3_LIFECYCLE_EXITING
 } Ex3PlatLifecycle;
 
+typedef enum {
+    EX3_SCREEN_TOP = 0,
+    EX3_SCREEN_BOTTOM = 1
+} Ex3Screen;
+
 typedef struct {
     uint32_t top_rgba;
     uint32_t bottom_rgba;
     uint32_t frame_count;
+    uint32_t draw_rect_count;
+    uint32_t last_draw_rgba;
     bool screens_cleared;
 } Ex3PlatFrameInfo;
 
@@ -41,6 +48,12 @@ typedef struct Ex3Plat Ex3Plat;
 enum {
     EX3_CLEAR_TOP_RGBA = 0x0B1E3AFF,    /* deep FFBE-ish navy */
     EX3_CLEAR_BOTTOM_RGBA = 0x163A6BFF  /* panel blue for touch chrome */
+};
+
+/* S2 diagnostic sprite / label colors (top-screen scene graph). */
+enum {
+    EX3_DIAG_SPRITE_RGBA = 0xD4A017FF, /* FFBE-ish gold */
+    EX3_DIAG_LABEL_RGBA = 0xE8EEF7FF  /* pale panel text bar */
 };
 
 Ex3Plat *ex3_plat_create(void);
@@ -60,6 +73,9 @@ bool ex3_plat_should_run(const Ex3Plat *plat);
 void ex3_plat_poll(Ex3Plat *plat);
 void ex3_plat_begin_frame(Ex3Plat *plat);
 void ex3_plat_clear_screens(Ex3Plat *plat, uint32_t top_rgba, uint32_t bottom_rgba);
+/* Axis-aligned solid rect in screen pixel space (top 400x240 / bottom 320x240). */
+void ex3_plat_draw_rect(Ex3Plat *plat, Ex3Screen screen, float x, float y, float w,
+                        float h, uint32_t rgba);
 void ex3_plat_end_frame(Ex3Plat *plat);
 
 const Ex3PlatFrameInfo *ex3_plat_frame_info(const Ex3Plat *plat);

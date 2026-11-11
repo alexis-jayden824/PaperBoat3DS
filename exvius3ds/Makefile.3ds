@@ -15,7 +15,7 @@ INCLUDES := include
 ROMFS    := romfs
 
 APP_TITLE       := Exvius3DS
-APP_DESCRIPTION := FFBE Offline recomp host (S1)
+APP_DESCRIPTION := FFBE Offline recomp host (S2)
 APP_AUTHOR      := Exvius3DS
 
 EX3_BUILD_SHA ?= unknown

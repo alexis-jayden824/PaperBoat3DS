@@ -184,14 +184,34 @@ void ex3_plat_clear_screens(Ex3Plat *plat, uint32_t top_rgba, uint32_t bottom_rg
 
     plat->frame.top_rgba = top_rgba;
     plat->frame.bottom_rgba = bottom_rgba;
+    plat->frame.draw_rect_count = 0;
+    plat->frame.last_draw_rgba = 0;
 
     C2D_TargetClear(impl->top, rgba8_to_c2d(top_rgba));
-    C2D_SceneBegin(impl->top);
-
     C2D_TargetClear(impl->bottom, rgba8_to_c2d(bottom_rgba));
-    C2D_SceneBegin(impl->bottom);
 
     plat->frame.screens_cleared = true;
+}
+
+void ex3_plat_draw_rect(Ex3Plat *plat, Ex3Screen screen, float x, float y, float w,
+                        float h, uint32_t rgba)
+{
+    Ex3Plat3DS *impl;
+    C3D_RenderTarget *target;
+
+    if (plat == NULL || !plat->initialized) {
+        return;
+    }
+    if (w <= 0.0f || h <= 0.0f) {
+        return;
+    }
+
+    impl = (Ex3Plat3DS *)plat;
+    target = (screen == EX3_SCREEN_BOTTOM) ? impl->bottom : impl->top;
+    C2D_SceneBegin(target);
+    C2D_DrawRectSolid(x, y, 0.5f, w, h, rgba8_to_c2d(rgba));
+    plat->frame.draw_rect_count++;
+    plat->frame.last_draw_rgba = rgba;
 }
 
 void ex3_plat_end_frame(Ex3Plat *plat)

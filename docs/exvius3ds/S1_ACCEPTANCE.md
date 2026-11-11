@@ -2,7 +2,7 @@
 
 **Sprint:** S1 — New 3DS host bootstrap  
 **Date:** 2026-11-11 (America/New_York)  
-**Status:** Host software gate **met**. Package gate via CI workflow. Hardware/Folium **owner pending**.
+**Status:** **Complete** — host, CI packages, and real-hardware dual-screen paint.
 
 ## Criteria → evidence
 
@@ -14,20 +14,9 @@
 | APT lifecycle | `plat_3ds.c` apt hooks; host injectors in tests |
 | New 3DS 804 MHz + L2 + 96MB | `packaging/Exvius3DS.rsf` + `ex3_plat_enable_new3ds_boost` |
 | Host proof | `make -C exvius3ds test` |
-| `.3dsx` / `.3ds` / `.cia` path | `.github/workflows/exvius3ds-3ds-build.yml` |
-| Folium + n3DS XL paint | Owner checklist in `S1_HOST_BOOTSTRAP.md` |
+| `.3dsx` / `.3ds` / `.cia` path | CI `build-3ds` green on `4523b1e` |
+| n3DS XL hardware paint | Owner report 2026-11-11: top + bottom navy/blue clears on real hardware |
 
-## Host test run
+## Hardware note
 
-```text
-$ make -C exvius3ds test
-ok: … (crypto S0)
-ok: plat create / init / boost / dual clear / lifecycle
-ok: bootstrap three frames / suspend / exit
-all tests passed
-```
-
-## Remaining
-
-- CI green upload of `Exvius3DS.3dsx`
-- Owner Folium + hardware captures for both-screen colors
+Owner opened the CI `.3dsx` on New 3DS XL and observed two navy blue screens (top `0x0B1E3A`, bottom `0x163A6B`). That matches the S1 diagnostic clear contract — **S1 pass**.

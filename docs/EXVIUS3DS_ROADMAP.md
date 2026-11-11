@@ -128,17 +128,22 @@ Evidence: [`docs/exvius3ds/S0_ACCEPTANCE.md`](exvius3ds/S0_ACCEPTANCE.md).
 - Host tests + CI package workflow → `make -C exvius3ds test`, `.github/workflows/exvius3ds-3ds-build.yml`
 
 **Acceptance:** `.3dsx` boots Folium + n3DS XL; both screens painted.  
-Evidence: [`docs/exvius3ds/S1_ACCEPTANCE.md`](exvius3ds/S1_ACCEPTANCE.md), [`S1_HOST_BOOTSTRAP.md`](exvius3ds/S1_HOST_BOOTSTRAP.md).
+Evidence: [`docs/exvius3ds/S1_ACCEPTANCE.md`](exvius3ds/S1_ACCEPTANCE.md), [`S1_HOST_BOOTSTRAP.md`](exvius3ds/S1_HOST_BOOTSTRAP.md).  
+**Hardware:** owner confirmed dual navy clears on real n3DS XL (2026-11-11) — S1 closed.
 
 ### S2 — Cocos / renderer shim v0
 
+**Status: host software complete (2026-11-11).** Hardware gold-sprite confirm owner-gated.
+
 **Deliverables**
 
-- Minimal subset of cocos2d-x types the recovered client needs (Director, Scene, Node, Sprite, Label stubs as required)
-- GLES-like draw → citro2d/citro3d translation
-- Texture upload path with size clamps for PICA (≤1024², swizzle)
+- Director/Scene/Node/Sprite/Label stubs → `exvius3ds/include/ex3/cocos.h`
+- GLES-like rect draw → `ex3_plat_draw_rect` (citro2d on device)
+- Texture plan clamps (≤1024, POT) → `ex3/texture.h`
+- Diagnostic top-screen scene (gold sprite + label bar) in bootstrap
 
-**Acceptance:** Diagnostic cocos-like scene graph draws on top screen from host code.
+**Acceptance:** Diagnostic cocos-like scene graph draws on top screen from host code.  
+Evidence: [`docs/exvius3ds/S2_ACCEPTANCE.md`](exvius3ds/S2_ACCEPTANCE.md), [`S2_COCOS_RENDERER.md`](exvius3ds/S2_COCOS_RENDERER.md).
 
 ### S3 — File system, MST, CPK bring-up
 

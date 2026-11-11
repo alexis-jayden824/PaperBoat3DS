@@ -33,6 +33,9 @@ int main(void)
                 "top clear color");
     expect_true(ex3_plat_frame_info(plat)->bottom_rgba == EX3_CLEAR_BOTTOM_RGBA,
                 "bottom clear color");
+    expect_true(ex3_plat_frame_info(plat)->draw_rect_count == 2,
+                "diag scene draws two rects");
+    expect_true(boot.director != NULL, "director installed");
 
     /* Suspended: still running, but frames not advanced. */
     ex3_plat_debug_set_lifecycle(plat, EX3_LIFECYCLE_SUSPENDED);
