@@ -14,6 +14,15 @@ exvius3ds/user_data/
 # Build products
 exvius3ds/build/
 exvius3ds/out/
+exvius3ds/exvius3ds-host.log
+exvius3ds-host.log
+Exvius3DS.elf
+Exvius3DS.3dsx
+Exvius3DS.3ds
+Exvius3DS.cia
+Exvius3DS.smdh
+Exvius3DS.map
+Exvius3DS-stripped.elf
 *.o
 *.a
 *.3dsx

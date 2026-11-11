@@ -118,13 +118,17 @@ Evidence: [`docs/exvius3ds/S0_ACCEPTANCE.md`](exvius3ds/S0_ACCEPTANCE.md).
 
 ### S1 — New 3DS host bootstrap
 
+**Status: host software complete (2026-11-11).** CI builds `.3dsx`; Folium/hardware paint is owner-gated.
+
 **Deliverables**
 
-- devkitARM app shell; 804 MHz + L2 + extended RAM
-- Diagnostics, SDMC log, APT lifecycle
-- Empty platform ABI the recompiled client will call (`ex3_plat_*`)
+- `ex3_plat` ABI + host/3DS backends → `exvius3ds/include/ex3/plat.h`, `plat_host.c`, `plat_3ds.c`
+- Dual-screen diagnostic clear loop + APT lifecycle + SDMC log → `bootstrap.c`, `log.c`
+- New 3DS exclusive RSF (96MB / 804 MHz / L2) → `packaging/Exvius3DS.rsf`
+- Host tests + CI package workflow → `make -C exvius3ds test`, `.github/workflows/exvius3ds-3ds-build.yml`
 
-**Acceptance:** `.3dsx` boots Folium + n3DS XL; both screens painted.
+**Acceptance:** `.3dsx` boots Folium + n3DS XL; both screens painted.  
+Evidence: [`docs/exvius3ds/S1_ACCEPTANCE.md`](exvius3ds/S1_ACCEPTANCE.md), [`S1_HOST_BOOTSTRAP.md`](exvius3ds/S1_HOST_BOOTSTRAP.md).
 
 ### S2 — Cocos / renderer shim v0
 

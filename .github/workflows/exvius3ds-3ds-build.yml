@@ -1,0 +1,83 @@
+name: Exvius3DS 3DS build
+
+on:
+  push:
+    paths:
+      - "exvius3ds/**"
+      - "docs/exvius3ds/**"
+      - ".github/workflows/exvius3ds-3ds-build.yml"
+  pull_request:
+    paths:
+      - "exvius3ds/**"
+      - "docs/exvius3ds/**"
+      - ".github/workflows/exvius3ds-3ds-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: S0/S1 host unit tests
+        run: make -C exvius3ds test
+
+  build-3ds:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Record toolchain
+        run: |
+          "$DEVKITARM/bin/arm-none-eabi-gcc" --version
+          make --version
+
+      - name: Host tests inside container
+        run: make -C exvius3ds test
+
+      - name: Build .3dsx
+        run: |
+          make -C exvius3ds 3ds \
+            EX3_BUILD_SHA="$GITHUB_SHA" \
+            EX3_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Build makerom
+        env:
+          MAKEROM_COMMIT: e8f5f529c54ff9b22a2491a480ffa69206bf7b19
+        run: |
+          git clone https://github.com/3DSGuy/Project_CTR.git "$RUNNER_TEMP/Project_CTR"
+          git -C "$RUNNER_TEMP/Project_CTR" checkout "$MAKEROM_COMMIT"
+          make -C "$RUNNER_TEMP/Project_CTR/makerom" deps
+          make -C "$RUNNER_TEMP/Project_CTR/makerom" -j2
+          mkdir -p "$GITHUB_WORKSPACE/.tools"
+          install -m 0755 "$RUNNER_TEMP/Project_CTR/makerom/bin/makerom" \
+            "$GITHUB_WORKSPACE/.tools/makerom"
+
+      - name: Build .3ds and .cia
+        run: |
+          make -C exvius3ds packages \
+            MAKEROM="$GITHUB_WORKSPACE/.tools/makerom" \
+            EX3_BUILD_SHA="$GITHUB_SHA" \
+            EX3_BUILD_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Verify outputs
+        run: |
+          test -s exvius3ds/Exvius3DS.elf
+          test -s exvius3ds/Exvius3DS.3dsx
+          test -s exvius3ds/Exvius3DS.3ds
+          test -s exvius3ds/Exvius3DS.cia
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Exvius3DS-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            exvius3ds/Exvius3DS.elf
+            exvius3ds/Exvius3DS.3dsx
+            exvius3ds/Exvius3DS.3ds
+            exvius3ds/Exvius3DS.cia
+          retention-days: 14

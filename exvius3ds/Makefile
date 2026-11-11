@@ -1,31 +1,61 @@
-# Exvius3DS host-side build (S0).
-# New 3DS cross builds land in later sprints; this Makefile runs recovery unit tests on the PC.
+# Exvius3DS — host tests always; 3DS packages via Makefile.3ds when DEVKITARM is set.
 
 ROOT := $(abspath .)
 INC  := $(ROOT)/include
 SRC  := $(ROOT)/source
 TST  := $(ROOT)/tests
-OUT  := $(ROOT)/build/host
+HOST_OUT := $(ROOT)/build/host
 
-CC      ?= gcc
-CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O2
-CPPFLAGS += -I$(INC)
+HOST_CC ?= gcc
+HOST_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2
+EX3_BUILD_SHA ?= unknown
+EX3_BUILD_UTC ?= unknown
+HOST_CPPFLAGS := -I$(INC) -DEX3_HOST=1 \
+	-DEX3_BUILD_SHA=\"$(EX3_BUILD_SHA)\" \
+	-DEX3_BUILD_UTC=\"$(EX3_BUILD_UTC)\"
 
-.PHONY: all test clean
+.PHONY: all test host-test clean 3ds packages
 
 all: test
 
-$(OUT):
-	mkdir -p $(OUT)
+$(HOST_OUT):
+	mkdir -p $(HOST_OUT)
 
-$(OUT)/crypto_envelope.o: $(SRC)/crypto_envelope.c $(INC)/ex3/crypto_envelope.h | $(OUT)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+$(HOST_OUT)/%.o: $(SRC)/%.c | $(HOST_OUT)
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) -c $< -o $@
 
-$(OUT)/test_crypto_envelope: $(TST)/test_crypto_envelope.c $(OUT)/crypto_envelope.o
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ -o $@
+HOST_OBJS := \
+	$(HOST_OUT)/crypto_envelope.o \
+	$(HOST_OUT)/plat_common.o \
+	$(HOST_OUT)/plat_host.o \
+	$(HOST_OUT)/log.o \
+	$(HOST_OUT)/bootstrap.o
 
-test: $(OUT)/test_crypto_envelope
-	$(OUT)/test_crypto_envelope
+$(HOST_OUT)/test_crypto_envelope: $(TST)/test_crypto_envelope.c $(HOST_OUT)/crypto_envelope.o
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $^ -o $@
+
+$(HOST_OUT)/test_plat_host: $(TST)/test_plat_host.c $(HOST_OBJS)
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(TST)/test_plat_host.c $(HOST_OBJS) -o $@
+
+$(HOST_OUT)/test_bootstrap: $(TST)/test_bootstrap.c $(HOST_OBJS)
+	$(HOST_CC) $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(TST)/test_bootstrap.c $(HOST_OBJS) -o $@
+
+test host-test: $(HOST_OUT)/test_crypto_envelope $(HOST_OUT)/test_plat_host $(HOST_OUT)/test_bootstrap
+	$(HOST_OUT)/test_crypto_envelope
+	$(HOST_OUT)/test_plat_host
+	$(HOST_OUT)/test_bootstrap
 
 clean:
-	rm -rf $(OUT)
+	rm -rf $(HOST_OUT) $(ROOT)/build/3ds
+	rm -f $(ROOT)/Exvius3DS.elf $(ROOT)/Exvius3DS.3dsx $(ROOT)/Exvius3DS.3ds \
+		$(ROOT)/Exvius3DS.cia $(ROOT)/Exvius3DS.smdh $(ROOT)/Exvius3DS.map \
+		$(ROOT)/exvius3ds-host.log
+
+3ds packages:
+ifeq ($(strip $(DEVKITARM)),)
+	@echo "DEVKITARM is not set. Use CI image devkitpro/devkitarm or export DEVKITARM."
+	@echo "Host proof still available: make test"
+	@exit 1
+else
+	$(MAKE) -f Makefile.3ds $@ EX3_BUILD_SHA=$(EX3_BUILD_SHA) EX3_BUILD_UTC=$(EX3_BUILD_UTC)
+endif
