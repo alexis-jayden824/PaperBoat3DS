@@ -28,9 +28,10 @@ int main(void)
         'd', 'Z', 'M', 'j', 'k', 'k', '8', 'g',
         'F', 'D', 'z', 'K', 'H', 'l', 's', 'x'
     };
-    static const uint8_t plain[32] =
-        "Rain\0\0\0\0\0\0\0\0\0\0\0\0"
-        "Fina\0\0\0\0\0\0\0\0\0\0\0\0";
+    static const uint8_t plain[32] = {
+        'R', 'a', 'i', 'n', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        'F', 'i', 'n', 'a', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
     uint8_t cipher[32];
     uint8_t out[32];
 

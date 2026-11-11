@@ -17,8 +17,6 @@ void ex3_fs_set_host_root(const char *root)
 
 static void build_physical(const char *logical, char *out, size_t out_cap)
 {
-    const char *rest;
-
 #if defined(__3DS__)
     if (strncmp(logical, "romfs:/", 7) == 0) {
         snprintf(out, out_cap, "romfs:/%s", logical + 7);
@@ -30,6 +28,7 @@ static void build_physical(const char *logical, char *out, size_t out_cap)
     }
     snprintf(out, out_cap, "%s", logical);
 #else
+    const char *rest;
     if (strncmp(logical, "romfs:/", 7) == 0) {
         rest = logical + 7;
         if (g_host_root[0] != '\0') {
