@@ -16,19 +16,21 @@ exvius3ds/build/
 exvius3ds/out/
 exvius3ds/exvius3ds-host.log
 exvius3ds-host.log
-Exvius3DS.elf
-Exvius3DS.3dsx
-Exvius3DS.3ds
-Exvius3DS.cia
-Exvius3DS.smdh
-Exvius3DS.map
-Exvius3DS-stripped.elf
+# Packaged 3DS outputs (keep Makefile.3ds tracked)
+/exvius3ds/Exvius3DS.elf
+/exvius3ds/Exvius3DS.3dsx
+/exvius3ds/Exvius3DS.3ds
+/exvius3ds/Exvius3DS.cia
+/exvius3ds/Exvius3DS.smdh
+/exvius3ds/Exvius3DS.map
+/exvius3ds/Exvius3DS-stripped.elf
 *.o
 *.a
-*.3dsx
-*.3ds
-*.cia
-*.elf
+/*.3dsx
+/*.cia
+/*.elf
+!Makefile.3ds
+!**/Makefile.3ds
 
 # Editor / OS
 .DS_Store

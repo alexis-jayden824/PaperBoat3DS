@@ -1,0 +1,90 @@
+# Nintendo 3DS package build for Exvius3DS (requires DEVKITARM).
+.SUFFIXES:
+
+ifeq ($(strip $(DEVKITARM)),)
+$(error "DEVKITARM is not set")
+endif
+
+include $(DEVKITARM)/3ds_rules
+
+TARGET   := Exvius3DS
+BUILD    := build/3ds
+SOURCES  := source
+INCLUDES := include
+ROMFS    := romfs
+
+APP_TITLE       := Exvius3DS
+APP_DESCRIPTION := FFBE Offline recomp host (S1)
+APP_AUTHOR      := Exvius3DS
+
+EX3_BUILD_SHA ?= unknown
+EX3_BUILD_UTC ?= unknown
+
+ARCH     := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
+CFLAGS   := -g -Wall -Wextra -Werror -O2 -mword-relocations \
+            -ffunction-sections $(ARCH) -D__3DS__ \
+            -DEX3_BUILD_SHA=\"$(EX3_BUILD_SHA)\" \
+            -DEX3_BUILD_UTC=\"$(EX3_BUILD_UTC)\"
+ASFLAGS  := -g $(ARCH)
+LDFLAGS  := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+LIBS     := -lcitro2d -lcitro3d -lctru -lm
+LIBDIRS  := $(CTRULIB)
+
+PACKAGING_RSF := packaging/Exvius3DS.rsf
+MAKEROM ?= makerom
+STRIP ?= $(DEVKITARM)/bin/arm-none-eabi-strip
+
+# plat_host.c is PC-only.
+CFILES := $(filter-out plat_host.c,$(notdir $(wildcard $(SOURCES)/*.c)))
+
+ifneq ($(BUILD),$(notdir $(CURDIR)))
+
+export OUTPUT  := $(CURDIR)/$(TARGET)
+export TOPDIR  := $(CURDIR)
+export VPATH   := $(CURDIR)/$(SOURCES)
+export DEPSDIR := $(CURDIR)/$(BUILD)
+export OFILES_SOURCES := $(CFILES:.c=.o)
+export OFILES := $(OFILES_SOURCES)
+export INCLUDE := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+	$(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
+export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+export _3DSXDEPS := $(OUTPUT).smdh
+export _3DSXFLAGS += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
+export LD := $(CC)
+
+.PHONY: all 3ds packages clean
+
+all 3ds: $(BUILD)
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile.3ds
+
+packages: 3ds
+	@command -v $(MAKEROM) >/dev/null || { echo "makerom was not found in PATH"; exit 1; }
+	@test -s "$(OUTPUT).elf"
+	@test -s "$(OUTPUT).3dsx"
+	@$(STRIP) -o "$(OUTPUT)-stripped.elf" "$(OUTPUT).elf"
+	@$(MAKEROM) -f cci -o "$(OUTPUT).3ds" -rsf "$(PACKAGING_RSF)" -target t \
+		-exefslogo -elf "$(OUTPUT)-stripped.elf" -icon "$(OUTPUT).smdh"
+	@$(MAKEROM) -f cia -o "$(OUTPUT).cia" -rsf "$(PACKAGING_RSF)" -target t \
+		-exefslogo -elf "$(OUTPUT)-stripped.elf" -icon "$(OUTPUT).smdh"
+	@test -s "$(OUTPUT).3ds"
+	@test -s "$(OUTPUT).cia"
+
+$(BUILD):
+	@mkdir -p $@
+
+clean:
+	rm -rf $(BUILD)
+	rm -f $(TARGET).elf $(TARGET).3dsx $(TARGET).3ds $(TARGET).cia $(TARGET).smdh $(TARGET).map
+
+else
+
+all: $(OUTPUT).3dsx
+
+$(OUTPUT).elf: $(OFILES)
+
+%.o: %.c
+	$(CC) -MMD -MP -MF $(DEPSDIR)/$*.d $(INCLUDE) $(CFLAGS) -c $< -o $@
+
+-include $(DEPSDIR)/*.d
+
+endif
