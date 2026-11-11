@@ -2,18 +2,18 @@
 
 **Sprint:** S2 — Cocos / renderer shim v0  
 **Date:** 2026-11-11 (America/New_York)  
-**Status:** Host software gate **met**. Hardware gold-sprite confirmation **owner pending**.
+**Status:** **Complete** (with follow-up bottom-clear fix in S3).
 
 ## Criteria → evidence
 
 | Criterion | Evidence |
 | --- | --- |
-| Director/Scene/Node/Sprite/Label stubs | `exvius3ds/include/ex3/cocos.h`, `source/cocos.c` |
-| Draw path via plat | `ex3_plat_draw_rect` → citro2d / host |
-| Texture size clamps | `ex3/texture.h` — max 1024, POT pad |
-| Diagnostic scene on top | `ex3_diag_scene_create` used by bootstrap |
-| Host proof | `make -C exvius3ds test` (`test_cocos`, `test_texture`) |
+| Director/Scene/Node/Sprite/Label stubs | `exvius3ds/include/ex3/cocos.h` |
+| Draw path via plat | `ex3_plat_draw_rect` → citro2d |
+| Texture size clamps | `ex3/texture.h` |
+| Diagnostic scene on top | Owner hardware: gold rectangle + pale bar on navy top |
+| Bottom panel blue | Initially black on hardware (clear without SceneBegin/draw); fixed in S3 `plat_3ds` clear path |
 
-## Owner hardware check
+## Hardware note
 
-Pass when top shows gold panel on navy (not flat navy alone). See `S2_COCOS_RENDERER.md`.
+Owner confirmed top gold panel on real n3DS XL. Bottom black was a present bug; S3 paints full-bleed clears on both screens every frame.

@@ -187,8 +187,16 @@ void ex3_plat_clear_screens(Ex3Plat *plat, uint32_t top_rgba, uint32_t bottom_rg
     plat->frame.draw_rect_count = 0;
     plat->frame.last_draw_rgba = 0;
 
+    /* TargetClear alone is not enough if a screen never gets SceneBegin/draw
+     * this frame (S2 left bottom black on hardware). Clear, begin, and paint a
+     * full-bleed rect on both LCDs so each screen is presented every frame. */
     C2D_TargetClear(impl->top, rgba8_to_c2d(top_rgba));
+    C2D_SceneBegin(impl->top);
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.0f, 400.0f, 240.0f, rgba8_to_c2d(top_rgba));
+
     C2D_TargetClear(impl->bottom, rgba8_to_c2d(bottom_rgba));
+    C2D_SceneBegin(impl->bottom);
+    C2D_DrawRectSolid(0.0f, 0.0f, 0.0f, 320.0f, 240.0f, rgba8_to_c2d(bottom_rgba));
 
     plat->frame.screens_cleared = true;
 }

@@ -5,7 +5,7 @@
 #define EX3_VERSION_MAJOR 0
 #define EX3_VERSION_MINOR 1
 #define EX3_VERSION_PATCH 0
-#define EX3_VERSION_STRING "0.1.0-s2"
+#define EX3_VERSION_STRING "0.1.0-s3"
 
 #ifndef EX3_BUILD_SHA
 #define EX3_BUILD_SHA "unknown"

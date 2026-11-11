@@ -2,6 +2,7 @@
 #define EX3_BOOTSTRAP_H
 
 #include "ex3/cocos.h"
+#include "ex3/content.h"
 #include "ex3/plat.h"
 
 #include <stdbool.h>
@@ -14,6 +15,7 @@ extern "C" {
 typedef struct {
     Ex3Plat *plat;
     Ex3Director *director;
+    Ex3Content content;
     uint32_t frames_drawn;
     bool ready;
     bool quit_requested;
@@ -21,8 +23,6 @@ typedef struct {
 
 Ex3PlatResult ex3_bootstrap_init(Ex3Bootstrap *boot, Ex3Plat *plat);
 void ex3_bootstrap_shutdown(Ex3Bootstrap *boot);
-
-/* One dual-screen frame with S2 diagnostic scene graph on top. */
 bool ex3_bootstrap_frame(Ex3Bootstrap *boot);
 
 #ifdef __cplusplus

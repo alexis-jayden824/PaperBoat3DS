@@ -143,18 +143,22 @@ Evidence: [`docs/exvius3ds/S1_ACCEPTANCE.md`](exvius3ds/S1_ACCEPTANCE.md), [`S1_
 - Diagnostic top-screen scene (gold sprite + label bar) in bootstrap
 
 **Acceptance:** Diagnostic cocos-like scene graph draws on top screen from host code.  
-Evidence: [`docs/exvius3ds/S2_ACCEPTANCE.md`](exvius3ds/S2_ACCEPTANCE.md), [`S2_COCOS_RENDERER.md`](exvius3ds/S2_COCOS_RENDERER.md).
+Evidence: [`docs/exvius3ds/S2_ACCEPTANCE.md`](exvius3ds/S2_ACCEPTANCE.md), [`S2_COCOS_RENDERER.md`](exvius3ds/S2_COCOS_RENDERER.md).  
+**Hardware:** owner confirmed gold+pale bar on top; bottom black bug filed and fixed in S3.
 
 ### S3 — File system, MST, CPK bring-up
 
+**Status: host software complete (2026-11-11).** Hardware confirm owner-gated.
+
 **Deliverables**
 
-- Replace Android asset/APK zip paths with SDMC/RomFS
-- Recover MST decrypt/load paths from client; wire to PC-baked tables
-- CPK/resource open with streaming; chapter pack layout
-- Host PC tools: bake + hash manifest (user-owned input)
+- Bottom-screen present fix (full-bleed clear both LCDs)
+- `ex3_fs` RomFS/SDMC mapping; `ex3_mst` + AES-CBC fixtures; `ex3_texpack`
+- Bake tool + `romfs/fixtures/` synthetic packs (no SE content)
+- Bottom status chrome from loaded MST/tex
 
-**Acceptance:** Recompiled loader reads a fixture MST + one texture pack on device.
+**Acceptance:** Recompiled loader reads a fixture MST + one texture pack on device.  
+Evidence: [`docs/exvius3ds/S3_ACCEPTANCE.md`](exvius3ds/S3_ACCEPTANCE.md), [`S3_FS_MST.md`](exvius3ds/S3_FS_MST.md).
 
 ### S4 — JNI / Java surface elimination
 
