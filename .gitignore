@@ -1,0 +1,28 @@
+# Never commit Square Enix / gumi proprietary material
+*.apk
+*.so
+*.cpk
+*.dat
+libgame.so
+**/libgame.so
+**/armeabi-v7a/
+**/arm64-v8a/
+exvius3ds/private/
+exvius3ds/user_data/
+*.ex3
+
+# Build products
+exvius3ds/build/
+exvius3ds/out/
+*.o
+*.a
+*.3dsx
+*.3ds
+*.cia
+*.elf
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

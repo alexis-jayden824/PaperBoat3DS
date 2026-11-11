@@ -15,9 +15,16 @@ Pre-bootstrap. Development follows the documented M0-M24 roadmap on the `port/3d
 - 320x240 bottom-screen PaperBoat configuration menu
 - PC-generated legal `.o2r` assets loaded from SDMC/RomFS
 
-## Related planning: Exvius3DS
+## Related: Exvius3DS (FFBE Offline recomp)
 
-A separate milestone plan for an **FFBE Offline recomp** targeting New 3DS XL lives in [`docs/EXVIUS3DS_ROADMAP.md`](docs/EXVIUS3DS_ROADMAP.md). It recovers/recompiles Global `libgame.so` against a 3DS platform shim (with dual-screen + QoL as host enhancements). The Android APK/runtime is not the ship target.
+Milestone plan: [`docs/EXVIUS3DS_ROADMAP.md`](docs/EXVIUS3DS_ROADMAP.md).  
+S0 docs: [`docs/exvius3ds/`](docs/exvius3ds/). Host tree: [`exvius3ds/`](exvius3ds/).
+
+```bash
+make -C exvius3ds test
+```
+
+Recovers/recompiles Global `libgame.so` against a New 3DS XL platform shim. Dual-screen + QoL are host enhancements. The Android APK/runtime is not the ship target.
 
 ## Legal asset policy
 

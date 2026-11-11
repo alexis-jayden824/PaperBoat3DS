@@ -104,14 +104,17 @@ Phone full-screen menus become bottom sheets with live top-screen preview. Circl
 
 ### S0 — Recomp methodology & binary inventory
 
+**Status: software complete (2026-11-11).** Owner binary hash fill-in remains local.
+
 **Deliverables**
 
-- ADR: decomp→recompile (not clean rewrite; not APK run)
-- Inventory Global v9.0.0 ABIs (`arm64-v8a`, `armeabi-v7a` if present); symbol/export map; Cocos2d-x version pin
-- Partition `libgame.so` into: game logic · cocos engine · android/jni · crypto/net · third-party
-- Toolchain: Ghidra/IDA workflow docs; matching unit policy; “do not commit binaries”
+- ADR: decomp→recompile (not clean rewrite; not APK run) → [`docs/exvius3ds/ADR-001-recomp-methodology.md`](exvius3ds/ADR-001-recomp-methodology.md)
+- Inventory Global v9.0.0 ABIs; partition map → [`docs/exvius3ds/S0_BINARY_INVENTORY.md`](exvius3ds/S0_BINARY_INVENTORY.md)
+- Ghidra workflow + matching policy → [`GHIDRA_WORKFLOW.md`](exvius3ds/GHIDRA_WORKFLOW.md), [`MATCHING_POLICY.md`](exvius3ds/MATCHING_POLICY.md)
+- Recovered crypto envelope (`ex3_crypto_*`) + host unit test → `exvius3ds/` (`make -C exvius3ds test`)
 
-**Acceptance:** Published inventory + ADR; one recovered function builds as a host-side unit test.
+**Acceptance:** Published inventory + ADR; one recovered function builds as a host-side unit test.  
+Evidence: [`docs/exvius3ds/S0_ACCEPTANCE.md`](exvius3ds/S0_ACCEPTANCE.md).
 
 ### S1 — New 3DS host bootstrap
 
